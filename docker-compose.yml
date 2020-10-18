@@ -1,5 +1,29 @@
 version: '3'
 
+x-app: &default-app
+  image: backend-image:latest
+  volumes:
+    - ./api:/api
+    - ./api/.docker.env:/api/.env
+  restart: unless-stopped
+  depends_on:
+    - timedb
+    - cache
+  environment:
+    WAIT_HOSTS: timedb:5432, cache:6379
+    WAIT_HOSTS_TIMEOUT: 60
+    WAIT_AFTER_HOSTS: 5
+
+x-celery: &celery-app
+  <<: *default-app
+  depends_on:
+    - api
+  environment:
+    WAIT_HOSTS: api:8000
+    WAIT_HOSTS_TIMEOUT: 60
+    WAIT_AFTER_HOSTS: 5
+
+
 services:
 
   timedb:
@@ -18,3 +42,21 @@ services:
     image: redis:alpine
     ports:
       - "127.0.0.1:16379:6379"
+
+  api:
+    build: ./api
+    command: bash -c "/wait && python /api/manage.py migrate --noinput && python /api/manage.py runserver 0.0.0.0:8000"
+    <<: *default-app
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      - timedb
+      - cache
+
+  beat:
+    <<: *celery-app
+    command: bash -c "/wait && celery -A taskman beat -l INFO --pidfile=/tmp/beat1.pid"
+
+  worker:
+    <<: *celery-app
+    command: bash -c "/wait && celery -A taskman worker -l INFO"
