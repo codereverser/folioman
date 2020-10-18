@@ -1,0 +1,19 @@
+version: '3'
+
+services:
+
+  db:
+    image: mariadb
+    restart: unless-stopped
+    volumes:
+    - ./docker/db:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: folioman
+    ports:
+    - "127.0.0.1:13306:3306"
+
+  cache:
+    image: redis:alpine
+    ports:
+      - "127.0.0.1:16379:6379"
