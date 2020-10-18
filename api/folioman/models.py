@@ -94,8 +94,8 @@ class FolioScheme(models.Model):
 
 class Transaction(models.Model):
     class OrderType(models.TextChoices):
-        B = "Buy"
-        S = "Redeem"
+        BUY = "Buy"
+        REDEEM = "Redeem"
 
     scheme = models.ForeignKey(FolioScheme, models.CASCADE, related_name="transactions")
     date = models.DateField()
