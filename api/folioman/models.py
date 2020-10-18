@@ -1,3 +1,108 @@
+from django.conf import settings
 from django.db import models
 
-# Create your models here.
+
+class AMC(models.Model):
+    name = models.CharField(max_length=128, unique=True)
+    description = models.TextField(null=True, blank=True)
+    code = models.CharField(max_length=64, unique=True)
+
+    def __str__(self):
+        return self.name
+
+
+class FundCategory(models.Model):
+    name = models.CharField(max_length=32, unique=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Scheme(models.Model):
+    class SchemePlan(models.TextChoices):
+        REGULAR = "REGULAR"
+        DIRECT = "DIRECT"
+
+    name = models.CharField(max_length=256, unique=True)
+    amc = models.ForeignKey(AMC, models.CASCADE, related_name="funds")
+    rta = models.CharField(max_length=12, null=True, blank=True)
+    category = models.ForeignKey(
+        FundCategory, models.PROTECT, blank=True, null=True, related_name="funds"
+    )
+    plan = models.CharField(max_length=8, choices=SchemePlan.choices, default=SchemePlan.REGULAR)
+    rta_code = models.CharField(max_length=32)
+    amc_code = models.CharField(max_length=32, db_index=True)
+    amfi_code = models.CharField(max_length=8, null=True, blank=True, db_index=True)
+    isin = models.CharField(max_length=16, db_index=True)
+    created = models.DateTimeField(auto_now=False, auto_now_add=True)
+    modified = models.DateTimeField(auto_now=True, auto_now_add=False)
+
+    def __str__(self):
+        return f"{self.name} - {self.plan}"
+
+    class Meta:
+        index_together = [("amc_id", "rta_code"), ("rta", "rta_code")]
+
+
+class NAVHistory(models.Model):
+    scheme = models.ForeignKey(Scheme, models.CASCADE)
+    date = models.DateField()
+    nav = models.DecimalField(max_digits=15, decimal_places=4)
+
+    class Meta:
+        unique_together = ("scheme_id", "date")
+
+
+class Portfolio(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="portfolios"
+    )
+    name = models.CharField(max_length=32)
+    email = models.EmailField(unique=True)
+    pan = models.CharField(max_length=10, null=True, blank=True)
+
+    class Meta:
+        unique_together = ("user_id", "name")
+
+    def __str__(self):
+        return self.name
+
+
+class Folio(models.Model):
+    amc = models.ForeignKey(AMC, models.PROTECT)
+    number = models.CharField(max_length=128, unique=True)
+    portfolio = models.ForeignKey(Portfolio, models.CASCADE, related_name="folios")
+    pan = models.CharField(max_length=10, null=True, blank=True)
+    kyc = models.BooleanField(default=False)
+    pan_kyc = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.portfolio.name} - {self.number}"
+
+
+class FolioScheme(models.Model):
+    scheme = models.ForeignKey(Scheme, models.PROTECT)
+    folio = models.ForeignKey(Folio, models.CASCADE)
+    balance = models.DecimalField(max_digits=20, decimal_places=3)
+    balance_date = models.DateField()
+    created = models.DateTimeField(auto_now=False, auto_now_add=True)
+    modified = models.DateTimeField(auto_now=True, auto_now_add=False)
+
+    def __str__(self):
+        return f"{self.scheme.name} - {self.folio.number}"
+
+
+class Transaction(models.Model):
+    class OrderType(models.TextChoices):
+        B = "Buy"
+        S = "Redeem"
+
+    scheme = models.ForeignKey(FolioScheme, models.CASCADE, related_name="transactions")
+    date = models.DateField()
+    order_type = models.CharField(max_length=8, choices=OrderType.choices)
+    amount = models.DecimalField(max_digits=20, decimal_places=2)
+    nav = models.DecimalField(max_digits=15, decimal_places=4)
+    units = models.DecimalField(max_digits=20, decimal_places=3)
+
+    def __str__(self):
+        return f"{self.order_type} @ {self.amount} for {self.units} units"

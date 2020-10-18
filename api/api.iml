@@ -15,6 +15,7 @@
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
     <content url="file://$MODULE_DIR$" />
+    <content url="file://$MODULE_DIR$/../docker" />
     <orderEntry type="jdk" jdkName="Python 3.8 (folioman)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>

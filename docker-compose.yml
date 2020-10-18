@@ -2,16 +2,17 @@ version: '3'
 
 services:
 
-  db:
-    image: mariadb
+  timedb:
+    image: timescale/timescaledb:latest-pg12
     restart: unless-stopped
     volumes:
-    - ./docker/db:/var/lib/mysql
+      - ./docker/db/postgres:/var/lib/postgresql/data
     environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: folioman
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: foliop4sswd
+      POSTGRES_DB: folioman
     ports:
-    - "127.0.0.1:13306:3306"
+      - "127.0.0.1:15432:5432"
 
   cache:
     image: redis:alpine
