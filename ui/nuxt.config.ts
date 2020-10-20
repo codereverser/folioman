@@ -77,6 +77,12 @@ const config: NuxtConfig = {
     "/api/": { target: "http://127.0.0.1:8000" },
   },
 
+  tailwindcss: {
+    config: {
+      separator: "_",
+    },
+  },
+
   // Build Configuration (https://go.nuxtjs.dev/config-build)
   build: {},
 };

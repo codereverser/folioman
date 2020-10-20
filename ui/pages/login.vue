@@ -26,6 +26,7 @@ import {
 } from "@nuxtjs/composition-api";
 
 export default defineComponent({
+  layout: "login",
   setup() {
     const { $auth } = useContext();
 

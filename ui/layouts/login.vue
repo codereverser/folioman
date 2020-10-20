@@ -1,10 +1,7 @@
-<template lang="pug">
-  .flex.h-screen.bg-gray-200.font-roboto
-    Sidebar
-    .flex-1.flex.flex-col.overflow-hidden
-      Header
-      main.flex-1.overflow-x-hidden.overflow-y-auto.bg-gray-200
-        Nuxt
+<template>
+  <div>
+    <Nuxt />
+  </div>
 </template>
 
 <style>
