@@ -4,4 +4,7 @@ from . import views
 
 urlpatterns = [
    path('profile', views.ListPortfolios.as_view(), name='list_portfolios'),
+   path('casparser', views.CASParserView.as_view(), name='casparser'),
 ]
+
+from django.core.files.uploadhandler import InMemoryUploadedFile
