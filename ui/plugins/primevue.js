@@ -1,8 +1,20 @@
 import Vue from "vue";
-import InputText from "primevue/inputtext";
 import Button from "primevue/button";
 import Card from "primevue/card";
+import Column from "primevue/column";
+import DataTable from "primevue/datatable";
+import FileUpload from "primevue/fileupload";
+import InputText from "primevue/inputtext";
+import Panel from "primevue/panel";
+import ProgressBar from "primevue/progressbar";
+import Steps from "primevue/steps";
 
-Vue.component("InputText", InputText);
 Vue.component("Button", Button);
 Vue.component("Card", Card);
+Vue.component("Column", Column);
+Vue.component("DataTable", DataTable);
+Vue.component("FileUpload", FileUpload);
+Vue.component("InputText", InputText);
+Vue.component("Panel", Panel);
+Vue.component("ProgressBar", ProgressBar);
+Vue.component("Steps", Steps);

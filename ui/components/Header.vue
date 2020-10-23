@@ -13,7 +13,12 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, computed, ref, useContext } from "@nuxtjs/composition-api";
+import {
+  defineComponent,
+  computed,
+  ref,
+  useContext,
+} from "@nuxtjs/composition-api";
 import { useSidebar } from "~/hooks/useSidebar";
 
 export default defineComponent({

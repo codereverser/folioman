@@ -12,7 +12,7 @@
         nuxt-link.flex.items-center.mt-4.py-2.px-6.border-l-4(:class="$route.name === 'index' ? activeClass: inactiveClass" to="/")
           i.pi.pi-chart-bar
           span.mx-4 Dashboard
-        nuxt-link.flex.items-center.mt-4.py-2.px-6.border-l-4(:class="$route.name === 'index1' ? activeClass: inactiveClass" to="/login")
+        nuxt-link.flex.items-center.mt-4.py-2.px-6.border-l-4(:class="$route.name === 'index1' ? activeClass: inactiveClass" to="/import")
           i.pi.pi-download
           span.mx-4 Import Portfolio
 </template>
