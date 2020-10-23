@@ -1,4 +1,4 @@
-casparser==0.2.0
+casparser==0.2.1
 celery==5.0.1
 Django==3.1.2
 -e git+https://github.com/celery/django-celery-beat.git#egg=django_celery_beat
