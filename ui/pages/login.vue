@@ -1,6 +1,6 @@
 <template lang="pug">
   .container.items-center.h-screen.flex.justify-center.mx-auto
-    Card(class="md:w-3/5 lg:w-2/5")
+    Card(class="md_w-3/5 lg_w-2/5")
       template(slot="title") Login
       template(slot="content")
         .p-inputgroup.p-input-filled
