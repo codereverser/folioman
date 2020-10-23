@@ -17,6 +17,8 @@
     "@nuxtjs/axios": "^5.12.2",
     "@nuxtjs/composition-api": "^0.13.5",
     "@nuxtjs/proxy": "^2.0.1",
+    "@vuelidate/core": "^2.0.0-alpha.4",
+    "@vuelidate/validators": "^2.0.0-alpha.2",
     "core-js": "^3.6.5",
     "nuxt": "^2.14.6",
     "primeicons": "^4.0.0",

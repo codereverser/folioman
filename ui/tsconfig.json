@@ -25,13 +25,18 @@
     },
     "types": [
       "@types/node",
+      "@nuxtjs/axios",
       "@nuxt/types",
       "@types/nuxtjs__auth"
+    ],
+    "typeRoots": [
+      "./types",
+      "./node_modules/@types"
     ]
   },
   "exclude": [
     "node_modules",
     ".nuxt",
-    "dist"
+    "dist",
   ]
 }
