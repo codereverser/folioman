@@ -8,8 +8,8 @@
         Button.p-button-text.p-button-sm(@click="dropdownOpen = !dropdownOpen" :icon="profileIcon" :label="user" iconPos="right")
         .fixed.inset-0.h-full.w-full.z-10(v-show="dropdownOpen" @click="dropdownOpen = false")
         .absolute.right-0.mt-2.py-2.w-48.rounded-md.shadow-xl.z-20(v-show="dropdownOpen")
-          nuxt-link.block.px-4.py-2.text-sm.hover_bg-indigo-500.hover_text-white(to="/") Profile
-          nuxt-link.block.px-4.py-2.text-sm.hover_bg-indigo-500.hover_text-white(to="/") Log Out
+          nuxt-link.block.px-4.py-2.text-sm.dropdown-item(to="/") Profile
+          nuxt-link.block.px-4.py-2.text-sm.dropdown-item(to="/") Log Out
 </template>
 
 <script lang="ts">
@@ -35,3 +35,10 @@ export default defineComponent({
   },
 });
 </script>
+
+<style lang="scss">
+.dropdown-item:hover {
+  background-color: var(--primary-color);
+  color: var(--primary-color-text);
+}
+</style>
