@@ -1,61 +1,86 @@
 import casparser
-from casparser.exceptions import ParserException
-from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework import parsers, status
+from rest_framework.decorators import action, api_view
+from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.viewsets import ModelViewSet
 
 from .models import Portfolio
-from rest_framework import parsers
+from .serializers import PortfolioSerializer
+from .utils import import_cas
 
 
 class CASParserView(APIView):
     parser_classes = [parsers.MultiPartParser]
 
     def post(self, request: Request, _=None):
-        ret = {
-            'status': 'FAIL',
-            'message': 'Unknown Error',
-            'data': []
-        }
+        ret = {"status": "FAIL", "message": "Unknown Error", "data": []}
         data = request.data
-        if 'password' in data and 'file' in data:
-            password = data['password']
+        if "password" in data and "file" in data:
+            password = data["password"]
             if not isinstance(password, str):
-                ret.update(message='Invalid password')
-                raise ValidationError(detail={'message': ret['message']})
+                ret.update(message="Invalid password")
+                raise ValidationError(detail={"message": ret["message"]})
 
             try:
-                output = casparser.read_cas_pdf(data['file'], password)
-                return Response({
-                    'status': 'OK',
-                    'message': 'Success',
-                    'data': output
-                })
+                output = casparser.read_cas_pdf(data["file"], password)
+                return Response({"status": "OK", "message": "Success", "data": output})
             except Exception as e:
-                ret['message'] = str(e)
+                ret["message"] = str(e)
         return Response(ret)
 
 
-class ListPortfolios(APIView):
-    """
-    List all portfolios belonging to user.
-    """
-    permission_classes = (IsAuthenticated, )
+# noinspection PyUnusedLocal,PyShadowingBuiltins
+class PortfolioViewSet(ModelViewSet):
 
-    def get(self, request: Request, _=None):
-        pfs = Portfolio.objects.filter(user_id=request.user.id)
+    serializer_class = PortfolioSerializer
+
+    def get_queryset(self):
+        return Portfolio.objects.filter(user_id=self.request.user.id)
+
+    def list(self, request, *args, **kwargs):
         data = {
             "user": request.user.username,
             "email": request.user.email,
+            "portfolios": self.serializer_class(self.get_queryset(), many=True).data,
         }
-        items = []
-        for portfolio in pfs:
-            items.append({
-                "name": portfolio.name,
-                "email": portfolio.email,
-                "pan": portfolio.pan
-            })
-        data["portfolios"] = items
         return Response(data)
+
+    @action(["POST"], detail=False)
+    def search(self, request, format=None):
+        email = request.data.get("email")
+        try:
+            obj = Portfolio.objects.get(email=email)
+            if obj.user_id == request.user.id:
+                return Response(PortfolioSerializer(obj).data)
+            else:
+                raise PermissionDenied
+        except Portfolio.DoesNotExist:
+            raise NotFound
+
+
+@api_view(["POST"])
+def cas_import(request):
+
+    ret = {
+        "status": "err",
+        "message": "Unknown error",
+        "added": 0,
+        "ignored": 0,
+        "error": 0,
+    }
+
+    pdf_data = request.data
+    data: casparser.CASParserDataType = pdf_data.get("data", {}) or {}
+
+    try:
+        created, total = import_cas(data, request.user.id)
+    except ValueError as e:
+        raise ValidationError({"detail": str(e)})
+    else:
+        ret.update(
+            {"status": "OK", "message": "Success", "added": created, "ignored": total - created}
+        )
+    return Response(ret)

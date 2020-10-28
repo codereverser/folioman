@@ -34,6 +34,8 @@ class Scheme(models.Model):
     amc_code = models.CharField(max_length=32, db_index=True)
     amfi_code = models.CharField(max_length=8, null=True, blank=True, db_index=True)
     isin = models.CharField(max_length=16, db_index=True)
+    start_date = models.DateField(null=True, blank=True, db_index=True)
+    end_date = models.DateField(null=True, blank=True, db_index=True)
     created = models.DateTimeField(auto_now=False, auto_now_add=True)
     modified = models.DateTimeField(auto_now=True, auto_now_add=False)
 
@@ -95,14 +97,24 @@ class FolioScheme(models.Model):
 class Transaction(models.Model):
     class OrderType(models.TextChoices):
         BUY = "Buy"
+        REINVEST = "Reinvest"
         REDEEM = "Redeem"
 
     scheme = models.ForeignKey(FolioScheme, models.CASCADE, related_name="transactions")
     date = models.DateField()
+    description = (models.TextField(),)
     order_type = models.CharField(max_length=8, choices=OrderType.choices)
     amount = models.DecimalField(max_digits=20, decimal_places=2)
     nav = models.DecimalField(max_digits=15, decimal_places=4)
     units = models.DecimalField(max_digits=20, decimal_places=3)
+
+    @classmethod
+    def get_order_type(cls, description, amount):
+        if amount > 0:
+            if "reinvest" in description.lower():
+                return cls.OrderType.REINVEST
+            return cls.OrderType.BUY
+        return cls.OrderType.REDEEM
 
     def __str__(self):
         return f"{self.order_type} @ {self.amount} for {self.units} units"

@@ -1,4 +1,4 @@
-casparser==0.2.1
+casparser[mupdf]==0.3.2
 celery==5.0.1
 Django==3.1.2
 -e git+https://github.com/celery/django-celery-beat.git#egg=django_celery_beat
@@ -7,6 +7,7 @@ django-environ==0.4.5
 django-redis==4.12.1
 djangorestframework==3.12.1
 djangorestframework-simplejwt==4.4.0
+fuzzywuzzy[speedup]==0.18.0
 lxml==4.6.1
 psycopg2-binary==2.8.6
 python-dateutil==2.8.1
