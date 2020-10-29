@@ -27,6 +27,9 @@ import {
 
 export default defineComponent({
   layout: "login",
+  head: {
+    title: "Login",
+  },
   setup() {
     const { $auth } = useContext();
 

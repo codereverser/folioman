@@ -2,20 +2,18 @@
   div
     Card.m-5
       template(slot="content")
-        Steps(:model="items.list")
-    router-view(v-slot="{Component}" :formData="importData" @prev-page="prevPage($event)" @next-page="nextPage($event)" @complete="complete")
-      keep-alive
-        component(:is="Component")
+        Steps(:model="pageList")
+    NuxtChild(:formData="importData" @prev-page="prevPage($event)" @next-page="nextPage($event)" @complete="complete")
 </template>
 <script lang="ts">
-import { defineComponent, reactive } from "@nuxtjs/composition-api";
+import { defineComponent, reactive, toRefs } from "@nuxtjs/composition-api";
 import { StepEvent, ImportData } from "@/definitions/defs";
 
 export default defineComponent({
   setup(_, { root }) {
     const { $router } = root;
     const items = reactive({
-      list: [
+      pageList: [
         {
           label: "Upload",
           to: "/import",
@@ -23,7 +21,7 @@ export default defineComponent({
         {
           label: "Verify",
           to: "/import/verify",
-        },
+        }
       ],
     });
 
@@ -35,16 +33,16 @@ export default defineComponent({
       if (Object.prototype.hasOwnProperty.call(event, "pdfData")) {
         importData.pdfData = event.pdfData!;
       }
-      $router.push(items.list[event.pageIndex + 1].to);
+      $router.push(items.pageList[event.pageIndex + 1].to);
     };
 
     const prevPage = (event: StepEvent) => {
-      $router.push(items.list[event.pageIndex - 1].to);
+      $router.push(items.pageList[event.pageIndex - 1].to);
     };
     const complete = () => {
       /* hello */
     };
-    return { importData, items, nextPage, prevPage, complete };
+    return { importData, ...toRefs(items), nextPage, prevPage, complete };
   },
 });
 </script>

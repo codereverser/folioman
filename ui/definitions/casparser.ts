@@ -17,6 +17,7 @@ interface Transaction {
   amount: number;
   nav: number;
   units: number;
+  balance: number;
 }
 
 interface Scheme {

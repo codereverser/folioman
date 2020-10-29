@@ -48,7 +48,6 @@ export default defineComponent({
 
     const filePassword = ref("");
     const viewPassword = ref(false);
-
     const rules = {
       filePassword: { required, minLength: minLength(5) },
     };
@@ -61,6 +60,7 @@ export default defineComponent({
       );
     });
 
+    const pageIndex = 0;
     const nextPage = () => {
       $v.value.$touch();
       if ($v.value.$invalid) return;
@@ -80,7 +80,7 @@ export default defineComponent({
           if (data.status !== "OK") {
             error.value = data.message;
           } else {
-            emit("next-page", { pdfData: data.data, pageIndex: 0 });
+            emit("next-page", { pdfData: data.data, pageIndex });
           }
           loading.value = false;
         })
@@ -127,7 +127,8 @@ export default defineComponent({
   & > div:nth-of-type(1) {
     width: 60%;
   }
-  & > div:nth-of-type(2), div:nth-of-type(3) {
+  & > div:nth-of-type(2),
+  div:nth-of-type(3) {
     width: 20%;
   }
 }
