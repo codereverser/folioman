@@ -67,20 +67,17 @@ def cas_import(request):
     ret = {
         "status": "err",
         "message": "Unknown error",
-        "added": 0,
-        "ignored": 0,
-        "error": 0,
+        "num_folios": 0,
+        "transactions": {"total": 0, "added": 0},
     }
 
     pdf_data = request.data
     data: casparser.CASParserDataType = pdf_data.get("data", {}) or {}
 
     try:
-        created, total = import_cas(data, request.user.id)
+        result = import_cas(data, request.user.id)
     except ValueError as e:
         raise ValidationError({"detail": str(e)})
     else:
-        ret.update(
-            {"status": "OK", "message": "Success", "added": created, "ignored": total - created}
-        )
+        ret.update(status="OK", message="Success", **result)
     return Response(ret)

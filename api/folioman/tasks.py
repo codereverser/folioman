@@ -9,28 +9,37 @@ from django.core.cache import cache
 import requests
 
 from taskman import app
-from folioman.models import FolioScheme, NAVHistory, Scheme
+from folioman.models import FolioScheme, NAVHistory, FundScheme
 from .utils import download_bse_star_master_data, import_master_scheme_data
 
 logger = logging.getLogger(__name__)
 
 
+def update_scheme_code(isins, code):
+    FundScheme.objects.filter(isin__in=isins, amfi_code=None).update(amfi_code=code)
+
+
 @app.task(name="AMFICodeMapper")
 def populate_amfi_code_cache():
-    logger.info("Updating code map from AMFI website")
+    logger.info("Updating ISIN <-> AMFI code map from AMFI website")
     url = f"https://www.amfiindia.com/spages/NAVAll.txt?t={int(time.time()*1000)}"
     response = requests.get(url)
     with io.StringIO(response.text) as fp:
         reader = csv.DictReader(fp, delimiter=";")
         for row in reader:
+            isins = []
             isin1 = row.get("ISIN Div Payout/ ISIN Growth")
             isin2 = row.get("ISIN Div Reinvestment")
             code = row.get("Scheme Code")
             if code is not None:
                 if isin1 is not None:
+                    isins.append(isin1)
                     cache.set(isin1, code, 86400)
                 if isin2 is not None:
+                    isins.append(isin2)
                     cache.set(isin2, code, 86400)
+                if len(isins) > 0:
+                    update_scheme_code(isins, code)
 
 
 def get_amfi_code_from_isin(isin):
@@ -44,7 +53,7 @@ def fetch_nav():
         .values_list("scheme_id", flat=True)
         .distinct("scheme_id")
     ):
-        scheme = Scheme.objects.only("id", "amfi_code", "isin").get(pk=sid)
+        scheme = FundScheme.objects.only("id", "amfi_code", "isin").get(pk=sid)
         code = scheme.amfi_code
         if code is None:
             code = get_amfi_code_from_isin(scheme.isin)

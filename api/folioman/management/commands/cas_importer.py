@@ -33,9 +33,14 @@ def cas_importer(password, input_file):
     )
     click.echo("Email : " + click.style(email, fg="green", bold=True))
     try:
-        created, total = import_cas(pdf_data, 1)
+        result = import_cas(pdf_data, 1)
     except ValueError as e:
         click.style("Error while importing CAS :: %s" % str(e), bold=True, fg="red")
     else:
-        click.echo("Total Transactions : " + click.style(f"{total}", fg="green", bold=True))
-        click.echo("Imported : " + click.style(f"{created}", fg="green", bold=True))
+        click.echo(
+            "Total Transactions : "
+            + click.style(f"{result['transactions']['total']}", fg="green", bold=True)
+        )
+        click.echo(
+            "Imported : " + click.style(f"{result['transactions']['total']}", fg="green", bold=True)
+        )
