@@ -12,13 +12,34 @@ const config: NuxtConfig = {
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { hid: "description", name: "description", content: "" },
     ],
-    link: [{ rel: "icon", type: "image/x-icon", href: "/favicon.ico" }],
+    link: [
+      { rel: "icon", type: "image/x-icon", href: "/favicon.ico" },
+      {
+        rel: "icon",
+        type: "image/png",
+        sizes: "32x32",
+        href: "/favicon-32x32.png",
+      },
+      {
+        rel: "icon",
+        type: "image/png",
+        sizes: "16x16",
+        href: "/favicon-16x16.png",
+      },
+      { rel: "manifest", href: "/site.webmanifest" },
+      {
+        rel: "apple-touch-icon",
+        sizes: "180x180",
+        href: "/apple-touch-icon.png",
+      },
+    ],
   },
 
   // Global CSS (https://go.nuxtjs.dev/config-css)
   css: [
     "primevue/resources/primevue.min.css",
-    "primevue/resources/themes/saga-blue/theme.css",
+    // "primevue/resources/themes/saga-blue/theme.css",
+    "primevue/resources/themes/saga-green/theme.css",
     "primeicons/primeicons.css",
   ],
 
@@ -54,7 +75,7 @@ const config: NuxtConfig = {
         endpoints: {
           login: { url: "/api/auth/login", method: "post" },
           logout: false,
-          user: { url: "/api/profile", method: "get" },
+          user: { url: "/api/portfolios/", method: "get" },
         },
         token: {
           property: "access",
