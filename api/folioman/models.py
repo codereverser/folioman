@@ -3,6 +3,8 @@ from django.db import models
 
 
 class AMC(models.Model):
+    """Mutual Fund Asset Management Company (AMC)"""
+
     name = models.CharField(max_length=128, unique=True)
     description = models.TextField(null=True, blank=True)
     code = models.CharField(max_length=64, unique=True)
@@ -12,13 +14,17 @@ class AMC(models.Model):
 
 
 class FundCategory(models.Model):
+    """Fund Category (EQUITY, DEBT etc)"""
+
     name = models.CharField(max_length=32, unique=True)
 
     def __str__(self):
         return self.name
 
 
-class Scheme(models.Model):
+class FundScheme(models.Model):
+    """Mutual fund schemes"""
+
     class SchemePlan(models.TextChoices):
         REGULAR = "REGULAR"
         DIRECT = "DIRECT"
@@ -47,7 +53,7 @@ class Scheme(models.Model):
 
 
 class NAVHistory(models.Model):
-    scheme = models.ForeignKey(Scheme, models.CASCADE)
+    scheme = models.ForeignKey(FundScheme, models.CASCADE)
     date = models.DateField()
     nav = models.DecimalField(max_digits=15, decimal_places=4)
 
@@ -56,6 +62,8 @@ class NAVHistory(models.Model):
 
 
 class Portfolio(models.Model):
+    """User Portfolio"""
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="portfolios"
     )
@@ -71,9 +79,11 @@ class Portfolio(models.Model):
 
 
 class Folio(models.Model):
+    """Mutual Fund Folio"""
+
     amc = models.ForeignKey(AMC, models.PROTECT)
-    number = models.CharField(max_length=128, unique=True)
     portfolio = models.ForeignKey(Portfolio, models.CASCADE, related_name="folios")
+    number = models.CharField(max_length=128, unique=True)
     pan = models.CharField(max_length=10, null=True, blank=True)
     kyc = models.BooleanField(default=False)
     pan_kyc = models.BooleanField(default=False)
@@ -83,7 +93,9 @@ class Folio(models.Model):
 
 
 class FolioScheme(models.Model):
-    scheme = models.ForeignKey(Scheme, models.PROTECT)
+    """Track schemes inside a folio"""
+
+    scheme = models.ForeignKey(FundScheme, models.PROTECT)
     folio = models.ForeignKey(Folio, models.CASCADE)
     balance = models.DecimalField(max_digits=20, decimal_places=3)
     balance_date = models.DateField()
@@ -95,6 +107,8 @@ class FolioScheme(models.Model):
 
 
 class Transaction(models.Model):
+    """Transactions inside a folio scheme"""
+
     class OrderType(models.TextChoices):
         BUY = "Buy"
         REINVEST = "Reinvest"
@@ -102,11 +116,12 @@ class Transaction(models.Model):
 
     scheme = models.ForeignKey(FolioScheme, models.CASCADE, related_name="transactions")
     date = models.DateField()
-    description = (models.TextField(),)
+    description = models.TextField()
     order_type = models.CharField(max_length=8, choices=OrderType.choices)
     amount = models.DecimalField(max_digits=20, decimal_places=2)
     nav = models.DecimalField(max_digits=15, decimal_places=4)
     units = models.DecimalField(max_digits=20, decimal_places=3)
+    balance = models.DecimalField(max_digits=40, decimal_places=3)
 
     @classmethod
     def get_order_type(cls, description, amount):
@@ -118,3 +133,27 @@ class Transaction(models.Model):
 
     def __str__(self):
         return f"{self.order_type} @ {self.amount} for {self.units} units"
+
+
+class DailyValue(models.Model):
+    """Track daily total of amount invested per scheme/folio/portfolio"""
+
+    date = models.DateField(db_index=True)
+    value = models.DecimalField(max_digits=30, decimal_places=2)
+
+    class Meta:
+        abstract = True
+
+
+class SchemeValue(DailyValue):
+    scheme = models.ForeignKey(FolioScheme, models.CASCADE, related_name="values")
+    nav = models.DecimalField(max_digits=15, decimal_places=4)
+    units = models.DecimalField(max_digits=20, decimal_places=3)
+
+
+class FolioValue(DailyValue):
+    folio = models.ForeignKey(Folio, models.CASCADE, related_name="values")
+
+
+class PortfolioValue(DailyValue):
+    portfolio = models.ForeignKey(Portfolio, models.CASCADE, related_name="values")
