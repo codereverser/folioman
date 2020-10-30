@@ -1,5 +1,5 @@
 import casparser
-from rest_framework import parsers, status
+from rest_framework import parsers
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
 from rest_framework.request import Request

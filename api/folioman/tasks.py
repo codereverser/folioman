@@ -7,6 +7,7 @@ import time
 from dateutil.parser import parse as date_parse
 from django.core.cache import cache
 import requests
+from requests.exceptions import RequestException, Timeout
 
 from taskman import app
 from folioman.models import FolioScheme, NAVHistory, FundScheme
@@ -19,11 +20,16 @@ def update_scheme_code(isins, code):
     FundScheme.objects.filter(isin__in=isins, amfi_code=None).update(amfi_code=code)
 
 
-@app.task(name="AMFICodeMapper")
+@app.task(
+    name="AMFICodeMapper",
+    autoretry_for=(RequestException, Timeout),
+    retry_backoff=True,
+    default_retry_delay=120,
+)
 def populate_amfi_code_cache():
     logger.info("Updating ISIN <-> AMFI code map from AMFI website")
     url = f"https://www.amfiindia.com/spages/NAVAll.txt?t={int(time.time()*1000)}"
-    response = requests.get(url)
+    response = requests.get(url, timeout=60)
     with io.StringIO(response.text) as fp:
         reader = csv.DictReader(fp, delimiter=";")
         for row in reader:
@@ -46,7 +52,12 @@ def get_amfi_code_from_isin(isin):
     return cache.get(isin)
 
 
-@app.task(name="NAVFetcher")
+@app.task(
+    name="NAVFetcher",
+    autoretry_for=(RequestException, Timeout),
+    retry_backoff=True,
+    default_retry_delay=120,
+)
 def fetch_nav():
     for sid in (
         FolioScheme.objects.order_by("scheme_id")
@@ -71,7 +82,7 @@ def fetch_nav():
                 from_date = datetime.date(1970, 1, 1)
                 logger.info("Fetching NAV for %s from beginning", scheme.name)
             mfapi_url = f"https://api.mfapi.in/mf/{scheme.amfi_code}"
-            response = requests.get(mfapi_url)
+            response = requests.get(mfapi_url, timeout=60)
             data = response.json()
             for item in reversed(data["data"]):
                 date = date_parse(item["date"], dayfirst=True).date()
@@ -82,7 +93,12 @@ def fetch_nav():
                 )
 
 
-@app.task(name="UpdateMFSchemes")
+@app.task(
+    name="UpdateMFSchemes",
+    autoretry_for=(RequestException, Timeout),
+    retry_backoff=True,
+    default_retry_delay=120,
+)
 def update_mf_schemes():
     master_csv = download_bse_star_master_data()
     return import_master_scheme_data(master_csv)

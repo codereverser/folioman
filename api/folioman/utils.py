@@ -9,7 +9,7 @@ from typing import List
 from casparser.types import CASParserDataType, FolioType
 from dateutil.parser import parse as dateparse
 from django.conf import settings
-from django.db.models import F, Subquery, OuterRef, Sum
+from django.db.models import F, Sum
 from django.utils import timezone
 from fuzzywuzzy import process
 from lxml.html import fromstring
@@ -189,14 +189,14 @@ def download_bse_star_master_data():
             "User-Agent": default_user_agent("folioman-python-requests"),
         }
     )
-    response = session.get(settings.BSE_STARMF_SCHEME_MASTER_URL)
+    response = session.get(settings.BSE_STARMF_SCHEME_MASTER_URL, timeout=30)
     page = fromstring(response.content)
     form_data = {
         x.get("name"): x.get("value")
         for x in page.xpath('.//form[@id="frmOrdConfirm"]//input[@type="hidden"]')
     }
     form_data.update({"ddlTypeOption": "SCHEMEMASTERPHYSICAL", "btnText": "Export to Text"})
-    response = session.post(settings.BSE_STARMF_SCHEME_MASTER_URL, data=form_data)
+    response = session.post(settings.BSE_STARMF_SCHEME_MASTER_URL, data=form_data, timeout=600)
     if response.status_code != 200:
         raise ValueError("Invalid response from BSE. Cannot continue...")
     logger.info("BSE Master data downloaded.")
@@ -226,7 +226,7 @@ def import_master_scheme_data(master_csv: str):
                     amc.save()
                 amc_cache[amc_code] = amc.pk
 
-            category = row["Scheme Type"].strip()
+            category = row["Scheme Type"].strip().upper()
             if category not in cat_cache:
                 try:
                     cat = FundCategory.objects.get(name=category)
@@ -261,10 +261,19 @@ def date_range(from_date: date, to_date: date):
         yield date.fromordinal(ordinal)
 
 
-def update_portfolio_value():
-    pfs = Portfolio.objects.all()
-    qs1 = Transaction.objects.only("date").order_by("date")[:1]
-    qs2 = SchemeValue.objects.only("date").order_by("date")[:1]
+def update_portfolio_value(start_date=None, portfolio_id=None):
+
+    qs1 = Transaction.objects
+    qs2 = SchemeValue.objects
+    if portfolio_id is not None:
+        qs1 = qs1.filter(scheme__folio__portfolio_id=portfolio_id)
+        qs2 = qs2.filter(scheme__folio__portfolio_id=portfolio_id)
+    if isinstance(start_date, date):
+        qs1 = qs1.filter(date__gte=start_date)
+        qs2 = qs2.filter(date__gte=start_date)
+
+    qs1 = qs1.order_by("date")[:1]
+    qs2 = qs2.order_by("date")[:1]
     if qs1.count() == 0:
         date1 = timezone.now().date()
     else:
@@ -273,25 +282,28 @@ def update_portfolio_value():
         date2 = timezone.now().date()
     else:
         date2 = qs2[0].date
-
+    logging.info("Date finder")
     from_date = min(date1, date2)
     today = timezone.now().date()
-    svals = {}
+    scheme_vals = {}
 
-    sq = SchemeValue.objects.filter(scheme_id=OuterRef("scheme_id")).order_by("date")
-    for sv in (
-        SchemeValue.objects.annotate(first_date=Subquery(sq.values("date")[:1]))
-        .filter(date=F("first_date"))
-        .only("scheme_id", "units")
-    ):
-        svals[sv.scheme_id] = {"units": sv.units, "value": Decimal(0)}
+    sv_qs = SchemeValue.objects.filter(date__lt=from_date)
+    if portfolio_id is not None:
+        sv_qs = sv_qs.filter(scheme__folio__portfolio_id=portfolio_id)
+    for sv in sv_qs.order_by("scheme_id", "-date").distinct("scheme_id").only("scheme_id", "units"):
+        scheme_vals[sv.scheme_id] = {"units": sv.units, "value": Decimal(0), "txn": False}
+
     for dt in date_range(from_date, today):
-        for transaction in Transaction.objects.filter(date=dt):
+        txn_qs = Transaction.objects
+        if portfolio_id is not None:
+            txn_qs = txn_qs.filter(scheme__folio__portfolio_id=portfolio_id)
+        for transaction in txn_qs.filter(date=dt):
             fs = transaction.scheme
-            if fs.id not in svals:
-                svals[fs.id] = {"units": Decimal(0), "value": Decimal(0)}
-            svals[fs.id]["units"] += transaction.units
-        for fs_id, sval_obj in svals.items():
+            if fs.id not in scheme_vals:
+                scheme_vals[fs.id] = {"units": Decimal(0), "value": Decimal(0), "txn": False}
+            scheme_vals[fs.id]["units"] += transaction.units
+            scheme_vals[fs.id]["txn"] = True
+        for fs_id, scheme_val in scheme_vals.items():
             fs = FolioScheme.objects.get(pk=fs_id)
             qs = NAVHistory.objects.filter(scheme_id=fs.scheme.id, date__lte=dt).order_by("-date")[
                 :1
@@ -300,32 +312,45 @@ def update_portfolio_value():
                 nav = Decimal(0)
             else:
                 nav = qs[0].nav
-            sval_obj["value"] = sval_obj["units"] * nav
-            if sval_obj["units"] < 1e-3 or sval_obj["value"] < 1e-3:
+            scheme_val["value"] = scheme_val["units"] * nav
+            if (scheme_val["units"] < 1e-3 or scheme_val["value"] < 1e-3) and not scheme_val["txn"]:
+                # Only save if 0 units has happened due to a transaction.
                 continue
+            scheme_val["txn"] = False
             SchemeValue.objects.update_or_create(
                 scheme_id=fs_id,
                 date=dt,
                 defaults={
-                    "units": sval_obj["units"],
-                    "value": sval_obj["value"],
-                    "nav": sval_obj["value"] / sval_obj["units"],
+                    "units": scheme_val["units"],
+                    "value": scheme_val["value"],
+                    "nav": scheme_val["value"] / scheme_val["units"]
+                    if scheme_val["units"] >= 1e-3
+                    else 0,
                 },
             )
 
+        sv_qs = SchemeValue.objects
+        if portfolio_id is not None:
+            sv_qs = sv_qs.filter(scheme__folio__portfolio_id=portfolio_id)
+
         for item in (
-            SchemeValue.objects.filter(date=dt)
+            sv_qs.filter(date=dt)
             .values(folio_id=F("scheme__folio_id"))
             .annotate(value=Sum("value"))
         ):
             FolioValue.objects.update_or_create(
                 folio_id=item["folio_id"], date=dt, defaults={"value": item["value"]}
             )
+
+        fv_qs = FolioValue.objects
+        if portfolio_id is not None:
+            fv_qs = fv_qs.filter(folio__portfolio_id=portfolio_id)
         for item in (
-            FolioValue.objects.filter(date=dt)
+            fv_qs.filter(date=dt)
             .values(pf_id=F("folio__portfolio_id"))
             .annotate(value=Sum("value"))
         ):
             PortfolioValue.objects.update_or_create(
                 portfolio_id=item["pf_id"], date=dt, defaults={"value": item["value"]}
             )
+        logger.info('Processed %s', dt.isoformat())
