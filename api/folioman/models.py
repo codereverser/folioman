@@ -113,6 +113,7 @@ class Transaction(models.Model):
         BUY = "Buy"
         REINVEST = "Reinvest"
         REDEEM = "Redeem"
+        SWITCH = "Switch"
 
     scheme = models.ForeignKey(FolioScheme, models.CASCADE, related_name="transactions")
     date = models.DateField()
@@ -122,10 +123,14 @@ class Transaction(models.Model):
     nav = models.DecimalField(max_digits=15, decimal_places=4)
     units = models.DecimalField(max_digits=20, decimal_places=3)
     balance = models.DecimalField(max_digits=40, decimal_places=3)
+    created = models.DateTimeField(auto_now_add=True)
+    modified = models.DateTimeField(auto_now=True)
 
     @classmethod
     def get_order_type(cls, description, amount):
-        if amount > 0:
+        if "switch" in description.lower():
+            return cls.OrderType.SWITCH
+        elif amount > 0:
             if "reinvest" in description.lower():
                 return cls.OrderType.REINVEST
             return cls.OrderType.BUY
@@ -139,6 +144,7 @@ class DailyValue(models.Model):
     """Track daily total of amount invested per scheme/folio/portfolio"""
 
     date = models.DateField(db_index=True)
+    invested = models.DecimalField(max_digits=30, decimal_places=2)
     value = models.DecimalField(max_digits=30, decimal_places=2)
 
     class Meta:

@@ -1,15 +1,15 @@
-casparser[mupdf]==0.3.2
-celery==5.0.1
-Django==3.1.2
+casparser[mupdf]==0.3.5
+celery==5.0.2
+Django==3.1.3
 -e git+https://github.com/celery/django-celery-beat.git#egg=django_celery_beat
 django-click==2.2.0
 django-environ==0.4.5
 django-redis==4.12.1
-djangorestframework==3.12.1
-djangorestframework-simplejwt==4.4.0
+djangorestframework==3.12.2
+djangorestframework-simplejwt==4.6.0
 fuzzywuzzy[speedup]==0.18.0
 lxml==4.6.1
 psycopg2-binary==2.8.6
 python-dateutil==2.8.1
 redis==3.5.3
-requests==2.24.0
+requests==2.25.0
