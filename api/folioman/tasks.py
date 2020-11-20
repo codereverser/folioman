@@ -1,55 +1,16 @@
-import csv
 import datetime
-import io
 import logging
-import time
 
 from dateutil.parser import parse as date_parse
-from django.core.cache import cache
 import requests
 from requests.exceptions import RequestException, Timeout
 
 from taskman import app
 from folioman.models import FolioScheme, NAVHistory, FundScheme
-from .utils import download_bse_star_master_data, import_master_scheme_data
+from .importers.master import import_master_scheme_data
+from .utils import update_portfolio_value
 
 logger = logging.getLogger(__name__)
-
-
-def update_scheme_code(isins, code):
-    FundScheme.objects.filter(isin__in=isins, amfi_code=None).update(amfi_code=code)
-
-
-@app.task(
-    name="AMFICodeMapper",
-    autoretry_for=(RequestException, Timeout),
-    retry_backoff=True,
-    default_retry_delay=120,
-)
-def populate_amfi_code_cache():
-    logger.info("Updating ISIN <-> AMFI code map from AMFI website")
-    url = f"https://www.amfiindia.com/spages/NAVAll.txt?t={int(time.time()*1000)}"
-    response = requests.get(url, timeout=60)
-    with io.StringIO(response.text) as fp:
-        reader = csv.DictReader(fp, delimiter=";")
-        for row in reader:
-            isins = []
-            isin1 = row.get("ISIN Div Payout/ ISIN Growth")
-            isin2 = row.get("ISIN Div Reinvestment")
-            code = row.get("Scheme Code")
-            if code is not None:
-                if isin1 is not None:
-                    isins.append(isin1)
-                    cache.set(isin1, code, 86400)
-                if isin2 is not None:
-                    isins.append(isin2)
-                    cache.set(isin2, code, 86400)
-                if len(isins) > 0:
-                    update_scheme_code(isins, code)
-
-
-def get_amfi_code_from_isin(isin):
-    return cache.get(isin)
 
 
 @app.task(
@@ -58,21 +19,16 @@ def get_amfi_code_from_isin(isin):
     retry_backoff=True,
     default_retry_delay=120,
 )
-def fetch_nav():
-    for sid in (
-        FolioScheme.objects.order_by("scheme_id")
-        .values_list("scheme_id", flat=True)
-        .distinct("scheme_id")
-    ):
+def fetch_nav(scheme_ids=None):
+    qs = FolioScheme.objects
+    if isinstance(scheme_ids, list):
+        qs = qs.filter(scheme_id__in=scheme_ids)
+    for sid in qs.order_by("scheme_id").values_list("scheme_id", flat=True).distinct("scheme_id"):
         scheme = FundScheme.objects.only("id", "amfi_code", "isin").get(pk=sid)
         code = scheme.amfi_code
         if code is None:
-            code = get_amfi_code_from_isin(scheme.isin)
-            if code is None:
-                logger.warning("Unable to lookup code for %s" % scheme.name)
-                continue
-            scheme.amfi_code = code
-            scheme.save()
+            logger.warning("Unable to lookup code for %s" % scheme.name)
+            continue
         if scheme.amfi_code is not None:
             nav = NAVHistory.objects.filter(scheme_id=scheme.id).order_by("-date").first()
             if nav is not None:
@@ -100,5 +56,12 @@ def fetch_nav():
     default_retry_delay=120,
 )
 def update_mf_schemes():
-    master_csv = download_bse_star_master_data()
-    return import_master_scheme_data(master_csv)
+    retval = import_master_scheme_data()
+    return retval
+
+
+@app.task(
+    name="UpdatePortfolios",
+)
+def update_portfolios(from_date=None, portfolio_id=None):
+    update_portfolio_value(start_date=from_date, portfolio_id=portfolio_id)

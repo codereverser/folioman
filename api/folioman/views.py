@@ -9,7 +9,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from .models import Portfolio
 from .serializers import PortfolioSerializer
-from .utils import import_cas
+from .importers.cas import import_cas
 
 
 class CASParserView(APIView):

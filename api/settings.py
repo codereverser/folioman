@@ -182,3 +182,8 @@ CELERY_BROKER_URL = env("CELERY_BROKER_URL")
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 BSE_STARMF_SCHEME_MASTER_URL = "https://bsestarmf.in/RptSchemeMaster.aspx"
+
+QUANDL_API_KEY = env("QUANDL_API_KEY")
+QUANDL_METADATA_URL = "https://www.quandl.com/api/v3/databases/AMFI/metadata"
+
+AMFI_SCHEME_DATA_URL = "http://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0"

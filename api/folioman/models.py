@@ -16,10 +16,17 @@ class AMC(models.Model):
 class FundCategory(models.Model):
     """Fund Category (EQUITY, DEBT etc)"""
 
-    name = models.CharField(max_length=32, unique=True)
+    class MainCategory(models.TextChoices):
+        EQUITY = "EQUITY"
+        DEBT = "DEBT"
+        HYBRID = "HYBRID"
+        OTHER = "OTHER"
+
+    type = models.CharField(max_length=8, choices=MainCategory.choices, default=MainCategory.EQUITY)
+    subtype = models.CharField(max_length=64)
 
     def __str__(self):
-        return self.name
+        return f"{self.type} - {self.subtype}"
 
 
 class FundScheme(models.Model):

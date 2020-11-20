@@ -2,7 +2,8 @@ import logging
 
 import djclick as click
 
-from folioman.utils import download_bse_star_master_data, import_master_scheme_data
+from folioman.importers.bse import import_master_scheme_data
+from folioman.importers.fetchers import fetch_bse_star_master_data
 
 BSE_STARMF_SCHEME_MASTER_URL = "https://bsestarmf.in/RptSchemeMaster.aspx"
 
@@ -22,7 +23,7 @@ def load_schemes(input_file):
         with open(input_file, "r") as fp:
             master_data = fp.read()
     else:
-        master_data = download_bse_star_master_data()
+        master_data = fetch_bse_star_master_data()
 
     logger.info("Importing to database")
     total, valid, inserted = import_master_scheme_data(master_data)
