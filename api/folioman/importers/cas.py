@@ -121,10 +121,8 @@ def import_cas(data: CASParserDataType, user_id):
                 num_created += created
                 num_total += 1
     # if num_created > 0:
-    chord([fetch_nav.s(fund_scheme_ids)])(
-        update_portfolios.s(
-            from_date=timezone.now() - timezone.timedelta(hours=1), portfolio_id=pf.id
-        )
+    fetch_nav.delay(
+        scheme_ids=fund_scheme_ids, update_portfolio={"from_date": "auto", "portfolio_id": pf.id}
     )
     return {
         "num_folios": new_folios,

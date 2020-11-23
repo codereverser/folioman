@@ -1,5 +1,6 @@
 import datetime
 import logging
+import time
 
 from dateutil.parser import parse as date_parse
 import requests
@@ -7,6 +8,7 @@ from requests.exceptions import RequestException, Timeout
 
 from taskman import app
 from folioman.models import FolioScheme, NAVHistory, FundScheme
+from django_celery_beat.models import PeriodicTask
 from .importers.master import import_master_scheme_data
 from .utils import update_portfolio_value
 
@@ -14,12 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 @app.task(
+    bind=True,
     name="NAVFetcher",
     autoretry_for=(RequestException, Timeout),
     retry_backoff=True,
     default_retry_delay=120,
 )
-def fetch_nav(scheme_ids=None):
+def fetch_nav(self, scheme_ids=None, update_portfolio_kwargs=None):
     qs = FolioScheme.objects
     if isinstance(scheme_ids, list):
         qs = qs.filter(scheme_id__in=scheme_ids)
@@ -47,6 +50,21 @@ def fetch_nav(scheme_ids=None):
                 NAVHistory.objects.get_or_create(
                     scheme_id=scheme.id, date=date, defaults={"nav": item["nav"]}
                 )
+            time.sleep(2)
+    kwargs = {}
+    if isinstance(update_portfolio_kwargs, dict):
+        kwargs.update(update_portfolio_kwargs)
+    else:
+        task = (
+            PeriodicTask.objects.filter(task=self.name)
+            .only("last_run_at")
+            .order_by("-last_run_at")
+            .first()
+        )
+        if task and task.last_run_at:
+            kwargs.update(from_date="auto")
+    logger.info("Calling update portfolios with arguments %s", str(kwargs))
+    update_portfolios.delay(**kwargs)
 
 
 @app.task(

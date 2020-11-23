@@ -40,6 +40,9 @@ services:
 
   cache:
     image: redis:alpine
+    command: [ "redis-server", "--appendonly", "yes" ]
+    volumes:
+      - ./docker/cache:/data
     ports:
       - "127.0.0.1:16379:6379"
 

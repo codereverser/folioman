@@ -129,7 +129,9 @@ class Transaction(models.Model):
     amount = models.DecimalField(max_digits=20, decimal_places=2)
     nav = models.DecimalField(max_digits=15, decimal_places=4)
     units = models.DecimalField(max_digits=20, decimal_places=3)
+    invested = models.DecimalField(max_digits=30, decimal_places=2, default=0)
     balance = models.DecimalField(max_digits=40, decimal_places=3)
+    avg_nav = models.DecimalField(max_digits=20, decimal_places=8, default=0)
     created = models.DateTimeField(auto_now_add=True)
     modified = models.DateTimeField(auto_now=True)
 
@@ -160,13 +162,23 @@ class DailyValue(models.Model):
 
 class SchemeValue(DailyValue):
     scheme = models.ForeignKey(FolioScheme, models.CASCADE, related_name="values")
+    avg_nav = models.DecimalField(max_digits=15, decimal_places=4)
     nav = models.DecimalField(max_digits=15, decimal_places=4)
-    units = models.DecimalField(max_digits=20, decimal_places=3)
+    balance = models.DecimalField(max_digits=20, decimal_places=3)
+
+    class Meta:
+        unique_together = ("scheme_id", "date")
 
 
 class FolioValue(DailyValue):
     folio = models.ForeignKey(Folio, models.CASCADE, related_name="values")
 
+    class Meta:
+        unique_together = ("folio_id", "date")
+
 
 class PortfolioValue(DailyValue):
     portfolio = models.ForeignKey(Portfolio, models.CASCADE, related_name="values")
+
+    class Meta:
+        unique_together = ("portfolio_id", "date")

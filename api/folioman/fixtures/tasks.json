@@ -16,7 +16,7 @@
     "day_of_week": "*",
     "day_of_month": "*",
     "month_of_year": "*",
-    "timezone": "UTC"
+    "timezone": "Asia/Kolkata"
   }
 },
 {
@@ -24,11 +24,11 @@
   "pk": 2,
   "fields": {
     "minute": "0",
-    "hour": "2",
+    "hour": "7",
     "day_of_week": "0",
     "day_of_month": "*",
     "month_of_year": "*",
-    "timezone": "UTC"
+    "timezone": "Asia/Kolkata"
   }
 },
 {
