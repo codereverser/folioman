@@ -86,7 +86,7 @@ def import_master_scheme_data():
                     amc_id=amc_cache[amc_code],
                     rta=row["RTA Agent Code"].strip(),
                     category_id=category_id,
-                    plan="DIRECT" if "DIRECT" in row["Scheme Plan"] else "NORMAL",
+                    plan="DIRECT" if "DIRECT" in row["Scheme Plan"] else "REGULAR",
                     rta_code=row["Channel Partner Code"].strip(),
                     amc_code=row["AMC Scheme Code"].strip(),
                     amfi_code=amfi_code,
