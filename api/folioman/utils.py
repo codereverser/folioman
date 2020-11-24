@@ -12,6 +12,7 @@ import pandas as pd
 from tablib import Dataset
 
 from folioman.models import (
+    FolioScheme,
     FundScheme,
     Transaction,
     NAVHistory,
@@ -65,11 +66,6 @@ def get_closest_scheme(rta, scheme_name, rta_code=None, amc_code=None):
     return scheme_id
 
 
-def date_range(from_date: date, to_date: date):
-    for ordinal in range(from_date.toordinal(), to_date.toordinal()):
-        yield date.fromordinal(ordinal)
-
-
 def bulk_import_daily_values(resource_cls: DailyValueResource.__class__, query):
     ds = Dataset()
     ds.dict = query
@@ -86,15 +82,26 @@ def bulk_import_daily_values(resource_cls: DailyValueResource.__class__, query):
 
 def update_portfolio_value(start_date=None, portfolio_id=None):
     transactions = []
+    today = timezone.now().date()
     logger.info("Fetching transactions")
-    for item in (
-        Transaction.objects.only(
-            "date", "amount", "units", "balance", "scheme_id", "scheme__scheme_id"
-        )
-        .select_related("scheme")
-        .order_by("scheme_id", "date")
-        .all()
-    ):
+    qs = Transaction.objects.only(
+        "date", "amount", "units", "balance", "scheme_id", "scheme__scheme_id"
+    )
+    if start_date == "auto":
+        obj = SchemeValue.objects.only("date").order_by("-date").first()
+        if obj is not None:
+            start_date = obj.date
+    elif not (start_date is None or isinstance(start_date, date)):
+        logger.info("Invalid start date : %s", start_date)
+        start_date = None
+
+    if start_date is not None:
+        qs = qs.filter(date__gte=start_date)
+
+    if portfolio_id is not None:
+        qs = qs.filter(scheme__folio__portfolio_id=portfolio_id)
+
+    for item in qs.order_by("scheme_id", "date").all():
         transactions.append(
             [
                 item.date,
@@ -102,65 +109,96 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
                 item.units,
                 item.balance,
                 item.scheme_id,
-                item.scheme.scheme_id,
             ]
         )
-    df = pd.DataFrame(
-        transactions, columns=["date", "amount", "units", "balance", "scheme", "fundscheme"]
-    )
-    scheme_ids = df.scheme.unique()
+    df = pd.DataFrame(transactions, columns=["date", "amount", "units", "balance", "scheme"])
+
+    qs = FolioScheme.objects
+    if portfolio_id is not None:
+        qs = qs.filter(folio__portfolio_id=portfolio_id)
+
+    from_date_min = today
+    schemes = qs.values_list("id", "scheme_id").all()
     dfs = []
     logger.info("Computing daily scheme values..")
-    for scheme_id in scheme_ids:
-        df1 = df[df.scheme == scheme_id].copy()
-        if len(df1) == 0:
-            continue
+    for scheme_id, fund_scheme_id in schemes:
+        scheme = FolioScheme.objects.get(pk=scheme_id)
 
-        df1["date"] = pd.to_datetime(df1["date"])
-
-        fund_scheme_id = df1.iloc[0].fundscheme
-        from_date = df1.iloc[0].date
-        today = timezone.now().date()
-
-        scheme_val = (
-            SchemeValue.objects.filter(scheme_id=scheme_id, date__lt=from_date)
+        scheme_transactions = df[df.scheme == scheme_id].copy()
+        scheme_val: SchemeValue = (
+            SchemeValue.objects.filter(scheme_id=scheme_id, date__lt=start_date)
             .order_by("-date")
-            .only("invested", "avg_nav")
             .first()
         )
-        df1["invested"] = 0
-        df1["avg_nav"] = 0
-        if scheme_val:
-            invested = scheme_val.invested
-            nav = scheme_val.avg_nav
-        else:
-            invested = 0
-            nav = 0
-        for idx, row in df1.iterrows():
-            if row.amount > 0:
-                invested += row.amount
-                nav = invested / row.balance
+
+        from_date = None
+        to_date = None
+        columns = ["invested", "avg_nav", "balance", "nav", "value"]
+
+        initial_data = None
+        if scheme_val is not None:
+            from_date = scheme_val.date
+            if scheme_val.balance <= 1e-3:
+                to_date = scheme_val.date
             else:
-                invested += nav * row.units
+                to_date = today
+            initial_data = {
+                "invested": scheme_val.invested,
+                "avg_nav": scheme_val.avg_nav,
+                "balance": scheme_val.balance,
+                "nav": scheme_val.nav,
+                "value": scheme_val.value,
+            }
 
-            df1.loc[idx, "invested"] = invested
-            df1.loc[idx, "avg_nav"] = nav
-
-        if df1.iloc[-1].balance < 1e-3:
-            to_date = df1.iloc[-1].date
+        if len(scheme_transactions) == 0:
+            if scheme_val is None or scheme_val.balance <= 1e-3:
+                logger.info("Ignoring scheme :: %s", scheme)
+                continue
         else:
-            to_date = today
+            scheme_transactions["date"] = pd.to_datetime(scheme_transactions["date"])
+            if from_date is None:
+                from_date = scheme_transactions.iloc[0].date
+            scheme_transactions["invested"] = 0
+            scheme_transactions["avg_nav"] = 0
+            if scheme_val:
+                invested = float(scheme_val.invested)
+                nav = float(scheme_val.invested / scheme_val.balance)
+            else:
+                invested = 0
+                nav = 0
+            for idx, row in scheme_transactions.iterrows():
+                if row.amount > 0:
+                    invested += float(row.amount)
+                    nav = invested / float(row.balance)
+                else:
+                    invested += nav * float(row.units)
+
+                scheme_transactions.loc[idx, "invested"] = invested
+                scheme_transactions.loc[idx, "avg_nav"] = nav
+
+            if scheme_transactions.iloc[-1].balance < 1e-3:
+                to_date = scheme_transactions.iloc[-1].date
+            else:
+                to_date = today
+
+        if from_date is None or to_date is None:
+            logger.info("Ignoring scheme... :: %s", scheme)
+            continue
+
+        from_date_min = min(from_date, from_date_min)
 
         index = pd.date_range(from_date, to_date)
-        columns = ["invested", "avg_nav", "balance", "nav", "value"]
         scheme_vals = pd.DataFrame(
             data=[[np.nan] * len(columns)] * len(index), index=index, columns=columns
         )
+        if initial_data is not None:
+            scheme_vals.iloc[0] = initial_data.values()
 
-        dfd = df1.set_index("date")
-        scheme_vals.loc[dfd.index, ["invested", "avg_nav", "balance"]] = dfd[
-            ["invested", "avg_nav", "balance"]
-        ]
+        if len(scheme_transactions) > 0:
+            dfd = scheme_transactions.set_index("date")
+            scheme_vals.loc[dfd.index, ["invested", "avg_nav", "balance"]] = dfd[
+                ["invested", "avg_nav", "balance"]
+            ]
 
         qs = (
             NAVHistory.objects.filter(
@@ -193,7 +231,8 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
     logger.info("SchemeValue Imported")
     logger.info("Updating FolioValue")
     query = (
-        SchemeValue.objects.annotate(folio__id=F("scheme__folio_id"))
+        SchemeValue.objects.filter(date__gte=from_date_min)
+        .annotate(folio__id=F("scheme__folio_id"))
         .values("date", "folio__id")
         .annotate(value=Sum("value"), invested=Sum("invested"))
     )
@@ -201,7 +240,8 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
     logger.info("FolioValue updated")
     logger.info("Updating PortfolioValue")
     query = (
-        FolioValue.objects.annotate(portfolio__id=F("folio__portfolio_id"))
+        FolioValue.objects.filter(date__gte=from_date_min)
+        .annotate(portfolio__id=F("folio__portfolio_id"))
         .values("date", "portfolio__id")
         .annotate(value=Sum("value"), invested=Sum("invested"))
     )
