@@ -12,6 +12,10 @@ class AMC(models.Model):
     def __str__(self):
         return self.name
 
+    class Meta:
+        verbose_name = "AMC"
+        verbose_name_plural = "AMCs"
+
 
 class FundCategory(models.Model):
     """Fund Category (EQUITY, DEBT etc)"""
@@ -27,6 +31,10 @@ class FundCategory(models.Model):
 
     def __str__(self):
         return f"{self.type} - {self.subtype}"
+
+    class Meta:
+        verbose_name = "FundCategory"
+        verbose_name_plural = "Fund Categories"
 
 
 class FundScheme(models.Model):
@@ -57,6 +65,8 @@ class FundScheme(models.Model):
 
     class Meta:
         index_together = [("amc_id", "rta_code"), ("rta", "rta_code")]
+        verbose_name = "Fund Scheme"
+        verbose_name_plural = "Fund Schemes"
 
 
 class NAVHistory(models.Model):
@@ -162,7 +172,7 @@ class DailyValue(models.Model):
 
 class SchemeValue(DailyValue):
     scheme = models.ForeignKey(FolioScheme, models.CASCADE, related_name="values")
-    avg_nav = models.DecimalField(max_digits=15, decimal_places=4)
+    avg_nav = models.DecimalField(max_digits=30, decimal_places=10)
     nav = models.DecimalField(max_digits=15, decimal_places=4)
     balance = models.DecimalField(max_digits=20, decimal_places=3)
 
