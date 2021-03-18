@@ -32,23 +32,21 @@
     "@nuxtjs/eslint-config-typescript": "^6.0.0",
     "@nuxtjs/eslint-module": "^3.0.2",
     "@nuxtjs/stylelint-module": "^4.0.0",
-    "@nuxtjs/tailwindcss": "^3.4.3",
-    "@tailwindcss/postcss7-compat": "^2.0.3",
+    "@nuxtjs/tailwindcss": "^4.0.1",
     "@types/nuxtjs__auth": "^4.8.7",
-    "autoprefixer": "^9.8.6",
+    "autoprefixer": "^10.2.5",
     "eslint": "^7.22.0",
     "eslint-config-prettier": "^8.1.0",
     "eslint-plugin-nuxt": "^2.0.0",
     "eslint-plugin-prettier": "^3.3.1",
     "node-sass": "^5.0.0",
-    "postcss": "^7.0.35",
+    "postcss": "^8.2.8",
     "prettier": "^2.2.1",
     "pug": "^3.0.2",
     "pug-plain-loader": "^1.1.0",
     "sass-loader": "^10.1.1",
     "stylelint": "^13.12.0",
     "stylelint-config-prettier": "^8.0.2",
-    "stylelint-config-standard": "^21.0.0",
-    "tailwindcss": "npm:@tailwindcss/postcss7-compat@^2.0.3"
+    "stylelint-config-standard": "^21.0.0"
   }
 }

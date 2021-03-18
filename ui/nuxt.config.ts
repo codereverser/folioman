@@ -101,6 +101,7 @@ const config: NuxtConfig = {
   tailwindcss: {
     config: {
       separator: "_",
+      jit: true,
     },
   },
 
