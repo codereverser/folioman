@@ -27,7 +27,7 @@ x-celery: &celery-app
 services:
 
   timedb:
-    image: timescale/timescaledb:latest-pg12
+    image: timescale/timescaledb:latest-pg13
     restart: unless-stopped
     volumes:
       - ./docker/db/postgres:/var/lib/postgresql/data
