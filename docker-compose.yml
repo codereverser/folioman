@@ -48,7 +48,7 @@ services:
 
   api:
     build: ./api
-    command: bash -c "/wait && python /api/manage.py migrate --noinput && python /api/manage.py runserver 0.0.0.0:8000"
+    command: bash -c "/wait && /venv/bin/python /api/manage.py migrate --noinput && /venv/bin/python /api/manage.py runserver 0.0.0.0:8000"
     <<: *default-app
     ports:
       - "127.0.0.1:8000:8000"
@@ -58,8 +58,8 @@ services:
 
   beat:
     <<: *celery-app
-    command: bash -c "/wait && celery -A taskman beat -l INFO --pidfile=/tmp/beat1.pid"
+    command: bash -c "/wait && /venv/bin/celery -A taskman beat -l INFO --pidfile=/tmp/beat.pid"
 
   worker:
     <<: *celery-app
-    command: bash -c "/wait && celery -A taskman worker -l INFO"
+    command: bash -c "/wait && /venv/bin/celery -A taskman worker -l INFO"
