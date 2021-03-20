@@ -3,7 +3,7 @@ import io
 import re
 
 from dateutil.parser import parse as dateparse
-from fuzzywuzzy import fuzz, process
+from rapidfuzz import fuzz, process
 
 from folioman.models import AMC, FundCategory, FundScheme
 from .fetcher import fetch_amfi_scheme_data, fetch_bse_star_master_data, fetch_quandl_amfi_metadata
@@ -57,7 +57,7 @@ def import_master_scheme_data():
                     if cat_str.lower().strip() == "growth":
                         category_id = categories["EQUITY - NA"]
                     else:
-                        closest_match, _ = process.extractOne(
+                        closest_match, *_ = process.extractOne(
                             cat_str, categories.keys(), scorer=fuzz.token_sort_ratio
                         )
                         category_id = categories[closest_match]
@@ -67,7 +67,7 @@ def import_master_scheme_data():
                     real_category = category_map[category]
                     category_id = categories[real_category]
                 else:
-                    match, score = process.extractOne(
+                    match, score, _ = process.extractOne(
                         row["Scheme Name"].split("-")[0],
                         subtypes.keys(),
                         scorer=fuzz.token_set_ratio,

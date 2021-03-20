@@ -1,7 +1,7 @@
 casparser[mupdf]==0.4.4
 celery==5.0.5
 Django==3.1.7
--e git+https://github.com/celery/django-celery-beat.git#egg=django_celery_beat
+django-celery-beat==2.2.0
 django-click==2.2.0
 django-environ==0.4.5
 django-import-export==2.5.0

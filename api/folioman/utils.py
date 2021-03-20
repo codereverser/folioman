@@ -61,7 +61,7 @@ def get_closest_scheme(rta, scheme_name, rta_code=None, amc_code=None):
     if qs.count() == 0:
         raise ValueError("No schemes found")
     schemes = dict(qs.values_list("name", "pk"))
-    key, _ = process.extractOne(scheme_name, schemes.keys())
+    key, *_ = process.extractOne(scheme_name, schemes.keys())
     scheme_id = schemes[key]
     return scheme_id
 
@@ -91,6 +91,8 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
         obj = SchemeValue.objects.only("date").order_by("-date").first()
         if obj is not None:
             start_date = obj.date
+        else:
+            start_date = None
     elif not (start_date is None or isinstance(start_date, date)):
         logger.info("Invalid start date : %s", start_date)
         start_date = None
