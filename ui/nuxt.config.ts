@@ -4,6 +4,13 @@ const config: NuxtConfig = {
   // Disable server-side rendering (https://go.nuxtjs.dev/ssr-mode)
   ssr: false,
 
+  vue: {
+    config: {
+      devtools: true,
+      productionTip: false,
+    },
+  },
+
   // Global page headers (https://go.nuxtjs.dev/config-head)
   head: {
     title: "folioman",
@@ -36,15 +43,10 @@ const config: NuxtConfig = {
   },
 
   // Global CSS (https://go.nuxtjs.dev/config-css)
-  css: [
-    "primevue/resources/primevue.min.css",
-    // "primevue/resources/themes/saga-blue/theme.css",
-    "primevue/resources/themes/saga-green/theme.css",
-    "primeicons/primeicons.css",
-  ],
+  css: [],
 
   // Plugins to run before rendering page (https://go.nuxtjs.dev/config-plugins)
-  plugins: [{ src: "~/plugins/primevue.js", mode: "client" }],
+  plugins: [],
 
   // Auto import components (https://go.nuxtjs.dev/config-components)
   components: true,
@@ -62,6 +64,7 @@ const config: NuxtConfig = {
     // https://go.nuxtjs.dev/axios
     "@nuxtjs/axios",
     "@nuxtjs/auth-next",
+    "primevue/nuxt",
   ],
 
   router: {
@@ -95,7 +98,25 @@ const config: NuxtConfig = {
   },
 
   proxy: {
-    "/api/": { target: "http://127.0.0.1:8000" },
+    "/api/": { target: "http://127.0.0.1:8000", ws: false },
+  },
+
+  primevue: {
+    theme: "saga-green",
+    ripple: true,
+    components: [
+      "Button",
+      "Card",
+      "Column",
+      "DataTable",
+      "FileUpload",
+      "InputText",
+      "Panel",
+      "ProgressBar",
+      "ProgressSpinner",
+      "Steps",
+      "Toast",
+    ],
   },
 
   tailwindcss: {

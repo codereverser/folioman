@@ -27,7 +27,8 @@
       "@types/node",
       "@nuxtjs/axios",
       "@nuxt/types",
-      "@types/nuxtjs__auth"
+      "@nuxtjs/auth-next",
+      "primevue/toastservice",
     ]
   },
   "exclude": [
