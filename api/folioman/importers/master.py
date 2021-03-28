@@ -9,13 +9,14 @@ from folioman.models import AMC, FundCategory, FundScheme
 from .fetcher import fetch_amfi_scheme_data, fetch_bse_star_master_data, fetch_quandl_amfi_metadata
 
 
-def import_master_scheme_data():
+def import_master_scheme_data(master_csv_data=None):
     """Import BSE StarMF master data into Database"""
 
     total = inserted = valid = 0
     amc_cache = {}
 
-    master_csv_data = fetch_bse_star_master_data()
+    if master_csv_data is None:
+        master_csv_data = fetch_bse_star_master_data()
     quandl_data = fetch_quandl_amfi_metadata()
     amfi_data = fetch_amfi_scheme_data()
 

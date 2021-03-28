@@ -26,5 +26,5 @@ def load_schemes(input_file):
         master_data = fetch_bse_star_master_data()
 
     logger.info("Importing to database")
-    total, valid, inserted = import_master_scheme_data(master_data)
+    total, valid, inserted = import_master_scheme_data(master_csv_data=master_data)
     logger.info("Summary: Total %d :: Valid %d :: Inserted %d", total, valid, inserted)

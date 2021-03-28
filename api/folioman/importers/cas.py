@@ -1,9 +1,7 @@
 import re
 
 from casparser.types import CASParserDataType, FolioType
-from celery import chord
 from dateutil.parser import parse as dateparse
-from django.utils import timezone
 from typing import List
 
 from folioman.models import (
@@ -14,7 +12,7 @@ from folioman.models import (
     SchemeValue,
     Transaction,
 )
-from folioman.tasks import update_portfolios, fetch_nav
+from folioman.tasks import fetch_nav
 from folioman.utils import get_closest_scheme
 
 

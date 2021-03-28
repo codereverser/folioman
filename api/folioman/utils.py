@@ -1,11 +1,10 @@
 from datetime import date
-from decimal import Decimal
 import logging
 import re
 
 from django.db.models import F, Sum
 from django.utils import timezone
-from fuzzywuzzy import process
+from rapidfuzz import process
 import numpy as np
 import pandas as pd
 
