@@ -43,7 +43,7 @@ const config: NuxtConfig = {
   },
 
   // Global CSS (https://go.nuxtjs.dev/config-css)
-  css: [],
+  css: ["~/assets/layout/layout.scss"],
 
   // Plugins to run before rendering page (https://go.nuxtjs.dev/config-plugins)
   plugins: [],
@@ -117,6 +117,10 @@ const config: NuxtConfig = {
       "Steps",
       "Toast",
     ],
+  },
+
+  stylelint: {
+    fix: true,
   },
 
   tailwindcss: {

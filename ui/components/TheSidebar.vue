@@ -1,5 +1,17 @@
 <template lang="pug">
-  .flex
+  .flex.flex-col
+    .flex.justify-center.items-center.p-1.w-full.border-b-2.border-gray-200(style="height: 50px")
+      Logo.h-12.w-12
+      .font-semibold.text-secondary.text-2xl.mx-2 folioman
+    nav.mt-5
+      NuxtLink.flex.items-center.mt-4.py-2.px-6(to="/")
+        i.pi.pi-chart-bar
+        span.mx-4 Dashboard
+      NuxtLink.flex.items-center.mt-4.py-2.px-6(to="/import")
+        i.pi.pi-download
+        span.mx-4 Import Portfolio
+
+  //.flex
     .fixed.z-20.inset-0.bg-black.opacity-50.transition-opacity.lg_hidden(:class="isOpen ? 'block': 'hidden'" @click="isOpen = false")
     .fixed.z-30.inset-y-0.left-0.w-64.transition.duration-300.transform.overflow-y-auto.lg_translate-x-0.lg_static.lg_inset-0.bg-gray-900(:class="isOpen ? 'translate-x-0 ease-out' : '-translate-x-full ease-in'")
       //.flex.items-center.justify-end.lg_hidden
@@ -43,3 +55,13 @@ export default defineComponent({
   },
 });
 </script>
+
+<style lang="scss" scoped>
+a {
+  @apply font-semibold text-base text-primary hover_bg-primary hover_text-white;;
+
+  &.nuxt-link-exact-active {
+    @apply bg-primary text-white;
+  }
+}
+</style>
