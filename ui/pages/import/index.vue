@@ -125,10 +125,13 @@ export default defineComponent({
 
 .p-fileupload-row {
   & > div:nth-of-type(1) {
+    width: 0;
+  }
+  & > div:nth-of-type(2) {
     width: 60%;
   }
-  & > div:nth-of-type(2),
-  div:nth-of-type(3) {
+  & > div:nth-of-type(3),
+  div:nth-of-type(4) {
     width: 20%;
   }
 }

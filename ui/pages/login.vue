@@ -27,9 +27,6 @@ import {
 
 export default defineComponent({
   layout: "login",
-  head: {
-    title: "Login",
-  },
   setup() {
     const { $auth } = useContext();
 
@@ -60,6 +57,9 @@ export default defineComponent({
     };
 
     return { creds, error, login };
+  },
+  head: {
+    title: "Login",
   },
 });
 </script>

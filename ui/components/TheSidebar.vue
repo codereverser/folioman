@@ -4,7 +4,7 @@
       Logo.h-12.w-12
       .font-semibold.text-secondary.text-2xl.mx-2 folioman
     nav.mt-5
-      NuxtLink.flex.items-center.mt-4.py-2.px-6(to="/")
+      NuxtLink.flex.items-center.mt-4.py-2.px-6(to="/" exact)
         i.pi.pi-chart-bar
         span.mx-4 Dashboard
       NuxtLink.flex.items-center.mt-4.py-2.px-6(to="/import")
@@ -58,9 +58,9 @@ export default defineComponent({
 
 <style lang="scss" scoped>
 a {
-  @apply font-semibold text-base text-primary hover_bg-primary hover_text-white;;
+  @apply font-semibold text-base text-primary hover_bg-primary hover_text-white;
 
-  &.nuxt-link-exact-active {
+  &.nuxt-link-active {
     @apply bg-primary text-white;
   }
 }
