@@ -218,6 +218,8 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
         scheme_vals["scheme__id"] = scheme_id
         scheme_vals = scheme_vals.reset_index().rename(columns={"index": "date"})
         dfs.append(scheme_vals)
+    if len(dfs) == 0:
+        logger.info("No data found. Exiting..")
     final_df = pd.concat(dfs)
     dataset = Dataset().load(final_df)
     s_resource = SchemeValueResource()
