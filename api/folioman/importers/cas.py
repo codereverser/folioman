@@ -99,7 +99,7 @@ def import_cas(data: CASParserDataType, user_id):
                 SchemeValue.objects.get_or_create(
                     scheme_id=scheme_obj.id,
                     date=from_date,
-                    defaults={"units": scheme["open"], "invested": 0, "nav": 0, "value": 0},
+                    defaults={"balance": scheme["open"], "invested": 0, "nav": 0, "value": 0},
                 )
             for transaction in scheme["transactions"]:
                 _, created = Transaction.objects.get_or_create(

@@ -172,7 +172,7 @@ class DailyValue(models.Model):
 
 class SchemeValue(DailyValue):
     scheme = models.ForeignKey(FolioScheme, models.CASCADE, related_name="values")
-    avg_nav = models.DecimalField(max_digits=30, decimal_places=10)
+    avg_nav = models.DecimalField(max_digits=30, decimal_places=10, default=0.0)
     nav = models.DecimalField(max_digits=15, decimal_places=4)
     balance = models.DecimalField(max_digits=20, decimal_places=3)
 
