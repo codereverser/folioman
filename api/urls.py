@@ -22,10 +22,13 @@ from rest_framework_simplejwt.views import (
     token_verify,
 )
 
+from views import LogoutView
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     re_path(r"^api/auth/login", token_obtain_pair),
     re_path(r"^api/auth/refresh", token_refresh),
     re_path(r"^api/auth/verify", token_verify),
+    re_path(r"^api/auth/logout", LogoutView.as_view()),
     path(r"api/", include("folioman.urls")),
 ]

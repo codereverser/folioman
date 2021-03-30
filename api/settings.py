@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "django_celery_beat",
     "rest_framework",
     "import_export",
+    "rest_framework_simplejwt.token_blacklist",
     # Custom apps
     "folioman",
 ]

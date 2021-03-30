@@ -3,12 +3,14 @@ import logging
 import time
 
 from dateutil.parser import parse as date_parse
+from django_celery_beat.models import PeriodicTask
 import requests
 from requests.exceptions import RequestException, Timeout
+from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+from rest_framework_simplejwt.utils import aware_utcnow
 
 from taskman import app
 from folioman.models import FolioScheme, NAVHistory, FundScheme
-from django_celery_beat.models import PeriodicTask
 from .importers.master import import_master_scheme_data
 from .utils import update_portfolio_value
 
@@ -83,3 +85,8 @@ def update_mf_schemes():
 )
 def update_portfolios(from_date=None, portfolio_id=None):
     update_portfolio_value(start_date=from_date, portfolio_id=portfolio_id)
+
+
+@app.task(name="FlushExpiredTokens")
+def flush_expired_tokens():
+    OutstandingToken.objects.filter(expires_at__lte=aware_utcnow()).delete()
