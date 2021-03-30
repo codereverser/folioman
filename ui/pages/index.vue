@@ -9,9 +9,14 @@
 </template>
 
 <script lang="ts">
-import Vue from "vue";
+import { defineComponent } from "@nuxtjs/composition-api";
 
-export default Vue.extend({});
+export default defineComponent({
+  setup() {},
+  head: {
+    title: "Dashboard",
+  },
+});
 </script>
 
 <style lang="scss">

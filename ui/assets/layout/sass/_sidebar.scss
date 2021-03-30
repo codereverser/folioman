@@ -7,7 +7,7 @@
 	user-select: none;
 	transition: transform ease-in $transitionDuration;
 	//box-shadow: 0 0 6px 0 rgba(0, 0, 0, 0.16);
-  @apply border-r-2 border-gray-200;
+  //@apply border-r-2 border-gray-200;
 
   &.layout-sidebar-enter-active,
   &.layout-sidebar-leave-active {

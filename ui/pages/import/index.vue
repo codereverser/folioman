@@ -110,6 +110,9 @@ export default defineComponent({
       $v,
     };
   },
+  head: {
+    title: "Import CAS",
+  },
 });
 </script>
 

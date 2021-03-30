@@ -114,6 +114,9 @@ export default defineComponent({
 
     return { prevPage, importData, loading };
   },
+  head: {
+    title: "Verify CAS",
+  },
 });
 </script>
 

@@ -21,7 +21,7 @@ export default defineComponent({
         {
           label: "Verify",
           to: "/import/verify",
-        }
+        },
       ],
     });
 
