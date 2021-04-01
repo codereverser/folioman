@@ -77,7 +77,7 @@ const config: NuxtConfig = {
         scheme: "refresh",
         endpoints: {
           login: { url: "/api/auth/login", method: "post" },
-          logout: false,
+          logout: { url: "/api/auth/logout", method: "post" },
           user: { url: "/api/portfolios/", method: "get" },
         },
         token: {
@@ -131,7 +131,14 @@ const config: NuxtConfig = {
   },
 
   // Build Configuration (https://go.nuxtjs.dev/config-build)
-  build: {},
+  build: {
+    extend(config, { isClient }) {
+      // Extend only webpack config for client-bundle
+      if (isClient) {
+        config.devtool = "source-map";
+      }
+    },
+  },
 };
 
 export default config;
