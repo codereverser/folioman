@@ -41,20 +41,32 @@ def import_cas(data: CASParserDataType, user_id):
     fund_scheme_ids = []
     for folio in folios:
         for scheme in folio["schemes"]:
-            amc_code = None
-            rta_code = None
-            if scheme["rta"].lower() in ("ftamil", "franklin") and (
-                match := re.search(r"fti(\d+)", scheme["rta_code"], re.I)
-            ):
-                amc_code = match.group(1)
-            else:
-                rta_code = scheme["rta_code"]
-            try:
-                scheme_id = get_closest_scheme(
-                    scheme["rta"], scheme["scheme"], rta_code=rta_code, amc_code=amc_code
-                )
-            except ValueError:
-                raise ValueError("%s :: No such scheme" % scheme["scheme"])
+
+            scheme_id = None
+            if "isin" in scheme:
+                qs = FundScheme.objects.filter(isin=scheme["isin"]).all()
+                if qs.count() == 1:
+                    fund_scheme: FundScheme = qs[0]
+                    amfi_code = scheme["amfi"]
+                    if fund_scheme.amfi_code is None and isinstance(amfi_code, str) and len(amfi_code) > 2:
+                        fund_scheme.amfi_code = amfi_code
+                        fund_scheme.save()
+                    scheme_id = fund_scheme.id
+            if scheme_id is None:
+                amc_code = None
+                rta_code = None
+                if scheme["rta"].lower() in ("ftamil", "franklin") and (
+                    match := re.search(r"fti(\d+)", scheme["rta_code"], re.I)
+                ):
+                    amc_code = match.group(1)
+                else:
+                    rta_code = scheme["rta_code"]
+                try:
+                    scheme_id = get_closest_scheme(
+                        scheme["rta"], scheme["scheme"], rta_code=rta_code, amc_code=amc_code
+                    )
+                except ValueError:
+                    raise ValueError("%s :: No such scheme" % scheme["scheme"])
             scheme["scheme_id"] = scheme_id
             fund_scheme_ids.append(scheme_id)
             obj = FundScheme.objects.only("amc_id").get(pk=scheme_id)

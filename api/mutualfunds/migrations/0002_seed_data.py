@@ -10,6 +10,7 @@ FIXTURE_DIR = pathlib.Path(__file__).resolve().parent.parent / "fixtures"
 def load_data(apps, schema_editor):
     for fixture in FIXTURE_DIR.glob("*.yaml"):
         call_command("loaddata", fixture, verbosity=1)
+    call_command("load_schemes")
 
 
 # noinspection PyUnusedLocal
