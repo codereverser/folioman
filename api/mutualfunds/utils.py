@@ -2,6 +2,7 @@ from datetime import date
 import logging
 import re
 
+from dateutil.parser import parse as dateparse
 from django.db.models import F, Sum
 from django.utils import timezone
 from rapidfuzz import process
@@ -95,14 +96,15 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
             start_date = obj.date
         else:
             start_date = None
-    elif not (start_date is None or isinstance(start_date, date)):
-        logger.info("Invalid start date : %s", start_date)
-        start_date = None
+    elif isinstance(start_date, str):
+        start_date = dateparse(start_date).date()
+    else:
+        if start_date is not None:
+            logger.info("Invalid start date : %s", start_date)
+        start_date = date(1980, 1, 1)
 
     if start_date is not None:
         qs = qs.filter(date__gte=start_date)
-    else:
-        start_date = date(1980, 1, 1)
 
     if portfolio_id is not None:
         qs = qs.filter(scheme__folio__portfolio_id=portfolio_id)
