@@ -1,20 +1,21 @@
 <template lang="pug">
   .container.items-center.h-screen.flex.justify-center.mx-auto
-    Card(class="md_w-3/5 lg_w-2/5")
-      template(slot="title") Login
-      template(slot="content")
-        .p-inputgroup.p-input-filled
-          .p-inputgroup-addon
-            i.pi.pi-user
-          InputText.w-full(placeholder="Username" v-model="creds.username")
-        .p-inputgroup.p-input-filled.mt-4
-          .p-inputgroup-addon
-            i.pi.pi-lock
-          InputText.w-full(placeholder="Password" type="password" v-model="creds.password")
-      template(slot="footer")
-        .flex.justify-center.my-4
-          Button(label="Login" @click="login")
-        .p-invalid {{ error }}
+    form(class="md_w-3/5 lg_w-2/5" @submit.prevent="login")
+      Card
+        template(#title) Login
+        template(#content)
+          .p-inputgroup.p-input-filled
+            .p-inputgroup-addon
+              i.pi.pi-user
+            InputText.w-full(placeholder="Username" v-model="creds.username")
+          .p-inputgroup.p-input-filled.mt-4
+            .p-inputgroup-addon
+              i.pi.pi-lock
+            InputText.w-full(placeholder="Password" type="password" v-model="creds.password")
+        template(#footer)
+          .flex.justify-center.my-4
+            input.p-button(type="submit" value="Login")
+          .p-invalid {{ error }}
 </template>
 
 <script lang="ts">

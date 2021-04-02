@@ -220,6 +220,7 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
         dfs.append(scheme_vals)
     if len(dfs) == 0:
         logger.info("No data found. Exiting..")
+        return
     final_df = pd.concat(dfs)
     dataset = Dataset().load(final_df)
     s_resource = SchemeValueResource()
