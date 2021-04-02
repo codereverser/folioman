@@ -30,10 +30,10 @@
                   .font-semibold {{ scheme.close }}
             Column(field="date" header="Date")
             Column(field="description" header="Description")
-            Column(field="amount" header="Amount" body-class="p-text-right")
-            Column(field="nav" header="NAV" body-class="p-text-right")
-            Column(field="units" header="Units" body-class="p-text-right")
-            Column(field="balance" header="Balance" body-class="p-text-right")
+            Column(field="amount" header="Amount" body-class="p-text-right", header-class="p-text-right")
+            Column(field="nav" header="NAV" body-class="p-text-right", header-class="p-text-right")
+            Column(field="units" header="Units" body-class="p-text-right", header-class="p-text-right")
+            Column(field="balance" header="Balance" body-class="p-text-right", header-class="p-text-right")
     template(#footer)
       ProgressBar.my-2(mode="indeterminate" style="height: .25em" :class="{'invisible': !loading}")
       .flex.justify-between

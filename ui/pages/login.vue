@@ -44,7 +44,6 @@ export default defineComponent({
       try {
         error.value = ".";
         const { username, password } = creds;
-        await new Promise((r) => setTimeout(r, 3000));
         await $auth.loginWith("local", {
           data: { username, password },
         });

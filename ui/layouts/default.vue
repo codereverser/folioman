@@ -1,6 +1,7 @@
 <template lang="pug">
   div(:class="containerClass" @click="onWrapperClick")
     TheHeader(@menu-toggle="onMenuToggle")
+    Toast
     transition(name="layout-sidebar")
       TheSidebar(:class="sidebarClass" @click="onSidebarClick")
     main.layout-main
