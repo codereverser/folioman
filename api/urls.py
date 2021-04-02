@@ -30,5 +30,5 @@ urlpatterns = [
     re_path(r"^api/auth/refresh", token_refresh),
     re_path(r"^api/auth/verify", token_verify),
     re_path(r"^api/auth/logout", LogoutView.as_view()),
-    path(r"api/", include("folioman.urls")),
+    path("api/mutualfunds/", include("mutualfunds.urls")),
 ]

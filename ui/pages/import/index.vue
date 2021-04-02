@@ -3,7 +3,7 @@
     template(#title) Upload PDF
     template(#subtitle) CAS,Karvy
     template(#content)
-      FileUpload.px-4(name="cas[]", url="/api/casparser" accept=".pdf" ref="fileUploader")
+      FileUpload.px-4(name="cas[]", url="/api/mutualfunds/casparser" accept=".pdf" ref="fileUploader")
         template(#empty)
           p Drag and drop CAS pdf file here or click the "Choose" button above
       .flex.items-center.sm_w-full.pt-4(class="lg_w-3/6")
@@ -73,7 +73,7 @@ export default defineComponent({
       loading.value = true;
       error.value = "";
       $axios
-        .post("/api/casparser", data, {
+        .post("/api/mutualfunds/casparser", data, {
           headers: { "Content-Type": "multipart/form-data" },
         })
         .then(({ data }) => {

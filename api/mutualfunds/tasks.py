@@ -10,7 +10,7 @@ from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 from rest_framework_simplejwt.utils import aware_utcnow
 
 from taskman import app
-from folioman.models import FolioScheme, NAVHistory, FundScheme
+from .models import FolioScheme, NAVHistory, FundScheme
 from .importers.master import import_master_scheme_data
 from .utils import update_portfolio_value
 

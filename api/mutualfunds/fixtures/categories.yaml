@@ -1,0 +1,235 @@
+- model: mutualfunds.fundcategory
+  pk: 1
+  fields:
+    type: EQUITY
+    subtype: INDEX
+- model: mutualfunds.fundcategory
+  pk: 2
+  fields:
+    type: EQUITY
+    subtype: ELSS
+- model: mutualfunds.fundcategory
+  pk: 3
+  fields:
+    type: EQUITY
+    subtype: LARGE CAP
+- model: mutualfunds.fundcategory
+  pk: 4
+  fields:
+    type: EQUITY
+    subtype: LARGE AND MID CAP
+- model: mutualfunds.fundcategory
+  pk: 5
+  fields:
+    type: EQUITY
+    subtype: MID CAP
+- model: mutualfunds.fundcategory
+  pk: 6
+  fields:
+    type: EQUITY
+    subtype: MULTI CAP
+- model: mutualfunds.fundcategory
+  pk: 7
+  fields:
+    type: EQUITY
+    subtype: FLEXI CAP
+- model: mutualfunds.fundcategory
+  pk: 8
+  fields:
+    type: EQUITY
+    subtype: SMALL CAP
+- model: mutualfunds.fundcategory
+  pk: 9
+  fields:
+    type: EQUITY
+    subtype: DIVIDEND YIELD
+- model: mutualfunds.fundcategory
+  pk: 10
+  fields:
+    type: EQUITY
+    subtype: VALUE
+- model: mutualfunds.fundcategory
+  pk: 11
+  fields:
+    type: EQUITY
+    subtype: CONTRA
+- model: mutualfunds.fundcategory
+  pk: 12
+  fields:
+    type: EQUITY
+    subtype: FOCUSED
+- model: mutualfunds.fundcategory
+  pk: 13
+  fields:
+    type: EQUITY
+    subtype: SECTORAL OR THEMATIC
+- model: mutualfunds.fundcategory
+  pk: 14
+  fields:
+    type: DEBT
+    subtype: OVERNIGHT
+- model: mutualfunds.fundcategory
+  pk: 15
+  fields:
+    type: DEBT
+    subtype: LIQUID
+- model: mutualfunds.fundcategory
+  pk: 16
+  fields:
+    type: DEBT
+    subtype: ULTRA SHORT DURATION
+- model: mutualfunds.fundcategory
+  pk: 17
+  fields:
+    type: DEBT
+    subtype: LOW DURATION
+- model: mutualfunds.fundcategory
+  pk: 18
+  fields:
+    type: DEBT
+    subtype: MONEY MARKET
+- model: mutualfunds.fundcategory
+  pk: 19
+  fields:
+    type: DEBT
+    subtype: SHORT DURATION
+- model: mutualfunds.fundcategory
+  pk: 20
+  fields:
+    type: DEBT
+    subtype: MEDIUM DURATION
+- model: mutualfunds.fundcategory
+  pk: 21
+  fields:
+    type: DEBT
+    subtype: MEDIUM TO LONG DURATION
+- model: mutualfunds.fundcategory
+  pk: 22
+  fields:
+    type: DEBT
+    subtype: LONG DURATION
+- model: mutualfunds.fundcategory
+  pk: 23
+  fields:
+    type: DEBT
+    subtype: DYNAMIC BOND
+- model: mutualfunds.fundcategory
+  pk: 24
+  fields:
+    type: DEBT
+    subtype: CORPORATE BOND
+- model: mutualfunds.fundcategory
+  pk: 25
+  fields:
+    type: DEBT
+    subtype: CREDIT RISK
+- model: mutualfunds.fundcategory
+  pk: 26
+  fields:
+    type: DEBT
+    subtype: BANK AND PSU
+- model: mutualfunds.fundcategory
+  pk: 27
+  fields:
+    type: DEBT
+    subtype: GILT
+- model: mutualfunds.fundcategory
+  pk: 28
+  fields:
+    type: DEBT
+    subtype: GILT WITH 10 YEAR CONSTANT DURATION
+- model: mutualfunds.fundcategory
+  pk: 29
+  fields:
+    type: DEBT
+    subtype: FLOATER
+- model: mutualfunds.fundcategory
+  pk: 30
+  fields:
+    type: HYBRID
+    subtype: CONSERVATIVE
+- model: mutualfunds.fundcategory
+  pk: 31
+  fields:
+    type: HYBRID
+    subtype: BALANCED
+- model: mutualfunds.fundcategory
+  pk: 32
+  fields:
+    type: HYBRID
+    subtype: AGGRESSIVE
+- model: mutualfunds.fundcategory
+  pk: 33
+  fields:
+    type: HYBRID
+    subtype: DYNAMIC ASSET ALLOCATION OR BALANCED ADVANTAGE
+- model: mutualfunds.fundcategory
+  pk: 34
+  fields:
+    type: HYBRID
+    subtype: MULTI ASSET ALLOCATION
+- model: mutualfunds.fundcategory
+  pk: 35
+  fields:
+    type: HYBRID
+    subtype: ARBITRAGE
+- model: mutualfunds.fundcategory
+  pk: 36
+  fields:
+    type: HYBRID
+    subtype: EQUITY SAVINGS
+- model: mutualfunds.fundcategory
+  pk: 37
+  fields:
+    type: OTHER
+    subtype: FOF DOMESTIC
+- model: mutualfunds.fundcategory
+  pk: 38
+  fields:
+    type: OTHER
+    subtype: CHILDREN
+- model: mutualfunds.fundcategory
+  pk: 39
+  fields:
+    type: OTHER
+    subtype: RETIREMENT
+- model: mutualfunds.fundcategory
+  pk: 40
+  fields:
+    type: EQUITY
+    subtype: NA
+- model: mutualfunds.fundcategory
+  pk: 41
+  fields:
+    type: DEBT
+    subtype: NA
+- model: mutualfunds.fundcategory
+  pk: 42
+  fields:
+    type: HYBRID
+    subtype: NA
+- model: mutualfunds.fundcategory
+  pk: 43
+  fields:
+    type: OTHER
+    subtype: FOF OVERSEAS
+- model: mutualfunds.fundcategory
+  pk: 44
+  fields:
+    type: DEBT
+    subtype: INCOME
+- model: mutualfunds.fundcategory
+  pk: 45
+  fields:
+    type: OTHER
+    subtype: ETF
+- model: mutualfunds.fundcategory
+  pk: 46
+  fields:
+    type: OTHER
+    subtype: INDEX
+- model: mutualfunds.fundcategory
+  pk: 47
+  fields:
+    type: OTHER
+    subtype: NA

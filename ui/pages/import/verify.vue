@@ -71,7 +71,7 @@ export default defineComponent({
     const importData = () => {
       loading.value = true;
       $axios
-        .post("/api/cas/import", { data: formData.pdfData })
+        .post("/api/mutualfunds/cas/import", { data: formData.pdfData })
         .then(({ data }) => {
           loading.value = false;
           // eslint-disable-next-line camelcase

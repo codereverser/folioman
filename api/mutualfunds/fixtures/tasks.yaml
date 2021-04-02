@@ -1,0 +1,136 @@
+- model: django_celery_beat.intervalschedule
+  pk: 1
+  fields:
+    every: 1
+    period: days
+- model: django_celery_beat.crontabschedule
+  pk: 1
+  fields:
+    minute: '0'
+    hour: '4'
+    day_of_week: '*'
+    day_of_month: '*'
+    month_of_year: '*'
+    timezone: Asia/Kolkata
+- model: django_celery_beat.crontabschedule
+  pk: 2
+  fields:
+    minute: '0'
+    hour: '7'
+    day_of_week: '0'
+    day_of_month: '*'
+    month_of_year: '*'
+    timezone: Asia/Kolkata
+- model: django_celery_beat.crontabschedule
+  pk: 3
+  fields:
+    minute: '0'
+    hour: '4'
+    day_of_week: '*'
+    day_of_month: '*'
+    month_of_year: '*'
+    timezone: UTC
+- model: django_celery_beat.periodictasks
+  pk: 1
+  fields:
+    last_update: 2021-04-01 18:56:45.595108+00:00
+- model: django_celery_beat.periodictask
+  pk: 1
+  fields:
+    name: celery.backend_cleanup
+    task: celery.backend_cleanup
+    interval: null
+    crontab: 3
+    solar: null
+    clocked: null
+    args: '[]'
+    kwargs: '{}'
+    queue: null
+    exchange: null
+    routing_key: null
+    headers: '{}'
+    priority: null
+    expires: null
+    expire_seconds: 43200
+    one_off: false
+    start_time: null
+    enabled: true
+    last_run_at: 2021-04-02 04:00:00.037058+00:00
+    total_run_count: 16
+    date_changed: 2021-04-02 04:02:21.537788+00:00
+    description: ''
+- model: django_celery_beat.periodictask
+  pk: 2
+  fields:
+    name: Update MF master data
+    task: UpdateMFSchemes
+    interval: null
+    crontab: 2
+    solar: null
+    clocked: null
+    args: '[]'
+    kwargs: '{}'
+    queue: null
+    exchange: null
+    routing_key: null
+    headers: '{}'
+    priority: null
+    expires: null
+    expire_seconds: null
+    one_off: false
+    start_time: null
+    enabled: true
+    last_run_at: 2021-03-28 01:30:00.033132+00:00
+    total_run_count: 3
+    date_changed: 2021-03-28 01:31:26.007542+00:00
+    description: Update scheme master data from BSE StarMF
+- model: django_celery_beat.periodictask
+  pk: 3
+  fields:
+    name: update_nav
+    task: NAVFetcher
+    interval: null
+    crontab: 1
+    solar: null
+    clocked: null
+    args: '[]'
+    kwargs: '{}'
+    queue: null
+    exchange: null
+    routing_key: null
+    headers: '{}'
+    priority: null
+    expires: null
+    expire_seconds: null
+    one_off: false
+    start_time: null
+    enabled: true
+    last_run_at: 2021-04-01 22:30:00.163316+00:00
+    total_run_count: 16
+    date_changed: 2021-04-01 22:32:01.532455+00:00
+    description: Update NAV of all tracked schemes daily
+- model: django_celery_beat.periodictask
+  pk: 4
+  fields:
+    name: Flush Expired Tokens
+    task: FlushExpiredTokens
+    interval: null
+    crontab: 1
+    solar: null
+    clocked: null
+    args: '[]'
+    kwargs: '{}'
+    queue: null
+    exchange: null
+    routing_key: null
+    headers: '{}'
+    priority: null
+    expires: null
+    expire_seconds: null
+    one_off: false
+    start_time: null
+    enabled: true
+    last_run_at: 2021-04-01 22:30:00.037622+00:00
+    total_run_count: 3
+    date_changed: 2021-04-01 22:32:01.455855+00:00
+    description: Flush expired JWT tokens

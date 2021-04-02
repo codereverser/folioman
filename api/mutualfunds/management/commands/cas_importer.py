@@ -3,7 +3,7 @@ import logging
 import casparser
 import djclick as click
 
-from folioman.importers.cas import import_cas
+from mutualfunds.importers.cas import import_cas
 
 
 @click.command()

@@ -1,6 +1,6 @@
 import djclick as click
 
-from folioman.utils import update_portfolio_value
+from mutualfunds.utils import update_portfolio_value
 
 
 @click.command()

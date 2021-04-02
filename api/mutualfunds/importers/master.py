@@ -5,7 +5,7 @@ import re
 from dateutil.parser import parse as dateparse
 from rapidfuzz import fuzz, process
 
-from folioman.models import AMC, FundCategory, FundScheme
+from mutualfunds.models import AMC, FundCategory, FundScheme
 from .fetcher import fetch_amfi_scheme_data, fetch_bse_star_master_data, fetch_quandl_amfi_metadata
 
 

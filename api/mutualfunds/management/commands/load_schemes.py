@@ -2,8 +2,8 @@ import logging
 
 import djclick as click
 
-from folioman.importers.master import import_master_scheme_data
-from folioman.importers.fetcher import fetch_bse_star_master_data
+from mutualfunds.importers.master import import_master_scheme_data
+from mutualfunds.importers.fetcher import fetch_bse_star_master_data
 
 BSE_STARMF_SCHEME_MASTER_URL = "https://bsestarmf.in/RptSchemeMaster.aspx"
 

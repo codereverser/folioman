@@ -12,7 +12,7 @@ from import_export.utils import atomic_if_using_transaction
 from import_export.widgets import DateWidget
 import pandas as pd
 
-from folioman.models import FolioValue, PortfolioValue, SchemeValue
+from mutualfunds.models import FolioValue, PortfolioValue, SchemeValue
 
 logger = logging.getLogger(__name__)
 

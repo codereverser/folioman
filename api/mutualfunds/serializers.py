@@ -1,6 +1,6 @@
 from rest_framework.serializers import ModelSerializer
 
-from folioman.models import Portfolio
+from .models import Portfolio
 
 
 class PortfolioSerializer(ModelSerializer):

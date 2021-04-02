@@ -8,7 +8,7 @@ FIXTURE_DIR = pathlib.Path(__file__).resolve().parent.parent / "fixtures"
 
 # noinspection PyUnusedLocal
 def load_data(apps, schema_editor):
-    for fixture in FIXTURE_DIR.glob("*.json"):
+    for fixture in FIXTURE_DIR.glob("*.yaml"):
         call_command("loaddata", fixture, verbosity=1)
 
 
@@ -20,7 +20,7 @@ def unload_data(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("folioman", "0001_initial"),
+        ("mutualfunds", "0001_initial"),
     ]
 
     operations = [migrations.RunPython(load_data, unload_data)]

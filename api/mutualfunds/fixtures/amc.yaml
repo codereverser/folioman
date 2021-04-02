@@ -1,0 +1,477 @@
+- model: mutualfunds.amc
+  pk: 1
+  fields:
+    name: Aditya Birla Sun Life Mutual Fund
+    description: 'Aditya Birla Sun Life AMC Limited (formerly known as Birla Sun Life
+      Asset Management Company Limited), the investment manager of Aditya Birla Sun
+      Life Mutual Fund is a joint venture between the Aditya Birla Group and Sun Life
+      Financial Inc. of Canada. '
+    code: BirlaSunLifeMutualFund_MF
+- model: mutualfunds.amc
+  pk: 2
+  fields:
+    name: HDFC Mutual Fund
+    description: 'HDFC Mutual Fund is one of the largest mutual funds and well-established
+      fund house in the country with focus on delivering consistent fund performance
+      across categories since the launch of the first scheme(s) in July 2000. '
+    code: HDFCMutualFund_MF
+- model: mutualfunds.amc
+  pk: 3
+  fields:
+    name: ICICI Prudential Mutual Fund
+    description: "ICICI Prudential Asset Management Company Ltd. is a leading asset
+      management company (AMC) in the country focused on bridging the gap between
+      savings & investments and creating long term wealth for investors through a
+      range of simple and relevant investment solutions.\n The AMC is a joint venture
+      between ICICI Bank, a well-known and trusted name in financial services in India
+      and Prudential Plc, one of UK’s largest players in the financial services sectors.
+      Throughout these years of the joint venture, the company has forged a position
+      of pre-eminence in the Indian Mutual Fund industry."
+    code: ICICIPrudentialMutualFund_MF
+- model: mutualfunds.amc
+  pk: 4
+  fields:
+    name: Nippon India Mutual Fund
+    description: Nippon India Mutual Fund (NIMF) is one of India's leading mutual
+      funds, with Average Assets Under Management (AAUM) of Rs 2,22,575.73 Crores
+      (April 2019 - June 2019 QAAUM) and 88.65 lakhs folios (as on June 30, 2019).
+      NIMF, which is one of the fastest growing mutual funds in India, offers investors
+      a well-rounded portfolio of products to meet varying investor requirements and
+      has presence in 300 cities (as on March 31, 2019) across the country. NIMF constantly
+      endeavours to launch innovative products and customer service initiatives to
+      increase value to investors.
+    code: NipponIndiaMutualFund_MF
+- model: mutualfunds.amc
+  pk: 5
+  fields:
+    name: SBI Mutual Fund
+    description: With 30 years of rich experience in fund management, we at SBI Funds
+      Management Pvt. Ltd. bring forward our expertise by consistently delivering
+      value to our investors. We have a strong and proud lineage that traces back
+      to the State Bank of India (SBI) - India's largest bank. We are a Joint Venture
+      between SBI and AMUNDI (France), one of the world's leading fund management
+      companies.With our network of over 222 points of acceptance across India, we
+      deliver value and nurture the trust of our vast and varied family of investors.
+    code: SBIMutualFund_MF
+- model: mutualfunds.amc
+  pk: 6
+  fields:
+    name: TATA Mutual Fund
+    description: Established in 1994, Tata Asset Management has a track record of
+      more than 24 years in investment management. Tata Asset Management manages investments
+      of Tata Mutual Fund.The company offers a range of investment solutions for financial
+      planning and wealth creation and manages funds across the entire risk-return
+      spectrum. The diversity of our fund offerings enables investors to invest as
+      per their life stage, financial goals and risk profile. The company also offers
+      portfolio management services to high net worth individuals and advisory services
+      to offshore investors and funds investing in India.
+    code: TATAMutualFund_MF
+- model: mutualfunds.amc
+  pk: 7
+  fields:
+    name: INVESCO Mutual Fund
+    description: Invesco offers a broad range of actively-managed, domestic, international/global,
+      specialty and fixed-income mutual funds to help customize investors' portfolios
+      to their unique needs.
+    code: INVESCOMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 8
+  fields:
+    name: QUANTUM Mutual Fund
+    description: 'Quantum Mutual Fund is India''s first dedicated, direct-to-investor
+      mutual fund.
+
+
+      Quantum Mutual Fund offers simple and easy-to-understand products.With our focus
+      on ethics, integrity and transparency and on managing assets instead of merely
+      gathering them Quantum Mutual Fund walks a different path as compared to the
+      rest. It could be our total focus on doing what''s right for the investor or
+      keeping our costs low, Quantum has chosen to walk the untrodden path, not even
+      the less trodden'
+    code: QUANTUMMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 9
+  fields:
+    name: UTI Mutual Fund
+    description: 'UTI AMC, India’s most trusted Wealth creators and always has the
+      interest of its investors in its heart. UTI AMC has completed 50 years as India’s
+      leading Financial service institution and was a sole vehicle of capital market
+      investment for Indian Citizens till the early 90’s. The institution has shown
+      great resilience and has grown from strength to strength overcoming economic
+      turbulence and global turnarounds.
+
+      UTI has contributed immensely to industrial and capital growth in the Indian
+      market. It has led transformative initiatives like developmental financial institutions,
+      rural outreach programs and financial products and services.
+
+      UTI AMC has assets under management across different businesses which include
+      domestic mutual fund, Portfolio Management Services, International business,
+      Retirement Solutions, Venture Funds and Alternative Investment assets.'
+    code: UTIMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 10
+  fields:
+    name: IDFC Mutual Fund
+    description: IDFC Ltd. is a leading diversified financial institution providing
+      a wide range of financing products and fee-based services with infrastructure
+      as its focus area. The key businesses of IDFC Ltd. included Project Finance,
+      Principal Investments, Financial Markets and Investment Banking, Broking, Advisory
+      Services and Asset Management, which comprises (i) private equity investments
+      and project equity investments through its subsidiary, IDFC Alternatives Limited
+      and (ii) public markets asset management services through its subsidiary IDFC
+      AMC.
+    code: IDFCMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 11
+  fields:
+    name: BHARTI AXA Mutual Fund
+    description: BOI AXA Investment Managers Private Limited is a joint venture between
+      Bank of India and AXA Investment Managers, a part of AXA Group, one of the world’s
+      largest players in the Financial Protection industry.Bank of India has over
+      5000 branches across India. Presently Bank of India has an overseas presence
+      in 22 countries spread over 5 continents  with 60 offices including 5 Subsidiaries,
+      5 Representative Offices and 1 Joint Venture.
+    code: BHARTIAXAMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 12
+  fields:
+    name: DSP Mutual Fund
+    description: DSP Group is a 152 year old Indian financial firm. The DSP Group,
+      headed by Mr. Hemendra Kothari, is one of the oldest and most respected financial
+      services firms in India. The firm commenced its stock broking business in the
+      1860s and the family behind the group has been very influential in the growth
+      and professionalization of capital markets and money management business in
+      India.
+    code: DSP_MF
+- model: mutualfunds.amc
+  pk: 13
+  fields:
+    name: Kotak Mutual Fund
+    description: Kotak Mahindra Asset Management Company Limited (KMAMC), a wholly
+      owned subsidiary of Kotak Mahindra bank Limited (KMBL), is the Asset Manager
+      for Kotak Mahindra Mutual Fund (KMMF). KMAMC started operations in December
+      1998 and has approximately 7.5 Lac investors in various schemes. KMMF offers
+      schemes catering to investors with varying risk - return profiles and was the
+      first fund house in the country to launch a dedicated gilt scheme investing
+      only in government securities. The company is present in 82 cities and has 86
+      branches.
+    code: KOTAKMAHINDRAMF
+- model: mutualfunds.amc
+  pk: 14
+  fields:
+    name: Mirae Asset Mutual Fund
+    description: Established in November 2007 with a seed capital of US$ 50 million,
+      Mirae Asset Mutual Fund is sponsored by Mirae Asset Global Investments Co. Limited,
+      South Korea,Mirae Asset present in India as an FII since 2004, <b>MAGI India</b>
+      provides Advisory Services to Hong Kong and Korea offices, Mix of domestic and
+      International businesses providing stable growth for Mirae Asset India business
+    code: MIRAEASSET
+- model: mutualfunds.amc
+  pk: 15
+  fields:
+    name: Franklin Templeton Mutual Fund
+    description: Franklin Templeton's association with India dates back to over 2
+      decades as an investor. As part of the group's major thrust on investing in
+      markets around the world, the India office was set up in 1996 as Templeton Asset
+      Management India Pvt. Limited. It flagged off the mutual fund business with
+      the launch of Templeton India Growth Fund in September 1996, and since then
+      the business has grown at a steady pace.
+    code: FRANKLINTEMPLETON
+- model: mutualfunds.amc
+  pk: 16
+  fields:
+    name: SUNDARAM Mutual Fund
+    description: Sundaram Asset Management Company (Company) has over 20 years of
+      experience in fund management and is a fully owned subsidiary of one of India's
+      oldest and most respected NBFCs - Sundaram Finance Limited. The Company was
+      jointly promoted by Sundaram Finance Ltd and Stewart Newton Holdings (Mauritius)
+      Ltd in 1996.
+    code: SUNDARAMMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 17
+  fields:
+    name: MOTILAL OSWAL Mutual Fund
+    description: Motilal Oswal Asset Management Company Ltd. (MOAMC) is a public limited
+      company incorporated under the Companies Act, 1956 on November 14, 2008.The
+      AMC is also registered with SEBI under SEBI (Portfolio Managers) Regulations,
+      1993.There is no conflict of interest between the activity of managing the schemes
+      of Motilal Oswal Mutual Fund and the activity of Portfolio Management Services.
+    code: MOTILALOSWAL_MF
+- model: mutualfunds.amc
+  pk: 18
+  fields:
+    name: HSBC Mutual Fund
+    description: "The mission of HSBC is to work with clients to meet their investment
+      objectives, by delivering investment expertise in a tailored way.\n HSBC delivers
+      on fiduciary responsibilities by managing risk as much as performance. They
+      demonstrate their global investment expertise combined with strong governance
+      as they collaborate with clients, aiming to help them grow and protect their
+      assets."
+    code: HSBCMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 19
+  fields:
+    name: EDELWEISS Mutual Fund
+    description: 'Edelweiss Asset Management Limited (EAML) is part of the Investment
+      & Advisory line of Business of Edelweiss Group. EMAL is one of the fastest growing
+      and young AMCs’ in India. At EAML, we want to do things differently which will
+      add value to both our partners and investors. '
+    code: EDELWEISSMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 20
+  fields:
+    name: L&T Mutual Fund
+    description: L&T Finance Holdings Limited is a non-banking financial institution-core
+      investment company. The Company's segments include Retail and Mid Market Finance,
+      which consists of rural products finance, personal vehicle finance, microfinance,
+      housing finance, commercial vehicle finance, construction equipment finance,
+      loans and leases and loan against shares; Wholesale Finance, which consists
+      of project finance and non-project corporate finance to infra and non-infra
+      segments across power-thermal and renewable; transportation-roads, ports and
+      airports; telecom, and other non-infra segments; Investment Management, which
+      consists of assets management of mutual fund and private equity fund, and Other
+      Business, which consists of wealth management and financial product distribution.
+      It offers a range of financial products and services across retail, corporate,
+      housing and infrastructure finance sectors, as well as mutual fund products
+      and investment management services.
+    code: L&TMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 21
+  fields:
+    name: AXIS Mutual Fund
+    description: "Axis Mutual Fund launched its first scheme in October 2009 \nSince
+      then Axis Mutual fund has grown strongly. We attribute our success thus far
+      to our 3 founding principles - Long term wealth creation, Outside in (Customer)
+      view and Long term relationship. Come join our growing family of investors and
+      give shape to your desires."
+    code: AXISMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 22
+  fields:
+    name: BNP PARIBAS Mutual Fund
+    description: 'BNP Paribas Asset Management is the dedicated asset management business
+      line of BNP Paribas and backed by the financial strength of one of the best
+      rated banks in the world.
+
+      BNP Paribas Asset Management manages and advises assets of over EUR 565* bn
+      across 30+ countries with significant presence in Europe, Asia and the Americas.
+      It is among the leading asset managers in the world, offering one of the widest
+      range of investment solutions in the industry.'
+    code: BNPPARIBAS_MF
+- model: mutualfunds.amc
+  pk: 23
+  fields:
+    name: IIFL Mutual Fund
+    description: "IIFL Asset Management offers uniquely structured products to cover
+      diverse investment requirements of investors. Our mutual fund portfolio is concentrated
+      on a few, high-quality, high-conviction stocks. This allows our fund managers
+      to maintain focus and generate improved risk-adjusted returns.\n Having pioneered
+      the concept of benchmark-agnostic funds in India, our fund managers function
+      in an unconstrained but research-oriented manner. While traditional asset management
+      companies are constrained by benchmarks, our benchmark-agnostic approach enables
+      us to pick stocks with flexibility and tap into unique multi-baggers of the
+      future."
+    code: IIFLMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 24
+  fields:
+    name: TAURUS Mutual Fund
+    description: 'Taurus Mutual Fund offers investment solutions for all investor
+      segments. With Equity oriented schemes, Debt based schemes and an Equity Linked
+      Savings Scheme, in the open ended product basket, Taurus Mutual Fund continuously
+      strives to strengthen its offerings with more & more innovative schemes designed
+      on the basis of years of expertise, market knowledge & research. '
+    code: TAURUSMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 25
+  fields:
+    name: PGIM India Mutual Fund
+    description: DHFL was founded in 1984 by Late Shri Rajesh Kumar Wadhawan with
+      a vision to provide financial access to the lower and middle income segments
+      of the society. Today, led by Mr. Kapil Wadhawan, CMD, DHFL, the Company is
+      one of India's leading mortgage finance institutions with presence in over 351
+      locations across the country
+    code: PGIMINDIAMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 26
+  fields:
+    name: Baroda Mutual Fund
+    description: An investment manager dedicated to growing and preserving client
+      assets and building trust. Since the formation of the joint venture in 2008,
+      Baroda has have been working relentlessly to create an operational and servicing
+      platform well suited to the exacting requirements of our existing and potential
+      investors.
+    code: BARODAMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 27
+  fields:
+    name: ESSEL Mutual Fund
+    description: 'Essel Group is one of India''s leading private sector financial
+      services company. As an umbrella brand for the financial businesses of the Essel
+      Group, they offer a diverse range of products and services across corporate
+      finance and retail segments. Their highly experienced and dedicated team is
+      continually breaking new ground in advising clients on strategic transactions,
+      in expanding to global finance and capital markets and in providing new opportunities
+      to institutional and individual investors. The company strives to build sustainable
+      wealth and relationships for its clients and stakeholders by investing in prudent
+      human capital, extensive research and leveraging its vast global networks. Their
+      long-term approach to client solutions is helping us redefine the meaning of
+      financial services and rapidly expand in scope and size. '
+    code: ESSELMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 28
+  fields:
+    name: IDBI Mutual Fund
+    description: IDBI Mutual Fund is sponsored by IDBI Bank Ltd. As one of India’s
+      largest banks, IDBI Bank has played a major role in the country’s industrial
+      & economic progress for over 40 years, first as a development financial institution
+      & later as a full-fledged Commercial Bank.
+    code: IDBIMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 29
+  fields:
+    name: SHRIRAMMUTUALFUND_MF
+    description: null
+    code: SHRIRAMMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 30
+  fields:
+    name: PPFAS Mutual Fund
+    description: 'PPFAS Asset Management (PPFAS AMC) has been promoted by Parag Parikh
+      Financial Advisory Services Pvt. Ltd. (PPFAS Ltd.), a boutique investment advisory
+      firm incorporated in 1992. PPFAS Ltd. is also amongst India''s earliest SEBI
+      Registered Portfolio Management Service (PMS) providers.We believe that investing
+      should not be a complicated process. Hence we strive for simplicity in our scheme
+      design, investing process and our operations. While investing involves individuals,
+      we accord more importance to the investing process than to personalities. '
+    code: PPFAS_MF
+- model: mutualfunds.amc
+  pk: 31
+  fields:
+    name: JM FINANCIAL Mutual Fund
+    description: 'JM Financial Asset Management Private Limited, the Asset Management
+      Company of JM Financial Mutual Fund is sponsored by JM Financial Limited. JM
+      Financial Asset Management Private Limited started operations in December 1994
+      with a simultaneous launch of three funds-JM Liquid Fund (now JM Income Fund),
+      JM Equity Fund and JM Balanced Fund. Today, JM Financial Mutual Fund offers
+      a bouquet of funds that caters to the diverse needs of both its institutional
+      and individual investors
+
+      '
+    code: JM FINANCIAL MUTUAL FUND_MF
+- model: mutualfunds.amc
+  pk: 32
+  fields:
+    name: LIC Mutual Fund
+    description: LIC Mutual Fund was established on 20th April 1989 by LIC of India.
+      Being an associate company of India's premier and most trusted brand, LIC Mutual
+      Fund is one of the well known players in the asset management sphere. With a
+      systematic investment discipline coupled with a high standard of financial ethics
+      and corporate governance, LIC Mutual Fund is emerging as a preferred Investment
+      Manager amongst the investor fraternity.
+    code: LICMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 33
+  fields:
+    name: Canara Robeco Mutual Fund
+    description: Canara Robeco Mutual Fund is the second oldest Mutual Fund in India,
+      established in December 1987 as Canbank Mutual Fund. Subsequently, in 2007,
+      Canara Bank partnered with Robeco (now a part of ORIX Corporation, Japan) and
+      the mutual fund was renamed as Canara Robeco Mutual Fund. Since then, it has
+      consistently been one of the fastest growing mutual funds in India in terms
+      of AuM. Our solutions offer a range of investment options, including diversified
+      and thematic equity schemes, hybrid and monthly income funds and a wide range
+      of debt and treasury products.
+    code: CANARAROBECOMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 34
+  fields:
+    name: Principal Mutual Fund
+    description: We are part of the Principal Financial Group -- a global investment
+      management leader headquartered in Des Moines, Iowa, US. In India, we bring
+      on board the financial strength and global experience of over 140 years in asset
+      accumulation of Principal Financial Group.
+    code: PRINCIPALMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 35
+  fields:
+    name: INDIA BULLS Mutual Fund
+    description: Indiabulls Housing Finance Ltd. (IBHFL) is the 2nd largest private
+      housing finance company in India, regulated by the National Housing Bank (NHB).
+      IBHFL has fulfilled the dreams and aspirations of over 6.44 lac happy households
+      with customer-centric finance solutions. IBHFL has the highest rating of AAA
+      from CARE ratings and Brickwork ratings.
+    code: INDIABULLSMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 36
+  fields:
+    name: MAHINDRA MUTUAL FUND
+    description: Mahindra Mutual Fund has been constituted as a trust in accordance
+      with the provisions of the Indian Trusts Act, 1882, as per the terms of the
+      trust deed dated September 29, 2015 between the Mahindra and Mahindra Financial
+      Services Limited as the Sponsor and Mahindra Trustee Company Private Limited,
+      as the Trustee. The Trust Deed has been registered under the Indian Registration
+      Act, 1908. Mahindra Mutual Fund has been registered with SEBI
+    code: MAHINDRA MANULIFE MUTUAL FUND_MF
+- model: mutualfunds.amc
+  pk: 37
+  fields:
+    name: Union Mutual Fund
+    description: "Union KBC Asset Management Company Private Limited (the AMC) offers
+      approved investment funds, open-ended equity funds and other structured products,
+      so as to bridge the gap of investor's financial needs.\n The AMC will leverage
+      on KBC Asset Management's expertise in the global fund markets and KBC Asset
+      Management's Joint Support Model with Union Bank of India’s unrivalled brand
+      value, knowledge of their customers and extensive network, which will represent
+      the perfect blend of ingredients to create a strong asset management business
+      in India."
+    code: UNIONMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 38
+  fields:
+    name: YES Mutual Fund
+    description: YES ASSET Management (India) Limited, a fully owned subsidiary of
+      YES BANK, will seek to build a strong Mutual Fund Franchise to provide a complete
+      suite of financial products to all its investors.YES Asset Management, driven
+      by the motto "Experience our Expertise", combines your interests and our relentless
+      endeavours to bring out the optimum solutions for you.YES Asset Management has
+      been set up with an investor centric approach, simplifying investors’ wealth
+      creation goals through knowledge-based investment practices and prudent risk
+      management.
+    code: YESMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 39
+  fields:
+    name: ITI Mutual Fund
+    description: ITI Mutual Fund aims to offer high-quality investment solutions to
+      investors seeking long term wealth creation. We have access to some of the finest
+      minds in the Investment Management, Equity Research and Credit Research space
+      that enables us to run a very unique investment philosophy and also deploy robust
+      investment strategies that can stand the test of time. The agility, no baggage
+      and fresh perspective can help investors get ahead in a rapidly evolving economy.
+    code: ITI MUTUAL FUND_MF
+- model: mutualfunds.amc
+  pk: 40
+  fields:
+    name: QUANT Mutual Fund
+    description: 'quant Group was born more than a decade ago, as a financial services
+      platform in the midst of the 2008 Global Financial Crisis, with two simple yet
+      powerful guiding mantras – Being Relevant and Predictive Analytics. The guiding
+      philosophy of Being Relevant means that in a dynamic and volatile world, to
+      remain relevant, and to preserve and grow wealth, the test of time must be passed
+      every day by continuously updating knowledge and innovating on systems and processes.
+      This is enabled by Predictive Analytics: an all-encompassing framework for understanding
+      and forecasting markets, across assets and geographies.'
+    code: QUANTMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 41
+  fields:
+    name: SAHARAMUTUALFUND_MF
+    description: null
+    code: SAHARAMUTUALFUND_MF
+- model: mutualfunds.amc
+  pk: 42
+  fields:
+    name: TRUSTMUTUALFUND_MF
+    description: null
+    code: TRUSTMUTUALFUND_MF

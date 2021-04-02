@@ -4,7 +4,7 @@ from casparser.types import CASParserDataType, FolioType
 from dateutil.parser import parse as dateparse
 from typing import List
 
-from folioman.models import (
+from mutualfunds.models import (
     Portfolio,
     FundScheme,
     Folio,
@@ -12,8 +12,8 @@ from folioman.models import (
     SchemeValue,
     Transaction,
 )
-from folioman.tasks import fetch_nav
-from folioman.utils import get_closest_scheme
+from mutualfunds.tasks import fetch_nav
+from mutualfunds.utils import get_closest_scheme
 
 
 def import_cas(data: CASParserDataType, user_id):

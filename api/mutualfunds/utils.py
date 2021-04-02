@@ -10,7 +10,7 @@ import pandas as pd
 
 from tablib import Dataset
 
-from folioman.models import (
+from .models import (
     FolioScheme,
     FundScheme,
     Transaction,
@@ -18,7 +18,7 @@ from folioman.models import (
     SchemeValue,
     FolioValue,
 )
-from folioman.importers.daily_value import (
+from .importers.daily_value import (
     DailyValueResource,
     FolioValueResource,
     PortfolioValueResource,
