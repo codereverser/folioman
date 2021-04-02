@@ -2,11 +2,11 @@
   .layout-topbar.flex.justify-between
     .flex.items-center.mx-4
       Button.p-button-lg.p-button-text(icon="pi pi-bars" @click="onMenuToggle")
-      span {{ title }}
+      .uppercase.font-semibold {{ title }}
     span &nbsp;
     .flex.items-center
       .relative
-        Button.p-button-text.p-button-sm(@click="dropdownOpen = !dropdownOpen" :icon="profileIcon" :label="user" iconPos="right")
+        Button.p-button-text.p-button-sm(@click="dropdownOpen = !dropdownOpen" :icon="profileIcon" :label="displayName" iconPos="right")
         .fixed.inset-0.h-full.w-full.z-10(v-show="dropdownOpen" @click="dropdownOpen = false")
         .absolute.right-0.mt-2.py-2.w-48.rounded-md.shadow-xl.z-20(v-show="dropdownOpen")
           nuxt-link.block.px-4.py-2.text-sm.dropdown-item(to="/") Profile
@@ -34,7 +34,9 @@ export default defineComponent({
     const profileIcon = computed(() => {
       return dropdownOpen.value ? "pi pi-angle-up" : "pi pi-angle-down";
     });
+
     const user = $auth.user;
+    const displayName = computed(() => user!.firstname || user!.username);
 
     const onMenuToggle = (event: Event) => {
       emit("menu-toggle", event);
@@ -49,7 +51,14 @@ export default defineComponent({
       await router.push("/login");
     };
 
-    return { dropdownOpen, onMenuToggle, profileIcon, title, user, logout };
+    return {
+      dropdownOpen,
+      onMenuToggle,
+      profileIcon,
+      title,
+      displayName,
+      logout,
+    };
   },
 });
 </script>

@@ -13,9 +13,11 @@
               i.pi.pi-lock
             InputText.w-full(placeholder="Password" type="password" v-model="creds.password")
         template(#footer)
-          .flex.justify-center.my-4
+          ProgressBar(mode="indeterminate" style="height: .25em" :class="{'invisible': !loading}")
+          .flex.justify-center.my-2
             input.p-button(type="submit" value="Login")
-          .p-invalid {{ error }}
+          .flex.justify-center
+            .p-error(:class="{'invisible': error.length <= 1}") {{ error }}
 </template>
 
 <script lang="ts">
@@ -35,11 +37,14 @@ export default defineComponent({
       username: "",
       password: "",
     });
-    const error = ref("");
+    const loading = ref(false);
+    const error = ref(".");
     const login = async () => {
+      loading.value = true;
       try {
-        error.value = "";
+        error.value = ".";
         const { username, password } = creds;
+        await new Promise((r) => setTimeout(r, 3000));
         await $auth.loginWith("local", {
           data: { username, password },
         });
@@ -49,15 +54,20 @@ export default defineComponent({
           if (response.status_code === 400) {
             error.value = "Invalid parameters";
           } else {
-            error.value = response.data;
+            const { data } = response;
+            error.value = Object.prototype.hasOwnProperty.call(data, "detail")
+              ? data.detail
+              : data;
           }
         } else {
           error.value = err.message;
         }
+      } finally {
+        loading.value = false;
       }
     };
 
-    return { creds, error, login };
+    return { creds, error, loading, login };
   },
   head: {
     title: "Login",
@@ -75,5 +85,8 @@ export default defineComponent({
       margin-bottom: 0;
     }
   }
+}
+input[type="submit"] {
+  @apply rounded-md;
 }
 </style>

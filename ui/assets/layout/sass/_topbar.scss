@@ -2,8 +2,8 @@
     position: fixed;
     height: 50px;
     //padding: 1em 2em 0 2em;
-    color: #ffffff;
-    background-color: #edf0f5;
+    color: #888888;
+    background-color: $bodyBgColor;
     z-index: 999;
     right: 0;
     @apply border-b-2 border-gray-200;

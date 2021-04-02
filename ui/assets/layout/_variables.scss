@@ -31,9 +31,9 @@ $menuitemBorderColor:rgba(207, 211, 224, 0.6);
 /* Menu Dark */
 //$menuDarkBgColorFirst:#4d505b;
 //$menuDarkBgColorFirst:#edf0f5;
-$menuDarkBgColorFirst:#edf0f5;
+$menuDarkBgColorFirst:$bodyBgColor;
 //$menuDarkBgColorLast:#3b3e47;
-$menuDarkBgColorLast:#edf0f5;
+$menuDarkBgColorLast:$bodyBgColor;
 $menuitemDarkColor:#ffffff;
 $menuitemDarkHoverColor:#0388e5;
 $menuitemDarkActiveColor:#0388e5;

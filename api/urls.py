@@ -22,7 +22,7 @@ from rest_framework_simplejwt.views import (
     token_verify,
 )
 
-from views import LogoutView
+from views import LogoutView, UserView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -30,5 +30,6 @@ urlpatterns = [
     re_path(r"^api/auth/refresh", token_refresh),
     re_path(r"^api/auth/verify", token_verify),
     re_path(r"^api/auth/logout", LogoutView.as_view()),
+    re_path(r"^api/me", UserView.as_view()),
     path("api/mutualfunds/", include("mutualfunds.urls")),
 ]

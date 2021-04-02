@@ -78,7 +78,7 @@ const config: NuxtConfig = {
         endpoints: {
           login: { url: "/api/auth/login", method: "post" },
           logout: { url: "/api/auth/logout", method: "post" },
-          user: { url: "/api/portfolios/", method: "get" },
+          user: { url: "/api/me", method: "get" },
         },
         token: {
           property: "access",
