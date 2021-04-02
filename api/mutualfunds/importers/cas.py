@@ -48,7 +48,11 @@ def import_cas(data: CASParserDataType, user_id):
                 if qs.count() == 1:
                     fund_scheme: FundScheme = qs[0]
                     amfi_code = scheme["amfi"]
-                    if fund_scheme.amfi_code is None and isinstance(amfi_code, str) and len(amfi_code) > 2:
+                    if (
+                        fund_scheme.amfi_code is None
+                        and isinstance(amfi_code, str)
+                        and len(amfi_code) > 2
+                    ):
                         fund_scheme.amfi_code = amfi_code
                         fund_scheme.save()
                     scheme_id = fund_scheme.id
@@ -113,7 +117,12 @@ def import_cas(data: CASParserDataType, user_id):
                     date=from_date,
                     defaults={"balance": scheme["open"], "invested": 0, "nav": 0, "value": 0},
                 )
+            balance = 0
             for transaction in scheme["transactions"]:
+                if transaction["balance"] is None:
+                    transaction["balance"] = balance
+                else:
+                    balance = transaction["balance"]
                 _, created = Transaction.objects.get_or_create(
                     scheme_id=scheme_obj.id,
                     date=dateparse(transaction["date"]).date(),
@@ -121,18 +130,23 @@ def import_cas(data: CASParserDataType, user_id):
                     defaults={
                         "description": transaction["description"].strip(),
                         "amount": transaction["amount"],
-                        "units": transaction["units"],
-                        "nav": transaction["nav"],
+                        "units": transaction["units"] or 0,
+                        "nav": transaction["nav"] or 0,
                         "order_type": Transaction.get_order_type(
                             transaction["description"], transaction["amount"]
                         ),
+                        "sub_type": transaction["type"],
                     },
                 )
                 num_created += created
                 num_total += 1
     # if num_created > 0:
     fetch_nav.delay(
-        scheme_ids=fund_scheme_ids, update_portfolio={"from_date": "auto", "portfolio_id": pf.id}
+        scheme_ids=fund_scheme_ids,
+        update_portfolio_kwargs={
+            "from_date": dateparse(period["from"]).date(),
+            "portfolio_id": pf.id,
+        },
     )
     return {
         "num_folios": new_folios,

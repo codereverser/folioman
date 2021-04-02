@@ -136,6 +136,9 @@ class Transaction(models.Model):
     date = models.DateField()
     description = models.TextField()
     order_type = models.CharField(max_length=8, choices=OrderType.choices)
+    sub_type = models.CharField(
+        max_length=32, help_text="Order type as classified by casparser", null=True, blank=True
+    )
     amount = models.DecimalField(max_digits=20, decimal_places=2)
     nav = models.DecimalField(max_digits=15, decimal_places=4)
     units = models.DecimalField(max_digits=20, decimal_places=3)

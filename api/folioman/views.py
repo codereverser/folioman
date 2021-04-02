@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 
 from mutualfunds.models import Portfolio as MFPortfolio
 
+
 class UserView(APIView):
     def get(self, request, format=None):
         user = request.user
@@ -12,7 +13,8 @@ class UserView(APIView):
 
         mf_portfolios = [
             {"name": x.name, "value": 0.0}
-            for x in MFPortfolio.objects.filter(user=request.user).all()]
+            for x in MFPortfolio.objects.filter(user=request.user).all()
+        ]
 
         data = {
             "user": {
@@ -20,9 +22,7 @@ class UserView(APIView):
                 "firstname": user.first_name,
                 "lastname": user.last_name,
                 "email": user.email,
-                "portfolios": {
-                    "mutualfunds": mf_portfolios
-                }
+                "portfolios": {"mutualfunds": mf_portfolios},
             }
         }
         return Response(status=status.HTTP_200_OK, data=data)

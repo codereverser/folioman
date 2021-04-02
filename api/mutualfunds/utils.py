@@ -87,7 +87,10 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
         "date", "amount", "units", "balance", "scheme_id", "scheme__scheme_id"
     )
     if start_date == "auto":
-        obj = SchemeValue.objects.only("date").order_by("-date").first()
+        query = SchemeValue.objects
+        if portfolio_id is not None:
+            query = query.filter(scheme__folio__portfolio_id=portfolio_id)
+        obj = query.only("date").order_by("-date").first()
         if obj is not None:
             start_date = obj.date
         else:
@@ -98,6 +101,8 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
 
     if start_date is not None:
         qs = qs.filter(date__gte=start_date)
+    else:
+        start_date = date(1980, 1, 1)
 
     if portfolio_id is not None:
         qs = qs.filter(scheme__folio__portfolio_id=portfolio_id)
