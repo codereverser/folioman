@@ -1,3 +1,4 @@
+from datetime import date
 import re
 
 from casparser.types import CASParserDataType, FolioType
@@ -39,6 +40,7 @@ def import_cas(data: CASParserDataType, user_id):
 
     folios: List[FolioType] = data.get("folios", []) or []
     fund_scheme_ids = []
+    scheme_dates = {}
     for folio in folios:
         for scheme in folio["schemes"]:
 
@@ -97,6 +99,7 @@ def import_cas(data: CASParserDataType, user_id):
             folio_obj.save()
             new_folios += 1
         to_date = dateparse(period["to"]).date()
+
         for scheme in folio["schemes"]:
             scheme_obj, _ = FolioScheme.objects.get_or_create(
                 scheme_id=scheme["scheme_id"],
@@ -118,19 +121,21 @@ def import_cas(data: CASParserDataType, user_id):
                     defaults={"balance": scheme["open"], "invested": 0, "nav": 0, "value": 0},
                 )
             balance = 0
+            min_date = None
             for transaction in scheme["transactions"]:
                 if transaction["balance"] is None:
                     transaction["balance"] = balance
                 else:
                     balance = transaction["balance"]
+                txn_date = dateparse(transaction["date"]).date()
                 _, created = Transaction.objects.get_or_create(
                     scheme_id=scheme_obj.id,
-                    date=dateparse(transaction["date"]).date(),
+                    date=txn_date,
                     balance=str(transaction["balance"]),
+                    units=str(transaction["units"] or 0),
                     defaults={
                         "description": transaction["description"].strip(),
                         "amount": transaction["amount"],
-                        "units": transaction["units"] or 0,
                         "nav": transaction["nav"] or 0,
                         "order_type": Transaction.get_order_type(
                             transaction["description"], transaction["amount"]
@@ -138,14 +143,19 @@ def import_cas(data: CASParserDataType, user_id):
                         "sub_type": transaction["type"],
                     },
                 )
+                if created:
+                    min_date = min(txn_date, min_date or txn_date)
                 num_created += created
                 num_total += 1
+            if min_date is not None:
+                scheme_dates[scheme_obj.id] = min_date
     # if num_created > 0:
     fetch_nav.delay(
         scheme_ids=fund_scheme_ids,
         update_portfolio_kwargs={
             "from_date": dateparse(period["from"]).date(),
             "portfolio_id": pf.id,
+            "scheme_dates": scheme_dates,
         },
     )
     return {
