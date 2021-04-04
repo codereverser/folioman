@@ -83,8 +83,10 @@ def update_mf_schemes():
 @app.task(
     name="UpdatePortfolios",
 )
-def update_portfolios(from_date=None, portfolio_id=None):
-    update_portfolio_value(start_date=from_date, portfolio_id=portfolio_id)
+def update_portfolios(from_date=None, portfolio_id=None, scheme_dates=None):
+    update_portfolio_value(
+        start_date=from_date, portfolio_id=portfolio_id, scheme_dates=scheme_dates
+    )
 
 
 @app.task(name="FlushExpiredTokens")
