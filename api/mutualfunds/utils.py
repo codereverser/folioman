@@ -1,6 +1,9 @@
+from collections import deque
+from decimal import Decimal
 from datetime import date
 import logging
 import re
+from typing import Optional, Union
 
 from dateutil.parser import parse as dateparse
 from django.db.models import F, Sum
@@ -80,12 +83,81 @@ def bulk_import_daily_values(resource_cls: DailyValueResource.__class__, query):
         logger.info("Import success! :: %s", str(result.totals))
 
 
+class TransactionLike:
+    amount: Union[Decimal, float, None]
+    nav: Union[Decimal, float, None]
+    units: Union[Decimal, float, None]
+
+
+class FIFOUnits:
+    def __init__(self, balance=Decimal('0.000'), invested=Decimal('0.00'), average=Decimal('0.0000')):
+        self.transactions = deque()
+        self.balance = balance
+        self.invested = invested
+        self.average = average
+        self.pnl = Decimal('0.00')
+
+    def __str__(self):
+        return f"""
+Number of transactions : {len(self.transactions)}
+Balance                : {self.balance}
+Invested               : {self.invested}
+Average NAV            : {self.average}
+PNL                    : {self.pnl}"""
+
+    def add_transaction(self, txn: TransactionLike):
+        """Add transaction to the FIFO Queue.
+        Note: The Transactions should be sorted date-wise (preferably using the
+        `sort_transactions=True` option via casparser
+        """
+        quantity = Decimal(str(txn.units or '0.000'))
+        nav = Decimal(str(txn.nav or '0.0000'))
+        if txn.amount is None:
+            return
+        elif txn.amount > 0:
+            self.buy(quantity, nav, amount=txn.amount)
+        elif txn.amount < 0:
+            self.sell(quantity, nav)
+
+    def sell(self, quantity: Decimal, nav: Decimal):
+        original_quantity = abs(quantity)
+        pending_units = original_quantity
+        cost_price = Decimal('0.000')
+        price = None
+        while pending_units > 0:
+            try:
+                units, price = self.transactions.popleft()
+                if units <= pending_units:
+                    cost_price += units * price
+                else:
+                    cost_price += pending_units * price
+                pending_units -= units
+            except IndexError:
+                break
+        if pending_units < 0 and price is not None:
+            # Re-add the remaining units to the FIFO queue
+            self.transactions.appendleft((-1 * pending_units, price))
+        self.invested -= Decimal(round(cost_price, 2))
+        self.balance -= original_quantity
+        self.pnl += Decimal(round(original_quantity * nav - cost_price, 2))
+        if abs(self.balance) > 0.01:
+            self.average = Decimal(round(self.invested / self.balance, 4))
+
+    def buy(self, quantity: Decimal, nav: Decimal, amount: Optional[Decimal] = None):
+        self.balance += quantity
+        if amount is not None:
+            self.invested += Decimal(amount)
+        if abs(self.balance) > 0.01:
+            self.average = Decimal(round(self.invested / self.balance, 4))
+        self.transactions.append((quantity, nav))
+
+
 def update_portfolio_value(start_date=None, portfolio_id=None):
     transactions = []
     today = timezone.now().date()
     logger.info("Fetching transactions")
     qs = Transaction.objects.only(
-        "date", "amount", "units", "balance", "scheme_id", "scheme__scheme_id"
+        "date", "amount", "units", "nav", "balance", "scheme_id", "scheme__scheme_id"
     )
     if start_date == "auto":
         query = SchemeValue.objects
@@ -115,11 +187,12 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
                 item.date,
                 item.amount,
                 item.units,
+                item.nav,
                 item.balance,
                 item.scheme_id,
             ]
         )
-    df = pd.DataFrame(transactions, columns=["date", "amount", "units", "balance", "scheme"])
+    df = pd.DataFrame(transactions, columns=["date", "amount", "units", "nav", "balance", "scheme"])
 
     qs = FolioScheme.objects
     if portfolio_id is not None:
@@ -169,20 +242,24 @@ def update_portfolio_value(start_date=None, portfolio_id=None):
             scheme_transactions["invested"] = 0
             scheme_transactions["avg_nav"] = 0
             if scheme_val:
-                invested = float(scheme_val.invested)
-                nav = float(scheme_val.invested / scheme_val.balance)
+                invested = scheme_val.invested
+                balance = scheme_val.balance
+                nav = Decimal(round(float(scheme_val.invested / scheme_val.balance), 4))
             else:
-                invested = 0
-                nav = 0
+                invested = Decimal('0.00')
+                nav = Decimal('0.0000')
+                balance = Decimal('0.000')
+            fifo = FIFOUnits(invested=invested, average=nav, balance=balance)
             for idx, row in scheme_transactions.iterrows():
-                if row.amount > 0:
-                    invested += float(row.amount)
-                    nav = invested / float(row.balance)
-                else:
-                    invested += nav * float(row.units)
+                fifo.add_transaction(row)
+                # if row.amount > 0:
+                #     invested += float(row.amount)
+                #     nav = invested / float(row.balance)
+                # else:
+                #     invested += nav * float(row.units)
 
-                scheme_transactions.loc[idx, "invested"] = invested
-                scheme_transactions.loc[idx, "avg_nav"] = nav
+                scheme_transactions.loc[idx, "invested"] = fifo.invested
+                scheme_transactions.loc[idx, "avg_nav"] = fifo.average
 
             if scheme_transactions.iloc[-1].balance < 1e-3:
                 to_date = scheme_transactions.iloc[-1].date

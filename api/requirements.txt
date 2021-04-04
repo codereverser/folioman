@@ -1,4 +1,4 @@
-casparser[mupdf]==0.4.4
+casparser[mupdf]==0.4.6
 celery==5.0.5
 Django==3.1.7
 django-celery-beat==2.2.0
@@ -6,7 +6,7 @@ django-click==2.2.0
 django-environ==0.4.5
 django-import-export==2.5.0
 django-redis==4.12.1
-djangorestframework==3.12.2
+djangorestframework==3.12.4
 djangorestframework-simplejwt==4.6.0
 lxml
 numpy

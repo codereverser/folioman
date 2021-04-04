@@ -142,9 +142,7 @@ class Transaction(models.Model):
     amount = models.DecimalField(max_digits=20, decimal_places=2)
     nav = models.DecimalField(max_digits=15, decimal_places=4)
     units = models.DecimalField(max_digits=20, decimal_places=3)
-    invested = models.DecimalField(max_digits=30, decimal_places=2, default=0)
     balance = models.DecimalField(max_digits=40, decimal_places=3)
-    avg_nav = models.DecimalField(max_digits=20, decimal_places=8, default=0)
     created = models.DateTimeField(auto_now_add=True)
     modified = models.DateTimeField(auto_now=True)
 
