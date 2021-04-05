@@ -101,7 +101,7 @@ def import_cas(data: CASParserDataType, user_id):
         to_date = dateparse(period["to"]).date()
 
         for scheme in folio["schemes"]:
-            scheme_obj, _ = FolioScheme.objects.get_or_create(
+            scheme_obj, _ = FolioScheme.objects.get_or_create(  # FIXME: update_or_create
                 scheme_id=scheme["scheme_id"],
                 folio_id=folio_obj.id,
                 defaults={
@@ -153,7 +153,7 @@ def import_cas(data: CASParserDataType, user_id):
     fetch_nav.delay(
         scheme_ids=fund_scheme_ids,
         update_portfolio_kwargs={
-            "from_date": dateparse(period["from"]).date(),
+            "from_date": "auto",
             "portfolio_id": pf.id,
             "scheme_dates": scheme_dates,
         },

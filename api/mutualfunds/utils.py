@@ -172,7 +172,7 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
             from_date1 = dateparse(from_date1).date()
 
     from_date2 = date(1970, 1, 1)
-    if isinstance(start_date, str):
+    if isinstance(start_date, str) and start_date != "auto":
         from_date2 = dateparse(start_date).date()
     elif isinstance(start_date, date):
         from_date2 = start_date
