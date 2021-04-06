@@ -113,7 +113,7 @@ class FolioScheme(models.Model):
     """Track schemes inside a folio"""
 
     scheme = models.ForeignKey(FundScheme, models.PROTECT)
-    folio = models.ForeignKey(Folio, related_name='schemes', on_delete=models.CASCADE)
+    folio = models.ForeignKey(Folio, related_name="schemes", on_delete=models.CASCADE)
     balance = models.DecimalField(max_digits=20, decimal_places=3)
     balance_date = models.DateField()
     created = models.DateTimeField(auto_now=False, auto_now_add=True)
@@ -179,6 +179,7 @@ class SchemeValue(DailyValue):
 
     class Meta:
         unique_together = ("scheme_id", "date")
+        get_latest_by = ("date",)
 
 
 class FolioValue(DailyValue):
@@ -186,6 +187,7 @@ class FolioValue(DailyValue):
 
     class Meta:
         unique_together = ("folio_id", "date")
+        get_latest_by = ("date",)
 
 
 class PortfolioValue(DailyValue):
@@ -193,3 +195,4 @@ class PortfolioValue(DailyValue):
 
     class Meta:
         unique_together = ("portfolio_id", "date")
+        get_latest_by = ("date",)

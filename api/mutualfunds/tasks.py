@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
     bind=True,
     name="NAVFetcher",
     autoretry_for=(RequestException, Timeout),
-    retry_backoff=60*60,
-    default_retry_delay=30*60,
-    retry_kwargs={'max_retries': 6},
+    retry_backoff=60 * 60,
+    default_retry_delay=30 * 60,
+    retry_kwargs={"max_retries": 6},
 )
 def fetch_nav(self, scheme_ids=None, update_portfolio_kwargs=None):
     qs = FolioScheme.objects
@@ -73,9 +73,9 @@ def fetch_nav(self, scheme_ids=None, update_portfolio_kwargs=None):
 @app.task(
     name="UpdateMFSchemes",
     autoretry_for=(RequestException, Timeout),
-    retry_backoff=60*60,
-    default_retry_delay=30*60,
-    retry_kwargs={'max_retries': 6},
+    retry_backoff=60 * 60,
+    default_retry_delay=30 * 60,
+    retry_kwargs={"max_retries": 6},
 )
 def update_mf_schemes():
     retval = import_master_scheme_data()

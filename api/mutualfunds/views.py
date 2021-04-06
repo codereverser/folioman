@@ -1,3 +1,6 @@
+from decimal import Decimal
+import itertools
+
 import casparser
 from django.db.models import F, Func
 from rest_framework import parsers
@@ -8,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
-from .models import Portfolio, PortfolioValue
+from .models import Portfolio, PortfolioValue, SchemeValue, NAVHistory
 from .serializers import PortfolioSerializer
 from .importers.cas import import_cas
 
@@ -70,13 +73,69 @@ class PortfolioViewSet(ModelViewSet):
 @api_view(["GET"])
 def portfolio_value(request):
     # TODO: Add portfolio_id parameter
-    qs = PortfolioValue.objects.filter(portfolio_id=1)\
-        .annotate(ts=EpochMS(F('date'))).values_list('ts', 'invested', 'value').order_by('date')
+    qs = (
+        PortfolioValue.objects.filter(portfolio_id=1)
+        .annotate(ts=EpochMS(F("date")))
+        .values_list("ts", "invested", "value")
+        .order_by("date")
+    )
     items = list(qs.all())
     s1 = [(x[0], x[1]) for x in items]
     s2 = [(x[0], x[2]) for x in items]
     output = {"invested": s1, "value": s2}
     return Response(output)
+
+
+@api_view(["GET"])
+def portfolio_schemes(request):
+    date = PortfolioValue.objects.filter(portfolio_id=1).latest().date
+    scheme_vals = SchemeValue.objects.filter(
+        date=date, scheme__folio__portfolio_id=1
+    ).select_related("scheme", "scheme__scheme", "scheme__folio")
+    results = []
+    for scheme_id, group in itertools.groupby(scheme_vals, lambda x: x.scheme.scheme_id):
+        obj = None
+        total_invested = Decimal("0.0")
+        total_value = Decimal("0.0")
+        total_units = Decimal("0.0")
+        try:
+            nav0, nav1 = (
+                NAVHistory.objects.filter(scheme_id=scheme_id)
+                .order_by("-date")
+                .values_list("nav", flat=True)[:2]
+            )
+        except ValueError:
+            nav0, nav1 = Decimal("0.0"), Decimal("0.0")
+        for item in group:
+            if obj is None:
+                obj = {
+                    "name": item.scheme.scheme.name.capitalize(),
+                    "nav0": nav0,
+                    "nav1": nav1,
+                    "folios": [],
+                }
+            obj["folios"].append(
+                {
+                    "folio": item.scheme.folio.number,
+                    "invested": item.invested,
+                    "units": item.balance,
+                    "value": item.value,
+                    "avg_nav": item.avg_nav,
+                }
+            )
+            total_invested += item.invested
+            total_value += item.value
+            total_units += item.balance
+        if obj is not None:
+            if total_units >= 1e-4:
+                avg_nav = Decimal(str(round(total_invested / total_units, 4)))
+            else:
+                avg_nav = Decimal("0.0000")
+            obj.update(
+                invested=total_invested, units=total_units, value=total_value, avg_nav=avg_nav
+            )
+            results.append(obj)
+    return Response(results)
 
 
 @api_view(["POST"])

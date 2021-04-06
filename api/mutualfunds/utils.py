@@ -21,7 +21,7 @@ from .models import (
     NAVHistory,
     SchemeValue,
     FolioValue,
-    PortfolioValue
+    PortfolioValue,
 )
 from .importers.daily_value import (
     DailyValueResource,
@@ -93,7 +93,7 @@ class TransactionLike:
 
 class FIFOUnits:
     def __init__(
-            self, balance=Decimal("0.000"), invested=Decimal("0.00"), average=Decimal("0.0000")
+        self, balance=Decimal("0.000"), invested=Decimal("0.00"), average=Decimal("0.0000")
     ):
         self.transactions = deque()
         self.balance = balance
@@ -197,17 +197,22 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
         if isinstance(frm_date, str):
             frm_date = dateparse(frm_date).date()
 
-        scheme_val: SchemeValue = SchemeValue.objects.filter(scheme_id=scheme_id,
-                                                             date__lt=frm_date).order_by("-date").first()
+        scheme_val: SchemeValue = (
+            SchemeValue.objects.filter(scheme_id=scheme_id, date__lt=frm_date)
+            .order_by("-date")
+            .first()
+        )
 
-        old_txns = Transaction.objects.filter(scheme_id=scheme_id,
-                                              date__lt=frm_date) \
-            .annotate(type=F("sub_type")) \
+        old_txns = (
+            Transaction.objects.filter(scheme_id=scheme_id, date__lt=frm_date)
+            .annotate(type=F("sub_type"))
             .order_by("date")
-        new_txns = Transaction.objects.filter(scheme_id=scheme_id,
-                                              date__gte=frm_date) \
-            .annotate(type=F("sub_type")) \
+        )
+        new_txns = (
+            Transaction.objects.filter(scheme_id=scheme_id, date__gte=frm_date)
+            .annotate(type=F("sub_type"))
             .order_by("date")
+        )
 
         from_date = None
         if scheme_val is not None:
@@ -244,8 +249,7 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
             continue
 
         scheme_transactions = pd.DataFrame(
-            data={"invested": invested, "avg_nav": average, "balance": balance},
-            index=dates
+            data={"invested": invested, "avg_nav": average, "balance": balance}, index=dates
         )
 
         from_date_min = min(from_date, from_date_min)
@@ -257,23 +261,27 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
         if to_date != today:
             SchemeValue.objects.filter(scheme_id=scheme_id, date__gt=to_date).delete()
             FolioValue.objects.filter(folio__schemes__id=scheme_id, date__gt=to_date).delete()
-            PortfolioValue.objects.filter(portfolio__folios__schemes__id=scheme_id, date__gt=to_date).delete()
+            PortfolioValue.objects.filter(
+                portfolio__folios__schemes__id=scheme_id, date__gt=to_date
+            ).delete()
         if scheme_val is not None:
-            scheme_vals.iloc[0] = [scheme_val.invested,
-                                   scheme_val.avg_nav,
-                                   scheme_val.balance,
-                                   scheme_val.nav,
-                                   scheme_val.value]
-        scheme_vals.loc[scheme_transactions.index, ["invested", "avg_nav", "balance"]] = scheme_transactions[
-            ["invested", "avg_nav", "balance"]
-        ]
+            scheme_vals.iloc[0] = [
+                scheme_val.invested,
+                scheme_val.avg_nav,
+                scheme_val.balance,
+                scheme_val.nav,
+                scheme_val.value,
+            ]
+        scheme_vals.loc[
+            scheme_transactions.index, ["invested", "avg_nav", "balance"]
+        ] = scheme_transactions[["invested", "avg_nav", "balance"]]
 
         qs = (
             NAVHistory.objects.filter(
                 scheme_id=fund_scheme_id, date__gte=from_date, date__lte=to_date
             )
-                .values_list("date", "nav")
-                .all()
+            .values_list("date", "nav")
+            .all()
         )
         nav_df = pd.DataFrame(data=qs, columns=["date", "nav"])
         nav_df["date"] = pd.to_datetime(nav_df["date"])
@@ -304,18 +312,18 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
     logger.info("Updating FolioValue")
     query = (
         SchemeValue.objects.filter(date__gte=from_date_min)
-            .annotate(folio__id=F("scheme__folio_id"))
-            .values("date", "folio__id")
-            .annotate(value=Sum("value"), invested=Sum("invested"))
+        .annotate(folio__id=F("scheme__folio_id"))
+        .values("date", "folio__id")
+        .annotate(value=Sum("value"), invested=Sum("invested"))
     )
     bulk_import_daily_values(FolioValueResource, query)
     logger.info("FolioValue updated")
     logger.info("Updating PortfolioValue")
     query = (
         FolioValue.objects.filter(date__gte=from_date_min)
-            .annotate(portfolio__id=F("folio__portfolio_id"))
-            .values("date", "portfolio__id")
-            .annotate(value=Sum("value"), invested=Sum("invested"))
+        .annotate(portfolio__id=F("folio__portfolio_id"))
+        .values("date", "portfolio__id")
+        .annotate(value=Sum("value"), invested=Sum("invested"))
     )
     bulk_import_daily_values(PortfolioValueResource, query)
     logger.info("PortfolioValue updated")
