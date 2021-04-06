@@ -9,6 +9,7 @@ router.register(r"portfolios", views.PortfolioViewSet, basename="portfolios")
 urlpatterns = [
     path("casparser", views.CASParserView.as_view(), name="casparser"),
     path("cas/import", views.cas_import),
+    path("portfolio", views.portfolio_value),
 ] + router.urls
 
 

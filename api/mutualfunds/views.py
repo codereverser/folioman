@@ -1,4 +1,5 @@
 import casparser
+from django.db.models import F, Func
 from rest_framework import parsers
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
@@ -7,9 +8,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
-from .models import Portfolio
+from .models import Portfolio, PortfolioValue
 from .serializers import PortfolioSerializer
 from .importers.cas import import_cas
+
+
+class EpochMS(Func):
+    function = "EXTRACT"
+    template = "%(function)s('epoch' from %(expressions)s) * 1000"
 
 
 class CASParserView(APIView):
@@ -25,7 +31,7 @@ class CASParserView(APIView):
                 raise ValidationError(detail={"message": ret["message"]})
 
             try:
-                output = casparser.read_cas_pdf(data["file"], password)
+                output = casparser.read_cas_pdf(data["file"], password, sort_transactions=True)
                 return Response({"status": "OK", "message": "Success", "data": output})
             except Exception as e:
                 ret["message"] = str(e)
@@ -61,6 +67,18 @@ class PortfolioViewSet(ModelViewSet):
             raise NotFound
 
 
+@api_view(["GET"])
+def portfolio_value(request):
+    # TODO: Add portfolio_id parameter
+    qs = PortfolioValue.objects.filter(portfolio_id=1)\
+        .annotate(ts=EpochMS(F('date'))).values_list('ts', 'invested', 'value').order_by('date')
+    items = list(qs.all())
+    s1 = [(x[0], x[1]) for x in items]
+    s2 = [(x[0], x[2]) for x in items]
+    output = {"invested": s1, "value": s2}
+    return Response(output)
+
+
 @api_view(["POST"])
 def cas_import(request):
 
@@ -76,7 +94,11 @@ def cas_import(request):
 
     try:
         result = import_cas(data, request.user.id)
-    except ValueError as e:
+    except Exception as e:
+        import traceback, sys
+
+        _, _, tb = sys.exc_info()
+        traceback.print_tb(tb)
         raise ValidationError({"detail": str(e)})
     else:
         ret.update(status="OK", message="Success", **result)
