@@ -113,7 +113,7 @@ class FolioScheme(models.Model):
     """Track schemes inside a folio"""
 
     scheme = models.ForeignKey(FundScheme, models.PROTECT)
-    folio = models.ForeignKey(Folio, models.CASCADE)
+    folio = models.ForeignKey(Folio, related_name='schemes', on_delete=models.CASCADE)
     balance = models.DecimalField(max_digits=20, decimal_places=3)
     balance_date = models.DateField()
     created = models.DateTimeField(auto_now=False, auto_now_add=True)
