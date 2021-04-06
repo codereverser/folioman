@@ -20,7 +20,9 @@
     "@vuelidate/validators": "^2.0.0-alpha.12",
     "core-js": "^3.9.1",
     "fs-extra": "^8.1.0",
+    "highcharts": "^9.0.1",
     "nuxt": "^2.15.4",
+    "nuxt-highcharts": "^1.0.7",
     "primeicons": "^4.1.0",
     "primevue": "^2.4.0"
   },

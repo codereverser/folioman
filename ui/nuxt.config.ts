@@ -1,14 +1,19 @@
 import { NuxtConfig } from "@nuxt/types";
+import webpack from "webpack";
 
 const config: NuxtConfig = {
   // Disable server-side rendering (https://go.nuxtjs.dev/ssr-mode)
   ssr: false,
 
-  vue: {
-    config: {
-      devtools: true,
-      productionTip: false,
-    },
+  // vue: {
+  //   config: {
+  //     devtools: true,
+  //     productionTip: false,
+  //   },
+  // },
+
+  server: {
+    host: "0",
   },
 
   // Global page headers (https://go.nuxtjs.dev/config-head)
@@ -65,6 +70,7 @@ const config: NuxtConfig = {
     "@nuxtjs/axios",
     "@nuxtjs/auth-next",
     "primevue/nuxt",
+    "nuxt-highcharts",
   ],
 
   router: {
@@ -132,12 +138,17 @@ const config: NuxtConfig = {
 
   // Build Configuration (https://go.nuxtjs.dev/config-build)
   build: {
-    extend(config, { isClient }) {
-      // Extend only webpack config for client-bundle
-      if (isClient) {
-        config.devtool = "source-map";
-      }
-    },
+    plugins: [
+      new webpack.IgnorePlugin({
+        resourceRegExp: /@highcharts\/map-collection/,
+      }),
+    ],
+    // extend(config, { isClient }) {
+    //   // Extend only webpack config for client-bundle
+    //   if (isClient) {
+    //     config.devtool = "source-map";
+    //   }
+    // },
   },
 };
 
