@@ -26,7 +26,9 @@ import { RefreshScheme } from "@nuxtjs/auth-next";
 
 export default defineComponent({
   setup(_, { root, emit }) {
-    const { $auth } = useContext();
+    const { $auth, app } = useContext();
+    const { $bus } = app;
+
     const strategy = $auth.strategy as RefreshScheme;
     const router = useRouter();
 
@@ -40,6 +42,7 @@ export default defineComponent({
 
     const onMenuToggle = (event: Event) => {
       emit("menu-toggle", event);
+      $bus.$emit("menu-toggle", null);
     };
 
     const title = computed(() => root.$meta().refresh().metaInfo.titleChunk);

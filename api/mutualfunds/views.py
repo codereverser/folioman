@@ -88,16 +88,19 @@ def portfolio_value(request):
 
 @api_view(["GET"])
 def portfolio_schemes(request):
-    date = PortfolioValue.objects.filter(portfolio_id=1).latest().date
+    pf = PortfolioValue.objects.filter(portfolio_id=1).latest()
+    date = pf.date
     scheme_vals = SchemeValue.objects.filter(
         date=date, scheme__folio__portfolio_id=1
     ).select_related("scheme", "scheme__scheme", "scheme__folio")
     results = []
+    portfolio_change = Decimal("0.0")
     for scheme_id, group in itertools.groupby(scheme_vals, lambda x: x.scheme.scheme_id):
         obj = None
         total_invested = Decimal("0.0")
         total_value = Decimal("0.0")
         total_units = Decimal("0.0")
+        total_change = Decimal("0.0")
         try:
             nav0, nav1 = (
                 NAVHistory.objects.filter(scheme_id=scheme_id)
@@ -123,19 +126,30 @@ def portfolio_schemes(request):
                     "avg_nav": item.avg_nav,
                 }
             )
+            total_change += item.balance * (nav0 - nav1)
             total_invested += item.invested
             total_value += item.value
             total_units += item.balance
+        portfolio_change += total_change
         if obj is not None:
             if total_units >= 1e-4:
                 avg_nav = Decimal(str(round(total_invested / total_units, 4)))
             else:
                 avg_nav = Decimal("0.0000")
             obj.update(
-                invested=total_invested, units=total_units, value=total_value, avg_nav=avg_nav
+                invested=total_invested, units=total_units,
+                value=total_value, avg_nav=avg_nav,
+                change=total_change
             )
             results.append(obj)
-    return Response(results)
+    output = {
+        "invested": pf.invested,
+        "value": pf.value,
+        "change": portfolio_change,
+        "date": date,
+        "schemes": results
+    }
+    return Response(output)
 
 
 @api_view(["POST"])

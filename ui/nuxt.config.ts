@@ -51,7 +51,7 @@ const config: NuxtConfig = {
   css: ["~/assets/layout/layout.scss"],
 
   // Plugins to run before rendering page (https://go.nuxtjs.dev/config-plugins)
-  plugins: [],
+  plugins: ["~/plugins/eventbus"],
 
   // Auto import components (https://go.nuxtjs.dev/config-components)
   components: true,
@@ -115,6 +115,7 @@ const config: NuxtConfig = {
       "Card",
       "Column",
       "DataTable",
+      "DataView",
       "FileUpload",
       "InputText",
       "Panel",

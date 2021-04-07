@@ -1,94 +1,107 @@
 <template lang="pug">
   .container
-    highstock.w-full(:options="options",
+    highstock.w-full(:options="options"
       :update="['options.title', 'options.series']"
       :animation="{duration: 1000}"
       @chartLoaded="chartLoaded")
-    //div.card
-      Logo
-      h1.title folioman
-      .links
-        a.button--green(href="https://nuxtjs.org/" target="_blank" rel="noopener noreferrer") Documentation
-        a.button--grey(href="https://github.com/nuxt/nuxt.js" target="_blank" rel="noopener noreferrer") GitHub
+    DataView.mt-4(:value="schemes" layout="list")
+      template(#header)
+        .grid.grid-cols-10.gap-4.p-4
+          .col-span-2
+            .flex.flex-col.items-center
+              .text-xl.text-gray-500.font-medium.uppercase Current Value
+              .text-2xl.font-medium {{ formatCurrency(totalValue) }}
+          .col-span-2
+            .flex.flex-col.items-center
+              .text-lg.text-gray-500.font-medium Invested
+              .text-base {{ formatCurrency(totalInvested) }}
+          .col-span-2
+            .flex.flex-col.items-center
+              .text-lg.text-gray-500.font-medium Day Change
+              .text-base {{ formatCurrency(total1DChange) }}
+          .col-span-2
+            .flex.flex-col.items-center
+              .text-lg.text-gray-500.font-medium Total Return
+              .text-base {{ formatCurrency(totalValue - totalInvested) }}
+          .col-span-2
+            .flex.flex-col.items-center
+              .text-lg.text-gray-500.font-medium Funds
+              .text-base {{ schemes.length }}
+        .grid.grid-cols-12.gap-4.p-4.border-t-2.border-gray-300
+          .col-span-6 Fund
+          .col-span-2.text-right Value
+          .col-span-2.text-right Invested
+          .col-span-2.text-right Return
+      template(#list="slotProps")
+        .grid.grid-cols-12.gap-4.p-4
+            .col-span-6
+              .text-xl.capitalize.text-gray-500.font-medium {{ slotProps.data.name }}
+              .grid.grid-cols-12
+                .col-span-8
+                  .flex.flex-row.items-center.my-2
+                    .text-base.fonte-medium.text-gray-500 Units
+                    .text-base.ml-2 {{ slotProps.data.units }}
+                    .text-2xl.mx-2.text-gray-500.font-semibold •
+                    ProgressBar.flex-grow(:value="100*slotProps.data.value/totalValue" style="height: 0.5em" :showValue="false")
+                    .text-sm.text-left.ml-2 {{ (100*slotProps.data.value/totalValue).toFixed(2) }}%
+              //.grid.grid-cols-12.my-2.items-center
+                .col-span-12
+                .text-sm.text-left {{ (100*slotProps.data.value/totalValue).toFixed(2) }}%
+                ProgressBar(:value="100*slotProps.data.value/totalValue" style="height: 0.5em" :showValue="false")
+                .text-lg.mx-2.text-gray-500.font-semibold •
+                .text-sm Units {{slotProps.data.units}}
+              //.flex.flex-row.items-center.my-2
+                .flex.flex-row
+                  .font-medium.text-base.text-gray-500 NAV
+                  .text-base.ml-2 {{ slotProps.data.nav0 }}
+                .text-2xl.mx-2.text-gray-500.font-semibold •
+                .flex.flex-row
+                  .font-medium.text-base.text-gray-500 Avg NAV
+                  .text-base.ml-2 {{ slotProps.data.avg_nav }}
+                .text-lg.mx-2.text-gray-500.font-semibold •
+                .flex.flex-row
+                  .font-medium.text-base.text-gray-500 1D Change
+                  .text-base.ml-2 {{ formatCurrency(slotProps.data.change) }}
+            .col-span-2
+              .text-lg.text-right {{ formatCurrency(slotProps.data.value) }}
+              .flex.flex-row.my-2.justify-end
+                .flex.flex-row.items-center
+                  .font-medium.text-xs.text-gray-500 NAV
+                  .text-sm.ml-2 {{ slotProps.data.nav0 }}
+            .col-span-2
+              .text-lg.font-medium.text-right {{ formatCurrency(slotProps.data.invested) }}
+              .flex.flex-row.my-2.justify-end
+                .flex.flex-row.items-center
+                  .font-medium.text-xs.text-gray-500 avg
+                  .text-sm.ml-2 {{ slotProps.data.avg_nav }}
+            .col-span-2
+              .text-lg.text-right {{ formatCurrency(slotProps.data.value - slotProps.data.invested) }}
+              .text-sm.text-right.my-2 {{ (100 * (slotProps.data.value - slotProps.data.invested)/slotProps.data.invested).toFixed(2) }}%
 </template>
 
 <script lang="ts">
 import {
   defineComponent,
+  onBeforeUnmount,
   onMounted,
   reactive,
   ref,
   useContext,
 } from "@nuxtjs/composition-api";
-
 import { SeriesLineOptions, Options } from "highcharts";
 
 interface Chart {
   showLoading(): void;
   hideLoading(): void;
   update(arg0: Options): void;
+  reflow(): void;
 }
-// const { getOptions, pick, isNumber } = Highcharts;
-// Highcharts.numberFormat = function (
-//   number,
-//   decimals,
-//   decimalPoint,
-//   thousandsSep
-// ) {
-//   number = +number || 0;
-//   decimals = +decimals;
-//
-//   const lang = getOptions().lang!;
-//   const origDec = (number.toString().split(".")[1] || "").length;
-//   let decimalComponent;
-//   const absNumber = Math.abs(number);
-//   let ret;
-//
-//   if (decimals === -1) {
-//     decimals = Math.min(origDec, 20); // Preserve decimals. Not huge numbers (#3793).
-//   } else if (!isNumber(decimals)) {
-//     decimals = 2;
-//   }
-//
-//   // A string containing the positive integer component of the number
-//   const strinteger = String(parseInt(absNumber.toFixed(decimals)));
-//
-//   // Leftover after grouping into thousands. Can be 0, 1 or 3.
-//   const thousands = strinteger.length > 3 ? (strinteger.length - 1) % 2 : 0;
-//
-//   // Language
-//   decimalPoint = pick(decimalPoint, lang.decimalPoint);
-//   thousandsSep = pick(thousandsSep, lang.thousandsSep);
-//
-//   // Start building the return
-//   ret = number < 0 ? "-" : "";
-//
-//   // Add the leftover after grouping into thousands. For example, in the number 42 000 000,
-//   // this line adds 42.
-//   ret += thousands ? strinteger.substr(0, thousands) + thousandsSep : "";
-//
-//   // Add the remaining thousands groups, joined by the thousands separator
-//   ret += strinteger
-//     .substr(thousands)
-//     .replace(/(\d{2})(?=\d{3})/g, "$1" + thousandsSep);
-//
-//   // Add the decimal point and the decimal component
-//   if (decimals) {
-//     // Get the decimal component, and add power to avoid rounding errors with float numbers (#4573)
-//     decimalComponent = Math.abs(
-//       absNumber -
-//         parseFloat(strinteger) +
-//         Math.pow(10, -Math.max(decimals, origDec) - 1)
-//     );
-//     ret += decimalPoint + decimalComponent.toFixed(decimals).slice(2);
-//   }
-//
-//   return ret;
-// };
 
 export default defineComponent({
   setup() {
-    const { $axios } = useContext();
+    const { $axios, app } = useContext();
+    const { $bus } = app;
+
     const chart = ref<Chart | null>(null);
     const options = reactive<Options>({
       chart: {
@@ -183,7 +196,7 @@ export default defineComponent({
     const getPortfolio = async () => {
       try {
         if (chart.value) chart.value.showLoading();
-        const { data } = await $axios.get("/api/mutualfunds/portfolio");
+        const { data } = await $axios.get("/api/mutualfunds/portfolio_history");
         (options.series as Array<SeriesLineOptions>)![0].data = data.value;
         (options.series as Array<SeriesLineOptions>)![1].data = data.invested;
 
@@ -197,13 +210,68 @@ export default defineComponent({
         if (chart.value) chart.value.hideLoading();
       }
     };
-    onMounted(getPortfolio);
+
+    const schemes = ref([]);
+    const totalInvested = ref(0.0);
+    const totalValue = ref(0.0);
+    const total1DChange = ref(0.0);
+    const schemesLoading = ref(false);
+    const getSchemes = async () => {
+      schemesLoading.value = true;
+      try {
+        const { data } = await $axios.get("/api/mutualfunds/portfolio_list");
+        schemes.value = data.schemes;
+        totalInvested.value = data.invested;
+        total1DChange.value = data.change;
+        totalValue.value = data.value;
+        schemesLoading.value = false;
+      } catch (err) {
+        schemesLoading.value = false;
+      }
+    };
+
+    const init = async () => {
+      await getPortfolio();
+      await getSchemes();
+      $bus.$on("menu-toggle", reflow);
+    };
+
+    const reflow = () => {
+      if (chart.value) {
+        setTimeout(() => {
+          chart.value!.reflow();
+        }, 201);
+      }
+    };
+
+    onMounted(init);
+    onBeforeUnmount(() => {
+      $bus.$off("menu-toggle", reflow);
+    });
+
+    const formatCurrency = (num: Number) => {
+      return num.toLocaleString("en-IN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        style: "currency",
+        currency: "INR",
+      });
+    };
 
     const chartLoaded = (chartObj: Chart) => {
       chart.value = chartObj;
     };
 
-    return { options, chartLoaded, chart };
+    return {
+      options,
+      schemes,
+      chartLoaded,
+      chart,
+      formatCurrency,
+      totalInvested,
+      total1DChange,
+      totalValue,
+    };
   },
   head: {
     title: "Dashboard",
@@ -212,35 +280,19 @@ export default defineComponent({
 </script>
 
 <style lang="scss">
-//.container {
-//  margin: 0 auto;
-//  min-height: 100vh;
-//  display: flex;
-//  justify-content: center;
-//  align-items: center;
-//  text-align: center;
-//}
+@import "assets/layout/variables";
 
-.title {
-  font-family: "Quicksand", "Source Sans Pro", -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  display: block;
-  font-weight: 300;
-  font-size: 100px;
-  color: #35495e;
-  letter-spacing: 1px;
-}
+.p-dataview {
+  .p-dataview-content {
+    background: $bodyBgColor;
 
-.subtitle {
-  font-weight: 300;
-  font-size: 42px;
-  color: #526488;
-  word-spacing: 5px;
-  padding-bottom: 15px;
-}
-
-.links {
-  padding-top: 15px;
+    > .p-grid > div {
+      @apply border-gray-400;
+    }
+  }
+  .p-dataview-header {
+    background: darken($bodyBgColor, 2%);
+  }
 }
 .highcharts-loading {
   opacity: 1 !important;
