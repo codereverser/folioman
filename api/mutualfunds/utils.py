@@ -1,18 +1,19 @@
 from collections import deque
 from decimal import Decimal
 from datetime import date, timedelta
+import itertools
 import logging
 import re
 from typing import Optional, Union
 
 from dateutil.parser import parse as dateparse
-from django.db.models import F, Sum
+from django.db.models import F, Sum, Case, When
 from django.utils import timezone
 from rapidfuzz import process
 import numpy as np
 import pandas as pd
-
 from tablib import Dataset
+import xirr
 
 from .models import (
     FolioScheme,
@@ -156,18 +157,76 @@ PNL                    : {self.pnl}"""
         self.transactions.append((quantity, nav))
 
 
+def calculate_xirr(transactions, present_date, net_present_value):
+    value_groups = {}
+
+    def date_key_func(x):
+        return x["date"]
+
+    for dt, group in itertools.groupby(sorted(transactions, key=date_key_func), date_key_func):
+        value_groups[dt] = -1 * float(sum(x["amount"] for x in group))
+    value_groups[present_date] = float(net_present_value)
+    return xirr.cleanXirr(value_groups)
+
+
+def update_portfolio_xirr(pfv_obj: PortfolioValue):
+
+    portfolio_id = pfv_obj.portfolio_id
+    pf_date = pfv_obj.date
+    portfolio_value = pfv_obj.value
+
+    scheme_vals = SchemeValue.objects.filter(
+        date=pf_date, scheme__folio__portfolio_id=portfolio_id
+    ).values_list("scheme_id", "value")
+    valuation_whens = [When(pk=sid, then=value) for (sid, value) in scheme_vals]
+    scheme_ids = [x[0] for x in scheme_vals]
+    txns = (
+        Transaction.objects.filter(scheme__folio__portfolio_id=portfolio_id)
+        .values("date", "amount", "scheme_id")
+        .order_by("date")
+        .all()
+    )
+
+    # XIRR (Full)
+    if (xirr_value := calculate_xirr(txns, pf_date, portfolio_value)) is not None:
+        pfv_obj.xirr = xirr_value * 100
+
+    # XIRR (Live)
+    live_txns = list(filter(lambda x: x["scheme_id"] in scheme_ids, txns))
+    xirr_whens = []
+    scheme_val_dicts = dict(scheme_vals)
+
+    def scheme_key_func(x):
+        return x["scheme_id"]
+
+    for scheme_id, scheme_txns in itertools.groupby(
+        sorted(live_txns, key=scheme_key_func), scheme_key_func
+    ):
+        if (
+            scheme_xirr := calculate_xirr(scheme_txns, pf_date, scheme_val_dicts[scheme_id])
+        ) is not None:
+            xirr_whens.append(When(pk=scheme_id, then=scheme_xirr * 100))
+    FolioScheme.objects.filter(pk__in=scheme_ids).update(
+        valuation=Case(*valuation_whens), xirr=Case(*xirr_whens), valuation_date=pf_date
+    )
+
+    if (live_xirr := calculate_xirr(live_txns, pf_date, portfolio_value)) is not None:
+        pfv_obj.live_xirr = live_xirr * 100
+    pfv_obj.save()
+
+
 def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None):
     if not isinstance(scheme_dates, dict):
         scheme_dates = {}
     today = timezone.now().date()
 
-    from_date1 = date(1970, 1, 1)
+    from_date1 = today
     if len(scheme_dates) > 0:
         from_date1 = min(scheme_dates.values())
         if isinstance(from_date1, str):
             from_date1 = dateparse(from_date1).date()
 
-    from_date2 = date(1970, 1, 1)
+    from_date2 = today
     if isinstance(start_date, str) and start_date != "auto":
         from_date2 = dateparse(start_date).date()
     elif isinstance(start_date, date):
@@ -241,7 +300,10 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
             balance.append(fifo.balance)
 
         if fifo.balance > 1e-3:
-            to_date = today
+            latest_nav = (
+                NAVHistory.objects.filter(scheme_id=fund_scheme_id).order_by("-date").first()
+            )
+            to_date = latest_nav.date if latest_nav is not None else (today - timedelta(days=1))
         elif len(dates) > 0:
             to_date = dates[-1]
         else:
@@ -327,3 +389,8 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
     )
     bulk_import_daily_values(PortfolioValueResource, query)
     logger.info("PortfolioValue updated")
+
+    # Update FolioScheme balances
+    pfv = PortfolioValue.objects.order_by("portfolio_id", "-date").distinct("portfolio_id")
+    for pfv_obj in pfv:
+        update_portfolio_xirr(pfv_obj)

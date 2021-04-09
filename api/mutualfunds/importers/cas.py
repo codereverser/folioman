@@ -104,15 +104,7 @@ def import_cas(data: CASParserDataType, user_id):
             scheme_obj, _ = FolioScheme.objects.get_or_create(  # FIXME: update_or_create
                 scheme_id=scheme["scheme_id"],
                 folio_id=folio_obj.id,
-                defaults={
-                    "balance": scheme["close"],
-                    "balance_date": to_date,
-                },
             )
-            if scheme_obj.balance_date > to_date:
-                scheme_obj.balance_date = to_date
-                scheme_obj.balance = scheme["close"]
-                scheme_obj.save()
             if len(scheme["transactions"]) > 0:
                 from_date = dateparse(scheme["transactions"][0]["date"]).date()
                 SchemeValue.objects.get_or_create(

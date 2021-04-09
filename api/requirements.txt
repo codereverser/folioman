@@ -17,3 +17,4 @@ quandl==3.6.1
 redis==3.5.3
 requests==2.25.1
 tablib[pandas]==3.0.0
+xirr==0.1.6
