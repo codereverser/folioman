@@ -1,12 +1,38 @@
 <template lang="pug">
   .container
+    .grid.grid-cols-2.gap-4.mb-4(style="min-height: 400px;")
+      Card.col-span-1.m-2
+        template(#content)
+          .text-sm.w-full.text-gray-400.text-center Current Value
+          .text-4xl.text-gray-600.text-center {{ formatCurrency(totalValue) }}
+          .grid.grid-cols-2.gap-8.mt-16
+            .col-span-1
+              .w-full.text-base.text-gray-400.text-center Invested
+              .w-full.text-xl.text-gray-600.text-center {{ formatCurrency(totalInvested) }}
+            .col-span-1
+              .w-full.text-base.text-gray-400.text-center No. of Funds
+              .w-full.text-xl.text-gray-600.text-center {{ schemes.length }}
+            .col-span-1
+              .w-full.text-base.text-gray-400.text-center Current Return
+              .w-full.text-xl.text-gray-600.text-center {{ formatCurrency(totalValue - totalInvested)  }}
+            .col-span-1
+              .w-full.text-base.text-gray-400.text-center 1 Day Change
+              .w-full.text-xl.text-gray-600.text-center {{ formatCurrency(total1DChange) }}
+            .col-span-1
+              .w-full.text-base.text-gray-400.text-center XIRR %
+              .w-full.text-xl.text-gray-600.text-center T.B.C
+            .col-span-1
+              .w-full.text-base.text-gray-400.text-center Current XIRR %
+              .w-full.text-xl.text-gray-600.text-center T.B.C
+
+      highchart.col-span-1.m-2(:modules="['drilldown']", :options="pieOptions" @chartLoaded="pieChartLoaded")
     highstock.w-full(:options="options"
       :update="['options.title', 'options.series']"
       :animation="{duration: 1000}"
       @chartLoaded="chartLoaded")
     DataView.mt-4(:value="schemes" layout="list")
       template(#header)
-        .grid.grid-cols-10.gap-4.p-4
+        //.grid.grid-cols-10.gap-4.p-4
           .col-span-2
             .flex.flex-col.items-center
               .text-xl.text-gray-500.font-medium.uppercase Current Value
@@ -27,7 +53,7 @@
             .flex.flex-col.items-center
               .text-lg.text-gray-500.font-medium Funds
               .text-base {{ schemes.length }}
-        .grid.grid-cols-12.gap-4.p-4.border-t-2.border-gray-300
+        .grid.grid-cols-12.gap-4.p-4
           .col-span-6 Fund
           .col-span-2.text-right Value
           .col-span-2.text-right Invested
@@ -88,14 +114,16 @@ import {
   ref,
   useContext,
 } from "@nuxtjs/composition-api";
-import { SeriesLineOptions, Options } from "highcharts";
+import {
+  DrilldownOptions,
+  SeriesLineOptions,
+  Options,
+  SeriesPieOptions,
+} from "highcharts";
 
-interface Chart {
-  showLoading(): void;
-  hideLoading(): void;
-  update(arg0: Options): void;
-  reflow(): void;
-}
+import { MFPortfolio, Scheme } from "~/definitions/mutualfunds";
+import { Chart } from "~/definitions/charts";
+import { preparePieChartData, AllocationPieChartData } from "~/utils";
 
 export default defineComponent({
   setup() {
@@ -106,6 +134,9 @@ export default defineComponent({
     const options = reactive<Options>({
       chart: {
         backgroundColor: "#edf0f5",
+      },
+      title: {
+        text: "Portfolio Performance",
       },
       colors: [
         "#4CAF50",
@@ -155,6 +186,7 @@ export default defineComponent({
             fontWeight: "bold",
           },
           states: {
+            hover: {},
             select: {
               fill: "#4CAF50",
               style: {
@@ -191,42 +223,139 @@ export default defineComponent({
         { name: "Current Value", data: [], type: "line" },
         { name: "Invested", data: [], type: "line" },
       ] as Array<SeriesLineOptions>,
+      // FIXME: The following property shouldn't be required here, but the chart crashes without it.
+      drilldown: {
+        series: [],
+      },
     });
+
+    const pieChart = ref<Chart | null>(null);
+    const pieOptions = reactive<Options>({
+      chart: {
+        backgroundColor: "#edf0f5",
+        type: "pie",
+      },
+      colors: [
+        "#4CAF50",
+        "#666666",
+        "#058DC7",
+        "#ED561B",
+        "#DDDF00",
+        "#24CBE5",
+        "#64E572",
+        "#FF9655",
+        "#FFF263",
+        "#6AF9C4",
+      ],
+      credits: {
+        enabled: false,
+      },
+      lang: {
+        thousandsSep: ",",
+      },
+      legend: {
+        enabled: false,
+      },
+      plotOptions: {
+        series: {
+          animation: {
+            duration: 1000,
+          },
+          dataLabels: {
+            enabled: true,
+            format: "{point.name}: {point.y:.2f}%",
+          },
+        },
+      },
+      title: {
+        text: "Asset Allocation",
+      },
+      tooltip: {
+        valueDecimals: 2,
+        valueSuffix: "%",
+      },
+      series: [
+        {
+          name: "Investments",
+          // colorByPoint: true,
+          data: [],
+          type: "pie",
+        },
+      ] as Array<SeriesPieOptions>,
+      drilldown: {
+        series: [],
+      },
+    });
+
+    const portfolios = ref<Array<MFPortfolio>>([]);
+    const currentPortfolio = ref<MFPortfolio>({id: -1, name: "", email: "", pan: ""});
 
     const getPortfolio = async () => {
       try {
-        if (chart.value) chart.value.showLoading();
-        const { data } = await $axios.get("/api/mutualfunds/portfolio_history");
-        (options.series as Array<SeriesLineOptions>)![0].data = data.value;
-        (options.series as Array<SeriesLineOptions>)![1].data = data.invested;
-
-        if (chart.value) {
-          chart.value.hideLoading();
-          chart.value.update({
+        portfolios.value = (await $axios.$get(
+          "/api/mutualfunds/portfolio/"
+        )) as Array<MFPortfolio>;
+        if (portfolios.value.length > 0) {
+          currentPortfolio.value = portfolios.value[0];
+          chart.value?.showLoading();
+          const { data } = await $axios.get(
+            "/api/mutualfunds/portfolio/" +
+              currentPortfolio.value!.id +
+              "/history/"
+          );
+          (options.series as Array<SeriesLineOptions>)![0].data = data.value;
+          (options.series as Array<SeriesLineOptions>)![1].data = data.invested;
+          chart.value?.update({
             series: options.series,
           });
         }
-      } catch (err) {
-        if (chart.value) chart.value.hideLoading();
+      } finally {
+        chart.value?.hideLoading();
       }
     };
 
-    const schemes = ref([]);
+    const schemes = ref<Array<Scheme>>([]);
     const totalInvested = ref(0.0);
     const totalValue = ref(0.0);
     const total1DChange = ref(0.0);
     const schemesLoading = ref(false);
     const getSchemes = async () => {
-      schemesLoading.value = true;
+      if (!currentPortfolio.value) return;
       try {
-        const { data } = await $axios.get("/api/mutualfunds/portfolio_list");
+        schemesLoading.value = true;
+        pieChart.value?.showLoading();
+        const { data } = await $axios.get(
+          "/api/mutualfunds/portfolio/" +
+            currentPortfolio.value!.id +
+            "/summary/"
+        );
         schemes.value = data.schemes;
         totalInvested.value = data.invested;
         total1DChange.value = data.change;
         totalValue.value = data.value;
+
+        const pieChartData: AllocationPieChartData = preparePieChartData(
+          schemes.value,
+          totalValue.value
+        );
+
+        (pieOptions.series as Array<SeriesPieOptions>)![0].data =
+          pieChartData.series;
+        (pieOptions.drilldown as DrilldownOptions)!.series =
+          pieChartData.drilldown;
+        pieChart.value?.update(
+          {
+            series: pieOptions.series,
+            drilldown: {
+              series: pieOptions.drilldown!.series,
+            },
+          },
+          true,
+          true
+        );
+      } finally {
         schemesLoading.value = false;
-      } catch (err) {
-        schemesLoading.value = false;
+        pieChart.value?.hideLoading();
       }
     };
 
@@ -237,11 +366,9 @@ export default defineComponent({
     };
 
     const reflow = () => {
-      if (chart.value) {
-        setTimeout(() => {
-          chart.value!.reflow();
-        }, 201);
-      }
+      setTimeout(() => {
+        chart.value?.reflow();
+      }, 201);
     };
 
     onMounted(init);
@@ -261,11 +388,18 @@ export default defineComponent({
     const chartLoaded = (chartObj: Chart) => {
       chart.value = chartObj;
     };
+    const pieChartLoaded = (chartObj: Chart) => {
+      pieChart.value = chartObj;
+    };
 
     return {
       options,
+      pieOptions,
       schemes,
+      portfolios,
+      currentPortfolio,
       chartLoaded,
+      pieChartLoaded,
       chart,
       formatCurrency,
       totalInvested,
@@ -359,5 +493,10 @@ export default defineComponent({
     box-shadow: 0 -2em;
     height: 5em;
   }
+}
+
+.p-card {
+  background: darken(#edf0f5, 2%);
+  //@apply bg-gradient-to-r from-gray-400 to-gray-300;
 }
 </style>

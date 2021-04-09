@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, DivisionByZero
 import itertools
 
 import casparser
@@ -49,13 +49,14 @@ class PortfolioViewSet(ModelViewSet):
     def get_queryset(self):
         return Portfolio.objects.filter(user_id=self.request.user.id)
 
-    def list(self, request, *args, **kwargs):
-        data = {
-            "user": request.user.username,
-            "email": request.user.email,
-            "portfolios": self.serializer_class(self.get_queryset(), many=True).data,
-        }
-        return Response(data)
+    # def list(self, request, *args, **kwargs):
+    #
+    #     data = {
+    #         "user": request.user.username,
+    #         "email": request.user.email,
+    #         "portfolios": self.serializer_class(self.get_queryset(), many=True).data,
+    #     }
+    #     return Response(data)
 
     @action(["POST"], detail=False)
     def search(self, request, format=None):
@@ -69,87 +70,120 @@ class PortfolioViewSet(ModelViewSet):
         except Portfolio.DoesNotExist:
             raise NotFound
 
+    @action(["GET"], detail=True)
+    def history(self, request, pk=None, format=None):
+        qs = (
+            PortfolioValue.objects.filter(portfolio_id=pk)
+            .annotate(ts=EpochMS(F("date")))
+            .values_list("ts", "invested", "value")
+            .order_by("date")
+        )
+        items = list(qs.all())
+        s1 = [(x[0], x[1]) for x in items]
+        s2 = [(x[0], x[2]) for x in items]
+        output = {"invested": s1, "value": s2}
+        return Response(output)
 
-@api_view(["GET"])
-def portfolio_value(request):
-    # TODO: Add portfolio_id parameter
-    qs = (
-        PortfolioValue.objects.filter(portfolio_id=1)
-        .annotate(ts=EpochMS(F("date")))
-        .values_list("ts", "invested", "value")
-        .order_by("date")
-    )
-    items = list(qs.all())
-    s1 = [(x[0], x[1]) for x in items]
-    s2 = [(x[0], x[2]) for x in items]
-    output = {"invested": s1, "value": s2}
-    return Response(output)
-
-
-@api_view(["GET"])
-def portfolio_schemes(request):
-    pf = PortfolioValue.objects.filter(portfolio_id=1).latest()
-    date = pf.date
-    scheme_vals = SchemeValue.objects.filter(
-        date=date, scheme__folio__portfolio_id=1
-    ).select_related("scheme", "scheme__scheme", "scheme__folio")
-    results = []
-    portfolio_change = Decimal("0.0")
-    for scheme_id, group in itertools.groupby(scheme_vals, lambda x: x.scheme.scheme_id):
-        obj = None
-        total_invested = Decimal("0.0")
-        total_value = Decimal("0.0")
-        total_units = Decimal("0.0")
-        total_change = Decimal("0.0")
-        try:
-            nav0, nav1 = (
-                NAVHistory.objects.filter(scheme_id=scheme_id)
-                .order_by("-date")
-                .values_list("nav", flat=True)[:2]
-            )
-        except ValueError:
-            nav0, nav1 = Decimal("0.0"), Decimal("0.0")
-        for item in group:
-            if obj is None:
-                obj = {
-                    "name": item.scheme.scheme.name.capitalize(),
-                    "nav0": nav0,
-                    "nav1": nav1,
-                    "folios": [],
-                }
-            obj["folios"].append(
-                {
-                    "folio": item.scheme.folio.number,
-                    "invested": item.invested,
-                    "units": item.balance,
-                    "value": item.value,
-                    "avg_nav": item.avg_nav,
-                }
-            )
-            total_change += item.balance * (nav0 - nav1)
-            total_invested += item.invested
-            total_value += item.value
-            total_units += item.balance
-        portfolio_change += total_change
-        if obj is not None:
-            if total_units >= 1e-4:
-                avg_nav = Decimal(str(round(total_invested / total_units, 4)))
-            else:
-                avg_nav = Decimal("0.0000")
-            obj.update(
-                invested=total_invested, units=total_units,
-                value=total_value, avg_nav=avg_nav,
-                change=total_change
-            )
-            results.append(obj)
-    output = {
-        "invested": pf.invested,
-        "value": pf.value,
-        "change": portfolio_change,
-        "date": date,
-        "schemes": results
-    }
-    return Response(output)
+    # @action(["GET"], detail=True)
+    # def summary(self, request, pk=None, format=None):
+    #     portfolio_id = pk
+    #
+    #     pf = PortfolioValue.objects.filter(portfolio_id=portfolio_id).order_by('-date')[:2]
+    #     portfolio_change = None
+    #     portfolio_change_pct = None
+    #     if len(pf) == 0:
+    #         return {}
+    #     elif len(pf) == 2:
+    #         portfolio_change = pf[1].value - pf[0].value
+    #         try:
+    #             portfolio_change_pct = (portfolio_change / pf[0].value) * 100
+    #         except DivisionByZero:
+    #             portfolio_change_pct = None
+    #
+    #     portfolio = pf[0]
+    #     summary = {
+    #         'value': portfolio.value,
+    #         'change': portfolio_change,
+    #         'changePct': portfolio_change_pct,
+    #         'invested': portfolio.invested,
+    #         'date': portfolio.date,
+    #         'schemes': []
+    #     }
+    #     scheme_vals = SchemeValue.objects.filter(
+    #         date=portfolio.date, scheme__folio__portfolio_id=portfolio_id
+    #     ).select_related("scheme", "scheme__scheme", "scheme__folio", "scheme__scheme__category")
+    #
+    #     return Response(summary)
+    @action(["GET"], detail=True)
+    def summary(self, request, pk=None, format=None):
+        pf = PortfolioValue.objects.filter(portfolio_id=pk).latest()
+        date = pf.date
+        scheme_vals = SchemeValue.objects.filter(
+            date=date, scheme__folio__portfolio_id=pk
+        ).select_related("scheme", "scheme__scheme", "scheme__folio", "scheme__scheme__category")
+        results = []
+        portfolio_change = Decimal("0.0")
+        for scheme_id, group in itertools.groupby(scheme_vals, lambda x: x.scheme.scheme_id):
+            obj = None
+            total_invested = Decimal("0.0")
+            total_value = Decimal("0.0")
+            total_units = Decimal("0.0")
+            total_change = Decimal("0.0")
+            try:
+                nav0, nav1 = (
+                    NAVHistory.objects.filter(scheme_id=scheme_id)
+                    .order_by("-date")
+                    .values_list("nav", flat=True)[:2]
+                )
+            except ValueError:
+                nav0, nav1 = Decimal("0.0"), Decimal("0.0")
+            for item in group:
+                if obj is None:
+                    obj = {
+                        "name": item.scheme.scheme.name.capitalize(),
+                        "category": {
+                            "main": item.scheme.scheme.category.type,
+                            "sub": item.scheme.scheme.category.subtype,
+                        },
+                        "nav0": nav0,
+                        "nav1": nav1,
+                        "folios": [],
+                    }
+                obj["folios"].append(
+                    {
+                        "folio": item.scheme.folio.number,
+                        "invested": item.invested,
+                        "units": item.balance,
+                        "value": item.value,
+                        "avg_nav": item.avg_nav,
+                    }
+                )
+                total_change += item.balance * (nav0 - nav1)
+                total_invested += item.invested
+                total_value += item.value
+                total_units += item.balance
+            portfolio_change += total_change
+            if obj is not None:
+                if total_units >= 1e-4:
+                    avg_nav = Decimal(str(round(total_invested / total_units, 4)))
+                else:
+                    avg_nav = Decimal("0.0000")
+                obj.update(
+                    invested=total_invested,
+                    units=total_units,
+                    value=total_value,
+                    avg_nav=avg_nav,
+                    change=total_change,
+                )
+                results.append(obj)
+        output = {
+            "invested": pf.invested,
+            "value": pf.value,
+            "change": portfolio_change,
+            "date": date,
+            "schemes": results,
+        }
+        return Response(output)
 
 
 @api_view(["POST"])

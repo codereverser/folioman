@@ -6,7 +6,7 @@ from .models import Portfolio, SchemeValue
 class PortfolioSerializer(ModelSerializer):
     class Meta:
         model = Portfolio
-        fields = "__all__"
+        fields = ["id", "name", "email", "pan"]
 
 
 class SchemeSerializer(ModelSerializer):
