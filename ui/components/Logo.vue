@@ -13,13 +13,10 @@
 </template>
 
 <style lang="scss">
-.NuxtLogo {
-  animation: 1s appear;
-  margin: auto;
-}
-
 .fm-logo {
   @apply mb-4;
+
+  animation: 1s appear;
 }
 
 @keyframes appear {

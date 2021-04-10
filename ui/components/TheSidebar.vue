@@ -16,32 +16,16 @@ export default defineComponent({
         component: "Logo",
         hiddenOnCollapse: true,
       },
-      // {
-      //   header: true,
-      //   title: "Main Navigation",
-      //   hiddenOnCollapse: true,
-      // },
-      {
-        href: "/",
-        title: "Dashboard",
-        icon: "pi pi-chart-bar",
-      },
       {
         header: true,
         title: "Mutual funds",
         hiddenOnCollapse: true,
       },
-      // {
-      //   href: "/",
-      //   title: "Dashboard",
-      //   icon: "pi pi-chart-bar",
-      //   // child: [
-      //   //   {
-      //   //     href: "/charts/sublink",
-      //   //     title: "Sub Link",
-      //   //   },
-      //   // ],
-      // },
+      {
+        href: "/",
+        title: "Dashboard",
+        icon: "pi pi-chart-bar",
+      },
       {
         href: "/mutualfunds/schemes",
         title: "Portfolio",
@@ -49,19 +33,31 @@ export default defineComponent({
       },
       {
         title: "Analysis",
-        icon: "pi pi-angle-left",
+        icon: "pi pi-chart-line",
         child: [
           {
             href: "/mutualfunds/analysis/whatif",
-            icon: "pi pi-chart-line",
+            icon: "pi pi-question-circle",
             title: "What If?",
           },
           {
             href: "/mutualfunds/analysis/overlap",
-            icon: "pi pi-chart-bar",
+            icon: "pi pi-copy",
             title: "Overlap",
           },
         ],
+      },
+      { header: true, title: "Stocks", hiddenOnCollapse: true },
+      {
+        title: "Dashboard",
+        icon: "pi pi-money-bill",
+        badge: { text: "WIP", class: "vsm--badge_default" },
+      },
+      { header: true, title: "Crypto ", hiddenOnCollapse: true },
+      {
+        title: "Dashboard",
+        icon: "pi pi-wallet",
+        badge: { text: "WIP", class: "vsm--badge_default" },
       },
     ]);
     const onToggleCollapse = () => {

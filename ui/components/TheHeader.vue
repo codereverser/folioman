@@ -22,7 +22,6 @@ import {
   useRouter,
 } from "@nuxtjs/composition-api";
 import { RefreshScheme } from "@nuxtjs/auth-next";
-// import { useSidebar } from "~/hooks/useSidebar";
 
 export default defineComponent({
   setup(_, { root, emit }) {
