@@ -1,31 +1,42 @@
 <template lang="pug">
   .container
-    .grid.grid-cols-2.gap-4.mb-4(style="min-height: 400px;")
-      Card.col-span-1.m-2
+    .grid.grid-cols-5.gap-4.mb-4(style="min-height: 400px;")
+      Card.summary.col-span-2.m-2
         template(#content)
-          .text-sm.w-full.text-gray-400.text-center Current Value
-          .text-4xl.text-gray-600.text-center {{ formatCurrency(totalValue) }}
+          .text-sm.w-full.text-white.text-center Current Value
+          .text-4xl.text-white.text-center.font-bold {{ formatCurrency(totalValue) }}
           .grid.grid-cols-2.gap-8.mt-16
             .col-span-1
-              .w-full.text-base.text-gray-400.text-center Invested
-              .w-full.text-xl.text-gray-600.text-center {{ formatCurrency(totalInvested) }}
+              .w-full.text-base.text-white.text-center Invested
+              .w-full.text-xl.text-white.text-center {{ formatCurrency(totalInvested) }}
             .col-span-1
-              .w-full.text-base.text-gray-400.text-center No. of Funds
-              .w-full.text-xl.text-gray-600.text-center {{ schemes.length }}
+              .w-full.text-base.text-white.text-center No. of Funds
+              .w-full.text-xl.text-white.text-center {{ schemes.length }}
             .col-span-1
-              .w-full.text-base.text-gray-400.text-center Current Return
-              .w-full.text-xl.text-gray-600.text-center {{ formatCurrency(totalValue - totalInvested)  }}
+              .w-full.text-base.text-white.text-center Current Return
+              .flex.flex-row.justify-center.items-center
+                .text-white.text-xl.mr-2 {{ formatCurrency(totalChange.A)  }}
+                template(v-if="totalChange.A >= 0")
+                  .text-white.text-sm.text-green-400.font-medium +{{ formatPct(totalChangePct.A) }}
+                template(v-else)
+                  .text-white.text-sm.text-red-400.font-medium -{{ formatPct(totalChangePct.A) }}
             .col-span-1
-              .w-full.text-base.text-gray-400.text-center 1 Day Change
-              .w-full.text-xl.text-gray-600.text-center {{ formatCurrency(total1DChange) }}
+              .w-full.text-base.text-white.text-center 1 Day Change
+              .flex.flex-row.justify-center.items-center
+                .text-white.text-xl.mr-2 {{ formatCurrency(totalChange.D)  }}
+                template(v-if="totalChange.D >= 0")
+                  .text-white.text-sm.text-green-400.font-medium +{{ formatPct(totalChangePct.D) }}
+                template(v-else)
+                  .text-white.text-sm.text-red-400.font-medium {{ formatPct(totalChangePct.D) }}
             .col-span-1
-              .w-full.text-base.text-gray-400.text-center XIRR %
-              .w-full.text-xl.text-gray-600.text-center T.B.C
+              .w-full.text-base.text-white.text-center Absolute XIRR
+              .w-full.text-xl.text-white.text-center {{ formatPct(xirr.overall) }}
             .col-span-1
-              .w-full.text-base.text-gray-400.text-center Current XIRR %
-              .w-full.text-xl.text-gray-600.text-center T.B.C
-
-      highchart.col-span-1.m-2(:modules="['drilldown']", :options="pieOptions" @chartLoaded="pieChartLoaded")
+              .w-full.text-base.text-white.text-center Current XIRR
+              .w-full.text-xl.text-white.text-center {{ formatPct(xirr.current) }}
+        template(#footer)
+          .w-full.text-right.text-gray-400.text-sm(:class="{'invisible': portfolioDate === ''}") NAV date: {{ portfolioDate }}
+      highchart.col-span-3.m-2(:modules="['drilldown']" :options="pieOptions" @chartLoaded="pieChartLoaded")
     highstock.w-full(:options="options"
       :update="['options.title', 'options.series']"
       :animation="{duration: 1000}"
@@ -44,7 +55,7 @@
           .col-span-2
             .flex.flex-col.items-center
               .text-lg.text-gray-500.font-medium Day Change
-              .text-base {{ formatCurrency(total1DChange) }}
+              .text-base {{ formatCurrency(totalChange) }}
           .col-span-2
             .flex.flex-col.items-center
               .text-lg.text-gray-500.font-medium Total Return
@@ -268,7 +279,7 @@ export default defineComponent({
         },
       },
       title: {
-        text: "Asset Allocation",
+        text: "",
       },
       tooltip: {
         valueDecimals: 2,
@@ -288,7 +299,12 @@ export default defineComponent({
     });
 
     const portfolios = ref<Array<MFPortfolio>>([]);
-    const currentPortfolio = ref<MFPortfolio>({id: -1, name: "", email: "", pan: ""});
+    const currentPortfolio = ref<MFPortfolio>({
+      id: -1,
+      name: "",
+      email: "",
+      pan: "",
+    });
 
     const getPortfolio = async () => {
       try {
@@ -317,7 +333,16 @@ export default defineComponent({
     const schemes = ref<Array<Scheme>>([]);
     const totalInvested = ref(0.0);
     const totalValue = ref(0.0);
-    const total1DChange = ref(0.0);
+    const totalChange = ref({
+      D: 0.0,
+      A: 0.0,
+    });
+    const totalChangePct = ref({
+      D: 0.0,
+      A: 0.0,
+    });
+    const portfolioDate = ref("");
+    const xirr = ref({ current: 0.0, overall: 0.0 });
     const schemesLoading = ref(false);
     const getSchemes = async () => {
       if (!currentPortfolio.value) return;
@@ -331,8 +356,11 @@ export default defineComponent({
         );
         schemes.value = data.schemes;
         totalInvested.value = data.invested;
-        total1DChange.value = data.change;
+        totalChange.value = data.change;
+        totalChangePct.value = data.change_pct;
+        xirr.value = data.xirr;
         totalValue.value = data.value;
+        portfolioDate.value = data.date;
 
         const pieChartData: AllocationPieChartData = preparePieChartData(
           schemes.value,
@@ -378,11 +406,19 @@ export default defineComponent({
 
     const formatCurrency = (num: Number) => {
       return num.toLocaleString("en-IN", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
         style: "currency",
         currency: "INR",
       });
+    };
+
+    const formatNumber = (num: number | null, digits = 2): string => {
+      return num?.toFixed(digits) || "N.A.";
+    };
+
+    const formatPct = (num: number | null, digits = 2): string => {
+      return formatNumber(num, digits) + " %";
     };
 
     const chartLoaded = (chartObj: Chart) => {
@@ -402,9 +438,14 @@ export default defineComponent({
       pieChartLoaded,
       chart,
       formatCurrency,
+      formatNumber,
+      formatPct,
       totalInvested,
-      total1DChange,
+      totalChange,
+      totalChangePct,
       totalValue,
+      portfolioDate,
+      xirr,
     };
   },
   head: {
@@ -495,8 +536,12 @@ export default defineComponent({
   }
 }
 
-.p-card {
-  background: darken(#edf0f5, 2%);
+.summary.p-card {
+  //background: darken(#edf0f5, 2%);
+  //background: darken(#4caf50, 10%);
+  @apply rounded-xl bg-gradient-to-tr from-gray-900 to-gray-500;
+
+  color: white;
   //@apply bg-gradient-to-r from-gray-400 to-gray-300;
 }
 </style>

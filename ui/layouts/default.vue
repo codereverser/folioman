@@ -2,8 +2,8 @@
   div(:class="containerClass" @click="onWrapperClick")
     TheHeader(@menu-toggle="onMenuToggle")
     Toast
-    transition(name="layout-sidebar")
-      TheSidebar(:class="sidebarClass" @click="onSidebarClick")
+    //transition(name="layout-sidebar")
+    TheSidebar(:class="sidebarClass" @click="onSidebarClick" @sidebar-collapse="onSidebarCollapseToggle")
     main.layout-main
       Nuxt
   //.flex.h-screen.bg-gray-200.font-roboto
@@ -29,6 +29,7 @@ export default defineComponent({
     const menuClick = ref(false);
 
     const isDesktop = () => window.innerWidth > 1024;
+    const isSidebarCollapsed = ref(false);
     const isSidebarVisible = () => {
       if (isDesktop()) {
         if (layoutMode.value === "static") return !staticMenuInactive.value;
@@ -50,6 +51,7 @@ export default defineComponent({
           "layout-overlay-sidebar-active":
             overlayMenuActive.value && layoutMode.value === "overlay",
           "layout-mobile-sidebar-active": mobileMenuActive.value,
+          "layout-sidebar-collapsed": isSidebarCollapsed.value,
         },
       ];
     });
@@ -92,6 +94,10 @@ export default defineComponent({
       menuClick.value = true;
     };
 
+    const onSidebarCollapseToggle = () => {
+      isSidebarCollapsed.value = !isSidebarCollapsed.value;
+    };
+
     // const onMenuItemClick = (event: Event) => {
     //   if (event.item && !event.item.items) {
     //     overlayMenuActive.value = false;
@@ -117,6 +123,7 @@ export default defineComponent({
       // onMenuItemClick,
       onMenuToggle,
       onSidebarClick,
+      onSidebarCollapseToggle,
       onWrapperClick,
       mobileMenuActive,
       overlayMenuActive,

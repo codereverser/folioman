@@ -16,22 +16,6 @@
         cursor: pointer;
     }
 
-    .layout-menu-button {
-        cursor: pointer;
-        display: inline-block;
-        text-decoration: none;
-        color: $topbarItemColor;
-        transition: color $transitionDuration;
-
-        span {
-            font-size: 1.5em;
-        }
-
-        &:hover {
-            color: $topbarItemHoverColor;
-        }
-    }
-
     .layout-topbar-icons {
         float: right;
         display: block;
@@ -79,68 +63,5 @@
             }
         }
 
-        .layout-topbar-search {
-            padding: 0;
-            position: relative;
-            display: inline-block;
-            top: -4px;
-
-            input {
-                display: inline-block;
-                border: 0 none;
-                font-size: $fontSize;
-                background: transparent;
-                border-bottom: 2px solid $topbarSearchInputBorderBottomColor;
-                outline: 0 none;
-                box-shadow: none;
-                color: $topbarSearchInputColor;
-                width: 100px;
-                padding: 1px 20px 1px 1px;
-                margin: 0;
-                border-radius: 2px;
-
-                &::-webkit-input-placeholder {
-                  color:$topbarSearchInputColor;
-                  opacity: .7;
-                  transition: opacity $transitionDuration;
-                }
-                &::-moz-placeholder {
-                  color:$topbarSearchInputColor;
-                  opacity: .7; transition:
-                  opacity $transitionDuration;
-                }
-                &:-moz-placeholder {
-                  color:$topbarSearchInputColor;
-                  opacity: .7;
-                  transition: opacity $transitionDuration;
-                }
-                &:-ms-input-placeholder {
-                  color:$topbarSearchInputColor;
-                  opacity: .7;
-                  transition: opacity $transitionDuration;
-                }
-            }
-
-            .layout-topbar-search-icon {
-                font-size: 18px;
-                position: absolute;
-                top: -1px;
-                right: 0;
-            }
-
-            &:hover {
-                input {
-                    border-bottom-color: $topbarItemHoverColor;
-                    &::-webkit-input-placeholder { opacity: 1 }
-                    &::-moz-placeholder {opacity: 1}
-                    &:-moz-placeholder {opacity: 1}
-                    &:-ms-input-placeholder {opacity: 1}
-                }
-
-                .layout-topbar-search-icon {
-                    color: $topbarItemHoverColor;
-                }
-            }
-        }
     }
 }

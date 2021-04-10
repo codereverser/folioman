@@ -11,7 +11,7 @@
           .p-inputgroup.p-input-filled.mt-4
             .p-inputgroup-addon
               i.pi.pi-lock
-            InputText.w-full(placeholder="Password" type="password" v-model="creds.password")
+            Password(v-model="creds.password" placeholder="Password" :feedback="false" :toggleMask="true")
         template(#footer)
           ProgressBar(mode="indeterminate" style="height: .25em" :class="{'invisible': !loading}")
           .flex.justify-center.my-2

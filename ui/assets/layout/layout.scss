@@ -1,3 +1,54 @@
 @import "./_variables";
 @import "./sass/_layout";
 @import "./_overrides";
+
+$primary-color: #4CAF50;
+$base-bg: #2a2a2e !default;
+
+$item-color: #ffffff !default;
+
+$item-active-color: $primary-color;
+$item-active-bg: null !default;
+
+$item-open-color: #ffffff !default;
+$item-open-bg: $primary-color !default;
+
+$item-hover-color: null !default;
+$item-hover-bg: rgba(darken($base-bg, 5%), 0.5) !default;
+
+$icon-color: null !default;
+$icon-bg: darken( $base-bg, 5% ) !default;
+
+$icon-active-color: $primary-color;
+$icon-active-bg: null !default;
+
+$icon-open-color: null !default;
+$icon-open-bg: $item-open-bg !default;
+
+$mobile-item-color: #ffffff !default;
+$mobile-item-bg: $primary-color !default;
+$mobile-icon-color: $mobile-item-color !default;
+$mobile-icon-bg: $mobile-item-bg !default;
+
+$dropdown-bg: lighten( $base-bg, 5% ) !default;
+$dropdown-color: null !default;
+
+$item-font-size: 16px !default;
+$item-line-height: 30px !default;
+$item-padding: 10px !default;
+$icon-height: 30px !default;
+$icon-width: 30px !default;
+//
+@import "~vue-sidebar-menu/src/scss/vue-sidebar-menu.scss";
+//
+.v-sidebar-menu {
+  .vsm--arrow::after {
+    font-family: 'primeicons', sans-serif;
+    content: "\e932";
+  }
+
+  .vsm--toggle-btn::after {
+    font-family: 'primeicons', sans-serif;
+    content: "\e931";
+  }
+}

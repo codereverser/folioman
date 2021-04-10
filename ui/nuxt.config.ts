@@ -51,7 +51,7 @@ const config: NuxtConfig = {
   css: ["~/assets/layout/layout.scss"],
 
   // Plugins to run before rendering page (https://go.nuxtjs.dev/config-plugins)
-  plugins: ["~/plugins/eventbus"],
+  plugins: ["~/plugins/eventbus", "~/plugins/sidebar-menu"],
 
   // Auto import components (https://go.nuxtjs.dev/config-components)
   components: true,
@@ -119,6 +119,8 @@ const config: NuxtConfig = {
       "FileUpload",
       "InputText",
       "Panel",
+      "PanelMenu",
+      "Password",
       "ProgressBar",
       "ProgressSpinner",
       "Steps",

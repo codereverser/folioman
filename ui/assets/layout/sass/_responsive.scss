@@ -8,7 +8,14 @@
           .layout-main, .layout-footer {
                 margin-left: 250px;
             }
-
+            &.layout-sidebar-collapsed {
+              .layout-topbar {
+                left: 50px;
+              }
+              .layout-main, .layout-footer {
+                margin-left: 50px;
+              }
+            }
             &.layout-static-sidebar-inactive {
                 .layout-topbar  {
                     left: 0;

@@ -25,7 +25,8 @@
     "nuxt": "^2.15.4",
     "nuxt-highcharts": "^1.0.7",
     "primeicons": "^4.1.0",
-    "primevue": "^2.4.0"
+    "primevue": "^2.4.0",
+    "vue-sidebar-menu": "^4.7.4"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^7.13.14",
