@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
     name="NAVFetcher",
     autoretry_for=(RequestException, Timeout),
     retry_backoff=60 * 60,
+    retry_backoff_max=5 * 60 * 60,
     default_retry_delay=30 * 60,
     retry_kwargs={"max_retries": 6},
 )
@@ -74,6 +75,7 @@ def fetch_nav(self, scheme_ids=None, update_portfolio_kwargs=None):
     name="UpdateMFSchemes",
     autoretry_for=(RequestException, Timeout),
     retry_backoff=60 * 60,
+    retry_backoff_max=5 * 60 * 60,
     default_retry_delay=30 * 60,
     retry_kwargs={"max_retries": 6},
 )
