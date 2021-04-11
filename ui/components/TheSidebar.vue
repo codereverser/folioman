@@ -22,9 +22,10 @@ export default defineComponent({
         hiddenOnCollapse: true,
       },
       {
-        href: "/",
+        href: { path: "/" },
         title: "Dashboard",
         icon: "pi pi-chart-bar",
+        attributes: { exact: true },
       },
       {
         href: "/mutualfunds/schemes",
@@ -47,17 +48,25 @@ export default defineComponent({
           },
         ],
       },
+      {
+        title: "Import Portfolio",
+        icon: "pi pi-cloud-upload",
+        href: { path: "/import" },
+        attributes: { exact: false },
+      },
       { header: true, title: "Stocks", hiddenOnCollapse: true },
       {
         title: "Dashboard",
         icon: "pi pi-money-bill",
         badge: { text: "WIP", class: "vsm--badge_default" },
+        disabled: true,
       },
-      { header: true, title: "Crypto ", hiddenOnCollapse: true },
+      { header: true, title: "Crypto", hiddenOnCollapse: true },
       {
         title: "Dashboard",
         icon: "pi pi-wallet",
         badge: { text: "WIP", class: "vsm--badge_default" },
+        disabled: true,
       },
     ]);
     const onToggleCollapse = () => {
@@ -67,3 +76,13 @@ export default defineComponent({
   },
 });
 </script>
+
+<style lang="scss">
+.v-sidebar-menu {
+  .vsm--item {
+    .nuxt-link-active {
+      @apply text-primary;
+    }
+  }
+}
+</style>
