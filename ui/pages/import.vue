@@ -3,7 +3,10 @@
     Card.m-5
       template(slot="content")
         Steps(:model="pageList")
-    NuxtChild(:formData="importData" @prev-page="prevPage($event)" @next-page="nextPage($event)" @complete="complete")
+    NuxtChild(:formData="importData"
+              @prev-page="prevPage($event)"
+              @next-page="nextPage($event)"
+              @complete="complete")
 </template>
 <script lang="ts">
 import { defineComponent, reactive, toRefs } from "@nuxtjs/composition-api";

@@ -3,45 +3,45 @@
     .grid.grid-cols-5.gap-4.mb-4(style="min-height: 400px;")
       Card.summary.col-span-2.m-2
         template(#content)
-          .text-sm.w-full.text-white.text-center Current Value
-          .text-4xl.text-white.text-center.font-bold {{ formatCurrency(totalValue) }}
+          .summary-title-main Current Value
+          .summary-value-main {{ formatCurrency(summary.totalValue) }}
           .grid.grid-cols-2.gap-8.mt-16
             .col-span-1
-              .w-full.text-base.text-white.text-center Invested
-              .w-full.text-xl.text-white.text-center {{ formatCurrency(totalInvested) }}
+              .summary-title-sub Invested
+              .summary-value-sub {{ formatCurrency(summary.totalInvested) }}
             .col-span-1
-              .w-full.text-base.text-white.text-center No. of Funds
-              .w-full.text-xl.text-white.text-center {{ schemes.length }}
+              .summary-title-sub No. of Funds
+              .summary-value-sub {{ schemes.length }}
             .col-span-1
-              .w-full.text-base.text-white.text-center Current Return
+              .summary-title-sub Current Return
               .flex.flex-row.justify-center.items-center
-                .text-white.text-xl.mr-2 {{ formatCurrency(totalChange.A)  }}
-                template(v-if="totalChange.A >= 0")
-                  .text-white.text-sm.text-green-400.font-medium +{{ formatPct(totalChangePct.A) }}
+                .text-white.text-xl.mr-2 {{ formatCurrency(summary.totalChange.A)  }}
+                template(v-if="summary.totalChange.A >= 0")
+                  .text-white.text-sm.text-green-400.font-medium +{{ formatPct(summary.totalChangePct.A) }}
                 template(v-else)
-                  .text-white.text-sm.text-red-400.font-medium -{{ formatPct(totalChangePct.A) }}
+                  .text-white.text-sm.text-red-400.font-medium -{{ formatPct(summary.totalChangePct.A) }}
             .col-span-1
-              .w-full.text-base.text-white.text-center 1 Day Change
+              .summary-title-sub 1 Day Change
               .flex.flex-row.justify-center.items-center
-                .text-white.text-xl.mr-2 {{ formatCurrency(totalChange.D)  }}
-                template(v-if="totalChange.D >= 0")
-                  .text-white.text-sm.text-green-400.font-medium +{{ formatPct(totalChangePct.D) }}
+                .text-white.text-xl.mr-2 {{ formatCurrency(summary.totalChange.D)  }}
+                template(v-if="summary.totalChange.D >= 0")
+                  .text-white.text-sm.text-green-400.font-medium +{{ formatPct(summary.totalChangePct.D) }}
                 template(v-else)
-                  .text-white.text-sm.text-red-400.font-medium {{ formatPct(totalChangePct.D) }}
+                  .text-white.text-sm.text-red-400.font-medium {{ formatPct(summary.totalChangePct.D) }}
             .col-span-1
-              .w-full.text-base.text-white.text-center Absolute XIRR
-              .w-full.text-xl.text-white.text-center {{ formatPct(xirr.overall) }}
+              .summary-title-sub Absolute XIRR
+              .summary-value-sub {{ formatPct(summary.xirr.overall) }}
             .col-span-1
-              .w-full.text-base.text-white.text-center Current XIRR
-              .w-full.text-xl.text-white.text-center {{ formatPct(xirr.current) }}
+              .summary-title-sub Current XIRR
+              .summary-value-sub {{ formatPct(summary.xirr.current) }}
         template(#footer)
-          .w-full.text-right.text-gray-400.text-sm(:class="{'invisible': portfolioDate === ''}") NAV date: {{ portfolioDate }}
+          .w-full.text-right.text-gray-400.text-sm(:class="{'invisible': summary.portfolioDate === ''}") NAV date: {{ summary.portfolioDate }}
       highchart.col-span-3.m-2(:modules="['drilldown']" :options="pieOptions" @chartLoaded="pieChartLoaded")
     highstock.w-full(:options="options"
       :update="['options.title', 'options.series']"
       :animation="{duration: 1000}"
       @chartLoaded="chartLoaded")
-    DataView.mt-4(:value="schemes" layout="list")
+    //DataView.mt-4(:value="schemes" layout="list")
       template(#header)
         //.grid.grid-cols-10.gap-4.p-4
           .col-span-2
@@ -121,9 +121,11 @@ import {
   defineComponent,
   onBeforeUnmount,
   onMounted,
+  computed,
   reactive,
   ref,
   useContext,
+  wrapProperty,
 } from "@nuxtjs/composition-api";
 import {
   DrilldownOptions,
@@ -132,14 +134,20 @@ import {
   SeriesPieOptions,
 } from "highcharts";
 
-import { MFPortfolio, Scheme } from "~/definitions/mutualfunds";
+import { Summary, Scheme } from "~/definitions/mutualfunds";
 import { Chart } from "~/definitions/charts";
 import { preparePieChartData, AllocationPieChartData } from "~/utils";
 
+export const useAccessor = wrapProperty("$accessor", false);
+
 export default defineComponent({
   setup() {
-    const { $axios, app } = useContext();
-    const { $bus } = app;
+    const {
+      $axios,
+      app: { $bus },
+    } = useContext();
+
+    const accessor = useAccessor();
 
     const chart = ref<Chart | null>(null);
     const options = reactive<Options>({
@@ -298,21 +306,16 @@ export default defineComponent({
       },
     });
 
-    const portfolios = ref<Array<MFPortfolio>>([]);
-    const currentPortfolio = ref<MFPortfolio>({
-      id: -1,
-      name: "",
-      email: "",
-      pan: "",
-    });
+    const portfolios = computed(() => accessor.mutualfunds.portfolios);
+    const currentPortfolio = computed(
+      () => accessor.mutualfunds.currentPortfolio
+    );
 
     const getPortfolio = async () => {
+      // await accessor.mutualfunds.
       try {
-        portfolios.value = (await $axios.$get(
-          "/api/mutualfunds/portfolio/"
-        )) as Array<MFPortfolio>;
-        if (portfolios.value.length > 0) {
-          currentPortfolio.value = portfolios.value[0];
+        await accessor.mutualfunds.updatePortfolios(true);
+        if (currentPortfolio.value.id !== -1) {
           chart.value?.showLoading();
           const { data } = await $axios.get(
             "/api/mutualfunds/portfolio/" +
@@ -330,41 +333,33 @@ export default defineComponent({
       }
     };
 
-    const schemes = ref<Array<Scheme>>([]);
-    const totalInvested = ref(0.0);
-    const totalValue = ref(0.0);
-    const totalChange = ref({
-      D: 0.0,
-      A: 0.0,
-    });
-    const totalChangePct = ref({
-      D: 0.0,
-      A: 0.0,
-    });
-    const portfolioDate = ref("");
-    const xirr = ref({ current: 0.0, overall: 0.0 });
+    const schemes = computed<Array<Scheme>>(
+      () => accessor.mutualfunds.schemes
+    );
+    const summary = computed<Summary>(() => accessor.mutualfunds.summary);
+    // const schemes = ref<Array<Scheme>>([]);
+    // const totalInvested = ref(0.0);
+    // const totalValue = ref(0.0);
+    // const totalChange = ref({
+    //   D: 0.0,
+    //   A: 0.0,
+    // });
+    // const totalChangePct = ref({
+    //   D: 0.0,
+    //   A: 0.0,
+    // });
+    // const portfolioDate = ref("");
+    // const xirr = ref({ current: 0.0, overall: 0.0 });
     const schemesLoading = ref(false);
     const getSchemes = async () => {
-      if (!currentPortfolio.value) return;
+      if (currentPortfolio.value.id < 0) return;
       try {
         schemesLoading.value = true;
         pieChart.value?.showLoading();
-        const { data } = await $axios.get(
-          "/api/mutualfunds/portfolio/" +
-            currentPortfolio.value!.id +
-            "/summary/"
-        );
-        schemes.value = data.schemes;
-        totalInvested.value = data.invested;
-        totalChange.value = data.change;
-        totalChangePct.value = data.change_pct;
-        xirr.value = data.xirr;
-        totalValue.value = data.value;
-        portfolioDate.value = data.date;
-
+        await accessor.mutualfunds.updateSchemes();
         const pieChartData: AllocationPieChartData = preparePieChartData(
           schemes.value,
-          totalValue.value
+          summary.value.totalInvested
         );
 
         (pieOptions.series as Array<SeriesPieOptions>)![0].data =
@@ -440,12 +435,7 @@ export default defineComponent({
       formatCurrency,
       formatNumber,
       formatPct,
-      totalInvested,
-      totalChange,
-      totalChangePct,
-      totalValue,
-      portfolioDate,
-      xirr,
+      summary,
     };
   },
   head: {
@@ -456,6 +446,20 @@ export default defineComponent({
 
 <style lang="scss">
 @import "assets/layout/variables";
+
+.summary-title-main {
+  @apply text-sm w-full text-white text-center;
+}
+.summary-value-main {
+  @apply text-2xl text-white text-center font-bold;
+}
+
+.summary-title-sub {
+  @apply text-base w-full text-white text-center;
+}
+.summary-value-sub {
+  @apply text-xl w-full text-white text-center;
+}
 
 .p-dataview {
   .p-dataview-content {

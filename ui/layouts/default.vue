@@ -2,17 +2,11 @@
   div(:class="containerClass" @click="onWrapperClick")
     TheHeader(@menu-toggle="onMenuToggle")
     Toast
-    //transition(name="layout-sidebar")
-    TheSidebar(:class="sidebarClass" @click="onSidebarClick" @sidebar-collapse="onSidebarCollapseToggle")
+    TheSidebar(:class="sidebarClass"
+               @click="onSidebarClick"
+               @sidebar-collapse="onSidebarCollapseToggle")
     main.layout-main
       Nuxt
-  //.flex.h-screen.bg-gray-200.font-roboto
-    Sidebar
-    .flex-1.flex.flex-col.overflow-hidden
-      Header
-      Toast
-      main.flex-1.overflow-x-hidden.overflow-y-auto.bg-gray-200
-        Nuxt
 </template>
 
 <script lang="ts">
@@ -25,7 +19,6 @@ export default defineComponent({
     const staticMenuInactive = ref(false);
     const overlayMenuActive = ref(false);
     const mobileMenuActive = ref(false);
-    // const menuActive = ref(false);
     const menuClick = ref(false);
 
     const isDesktop = () => window.innerWidth > 1024;
@@ -98,13 +91,6 @@ export default defineComponent({
       isSidebarCollapsed.value = !isSidebarCollapsed.value;
     };
 
-    // const onMenuItemClick = (event: Event) => {
-    //   if (event.item && !event.item.items) {
-    //     overlayMenuActive.value = false;
-    //     mobileMenuActive.value = false;
-    //   }
-    // };
-
     const onLayoutChange = (newValue: string) => {
       layoutMode.value = newValue;
     };
@@ -120,7 +106,6 @@ export default defineComponent({
       layoutMode,
       onLayoutChange,
       onLayoutColorChange,
-      // onMenuItemClick,
       onMenuToggle,
       onSidebarClick,
       onSidebarCollapseToggle,
@@ -132,16 +117,4 @@ export default defineComponent({
   },
 });
 </script>
-<!--<style>-->
-<!--html {-->
-<!--  font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, "Segoe UI",-->
-<!--    Roboto, "Helvetica Neue", Arial, sans-serif;-->
-<!--  font-size: 14px;-->
-<!--  word-spacing: 1px;-->
-<!--  -ms-text-size-adjust: 100%;-->
-<!--  -webkit-text-size-adjust: 100%;-->
-<!--  -moz-osx-font-smoothing: grayscale;-->
-<!--  -webkit-font-smoothing: antialiased;-->
-<!--  box-sizing: border-box;-->
-<!--}-->
-<!--</style>-->
+

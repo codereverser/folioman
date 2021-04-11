@@ -30,3 +30,21 @@ export interface Scheme {
   // eslint-disable-next-line camelcase
   avg_nav: number;
 }
+
+export interface ValueChange {
+  D: number;
+  A: number;
+}
+export interface XIRRValue {
+  current: number;
+  overall: number;
+}
+
+export interface Summary {
+  totalInvested: number;
+  totalValue: number;
+  xirr: XIRRValue;
+  portfolioDate: string;
+  totalChange: ValueChange;
+  totalChangePct: ValueChange;
+}
