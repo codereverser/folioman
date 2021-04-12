@@ -5,6 +5,7 @@ x-app: &default-app
   volumes:
     - ./api:/api
     - ./api/.docker.env:/api/.env
+    - ./docker/static:/api/static
   restart: unless-stopped
   depends_on:
     - timedb
@@ -25,7 +26,22 @@ x-celery: &celery-app
 
 
 services:
-
+  web:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./docker/static:/api/static
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+  ui:
+    build: ./ui
+    volumes:
+      - ./ui:/ui
+      - ./docker/node_modules:/ui/node_modules
+    working_dir: /ui
+    command: sh -c "npm install && npm start"  
   timedb:
     image: timescale/timescaledb:latest-pg13
     restart: unless-stopped
@@ -48,10 +64,11 @@ services:
 
   api:
     build: ./api
-    command: bash -c "/wait && /venv/bin/python /api/manage.py migrate --noinput && /venv/bin/python /api/manage.py runserver 0.0.0.0:8000"
+    command: bash -c "/wait &&
+                      /venv/bin/python /api/manage.py migrate --noinput &&
+                      /venv/bin/python manage.py collectstatic --noinput &&
+                      /venv/bin/gunicorn wsgi --bind 0.0.0.0:8000"
     <<: *default-app
-    ports:
-      - "127.0.0.1:8000:8000"
     depends_on:
       - timedb
       - cache
@@ -63,3 +80,4 @@ services:
   worker:
     <<: *celery-app
     command: bash -c "/wait && /venv/bin/celery -A taskman worker -l INFO"
+

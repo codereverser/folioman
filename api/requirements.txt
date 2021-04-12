@@ -8,6 +8,7 @@ django-import-export==2.5.0
 django-redis==4.12.1
 djangorestframework==3.12.4
 djangorestframework-simplejwt==4.6.0
+gunicorn
 lxml
 numpy
 pandas
