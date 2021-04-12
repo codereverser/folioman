@@ -10,3 +10,5 @@ docker/cache
 docker/db
 docker/node_modules
 docker/static
+
+.nuxt
