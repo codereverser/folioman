@@ -37,6 +37,11 @@ export default defineComponent({
         icon: "pi pi-chart-line",
         child: [
           {
+            href: "/mutualfunds/analysis/harvest",
+            icon: "pi pi-copy",
+            title: "Tax Harvesting",
+          },
+          {
             href: "/mutualfunds/analysis/whatif",
             icon: "pi pi-question-circle",
             title: "What If?",
