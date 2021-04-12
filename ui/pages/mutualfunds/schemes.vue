@@ -14,7 +14,7 @@
           .col-span-2
             .flex.flex-col.items-center
               .text-lg.text-gray-500.font-medium Day Change
-              .text-base {{ formatCurrency(summary.totalChange) }}
+              .text-base {{ formatCurrency(summary.totalChange.D) }}
           .col-span-2
             .flex.flex-col.items-center
               .text-lg.text-gray-500.font-medium Total Return

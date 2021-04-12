@@ -359,7 +359,7 @@ export default defineComponent({
         await accessor.mutualfunds.updateSchemes(false);
         const pieChartData: AllocationPieChartData = preparePieChartData(
           schemes.value,
-          summary.value.totalInvested
+          summary.value.totalValue,
         );
 
         (pieOptions.series as Array<SeriesPieOptions>)![0].data =
