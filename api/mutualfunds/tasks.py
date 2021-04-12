@@ -2,7 +2,7 @@ import datetime
 import logging
 import time
 
-from casparser_isin.cli import update_isin_db
+from casparser_isin.cli import update_isin_db, print_version
 from dateutil.parser import parse as date_parse
 from django_celery_beat.models import PeriodicTask
 import requests
@@ -101,4 +101,9 @@ def flush_expired_tokens():
 
 @app.task(name="UpdateCASParserISIN")
 def update_casparser_isin():
+    print('casparser_isin: old version info')
+    print_version()
+    print('Updating casparser isin db')
     update_isin_db()
+    print('casparser_isin: new version info')
+    print_version()
