@@ -30,10 +30,19 @@
     day_of_month: '*'
     month_of_year: '*'
     timezone: UTC
+- model: django_celery_beat.crontabschedule
+  pk: 4
+  fields:
+    minute: '0'
+    hour: '12'
+    day_of_week: '*'
+    day_of_month: '*'
+    month_of_year: '*'
+    timezone: Asia/Kolkata
 - model: django_celery_beat.periodictasks
   pk: 1
   fields:
-    last_update: 2021-04-01 18:56:45.595108+00:00
+    last_update: 2021-04-12 16:02:57.964394+00:00
 - model: django_celery_beat.periodictask
   pk: 1
   fields:
@@ -55,9 +64,9 @@
     one_off: false
     start_time: null
     enabled: true
-    last_run_at: 2021-04-02 04:00:00.037058+00:00
-    total_run_count: 16
-    date_changed: 2021-04-02 04:02:21.537788+00:00
+    last_run_at: 2021-04-12 04:00:00.069169+00:00
+    total_run_count: 26
+    date_changed: 2021-04-12 04:02:00.366392+00:00
     description: ''
 - model: django_celery_beat.periodictask
   pk: 2
@@ -80,9 +89,9 @@
     one_off: false
     start_time: null
     enabled: true
-    last_run_at: 2021-03-28 01:30:00.033132+00:00
-    total_run_count: 3
-    date_changed: 2021-03-28 01:31:26.007542+00:00
+    last_run_at: 2021-04-11 01:30:00.079719+00:00
+    total_run_count: 5
+    date_changed: 2021-04-11 01:31:00.248486+00:00
     description: Update scheme master data from BSE StarMF
 - model: django_celery_beat.periodictask
   pk: 3
@@ -105,9 +114,9 @@
     one_off: false
     start_time: null
     enabled: true
-    last_run_at: 2021-04-01 22:30:00.163316+00:00
-    total_run_count: 16
-    date_changed: 2021-04-01 22:32:01.532455+00:00
+    last_run_at: 2021-04-11 22:30:00.050982+00:00
+    total_run_count: 26
+    date_changed: 2021-04-11 22:31:00.280533+00:00
     description: Update NAV of all tracked schemes daily
 - model: django_celery_beat.periodictask
   pk: 4
@@ -130,7 +139,32 @@
     one_off: false
     start_time: null
     enabled: true
-    last_run_at: 2021-04-01 22:30:00.037622+00:00
-    total_run_count: 3
-    date_changed: 2021-04-01 22:32:01.455855+00:00
+    last_run_at: 2021-04-11 22:30:00.100762+00:00
+    total_run_count: 13
+    date_changed: 2021-04-11 22:31:00.356227+00:00
     description: Flush expired JWT tokens
+- model: django_celery_beat.periodictask
+  pk: 5
+  fields:
+    name: Update casparser ISIN db
+    task: UpdateCASParserISIN
+    interval: null
+    crontab: 4
+    solar: null
+    clocked: null
+    args: '[]'
+    kwargs: '{}'
+    queue: null
+    exchange: null
+    routing_key: null
+    headers: '{}'
+    priority: null
+    expires: null
+    expire_seconds: null
+    one_off: false
+    start_time: null
+    enabled: true
+    last_run_at: null
+    total_run_count: 0
+    date_changed: 2021-04-12 16:02:57.980857+00:00
+    description: update casparser ISIN database every day

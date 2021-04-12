@@ -2,6 +2,7 @@ import datetime
 import logging
 import time
 
+from casparser_isin.cli import update_isin_db
 from dateutil.parser import parse as date_parse
 from django_celery_beat.models import PeriodicTask
 import requests
@@ -96,3 +97,8 @@ def update_portfolios(from_date=None, portfolio_id=None, scheme_dates=None):
 @app.task(name="FlushExpiredTokens")
 def flush_expired_tokens():
     OutstandingToken.objects.filter(expires_at__lte=aware_utcnow()).delete()
+
+
+@app.task(name="UpdateCASParserISIN")
+def update_casparser_isin():
+    update_isin_db()
