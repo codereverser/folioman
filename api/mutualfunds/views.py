@@ -178,14 +178,13 @@ class PortfolioViewSet(ModelViewSet):
                     units=total_units,
                     value=total_value,
                     avg_nav=avg_nav,
-                    change={
-                        "D": total_change,
-                        "A": total_value - total_invested
-                    },
+                    change={"D": total_change, "A": total_value - total_invested},
                     change_pct={
                         "D": 100 * (nav0 - nav1) / nav1,
-                        "A": 100 * (total_value / total_invested - Decimal(1.0)) if total_invested > 1e-2 else 0,
-                    }
+                        "A": 100 * (total_value / total_invested - Decimal(1.0))
+                        if total_invested > 1e-2
+                        else 0,
+                    },
                 )
                 results.append(obj)
         output = {
@@ -200,8 +199,10 @@ class PortfolioViewSet(ModelViewSet):
                 "A": pf.value - pf.invested,
             },
             "change_pct": {
-              "D": 100 * portfolio_change / pf.value if pf.value > 1 else 0,  # FIXME: replace this if pf.value @ T-1
-              "A": 100 * (pf.value - pf.invested) / pf.invested if pf.invested > 1 else 0,
+                "D": 100 * portfolio_change / pf.value
+                if pf.value > 1
+                else 0,  # FIXME: replace this if pf.value @ T-1
+                "A": 100 * (pf.value - pf.invested) / pf.invested if pf.invested > 1 else 0,
             },
             "date": date,
             "schemes": results,

@@ -101,9 +101,7 @@ def flush_expired_tokens():
 
 @app.task(name="UpdateCASParserISIN")
 def update_casparser_isin():
-    print('casparser_isin: old version info')
-    print_version()
-    print('Updating casparser isin db')
+    print("Updating casparser isin db")
     update_isin_db()
-    print('casparser_isin: new version info')
+    print("casparser_isin: new version info")
     print_version()
