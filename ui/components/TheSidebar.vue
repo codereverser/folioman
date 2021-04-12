@@ -80,7 +80,7 @@ export default defineComponent({
 <style lang="scss">
 .v-sidebar-menu {
   .vsm--item {
-    .nuxt-link-active {
+    :not(.vsm--link_mobile-item).nuxt-link-active {
       @apply text-primary;
     }
   }
