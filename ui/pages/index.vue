@@ -356,7 +356,7 @@ export default defineComponent({
       try {
         schemesLoading.value = true;
         pieChart.value?.showLoading();
-        await accessor.mutualfunds.updateSchemes();
+        await accessor.mutualfunds.updateSchemes(false);
         const pieChartData: AllocationPieChartData = preparePieChartData(
           schemes.value,
           summary.value.totalInvested

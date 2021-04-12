@@ -4,7 +4,7 @@ x-app: &default-app
   image: backend-image:latest
   volumes:
     - ./api:/api
-    - ./api/.docker.env:/api/.env
+    - ./api/.env:/api/.env
     - ./docker/static:/api/static
   restart: unless-stopped
   depends_on:
@@ -26,22 +26,6 @@ x-celery: &celery-app
 
 
 services:
-  web:
-    image: nginx:alpine
-    ports:
-      - "8000:80"
-    volumes:
-      - ./docker/static:/api/static
-      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - api
-  ui:
-    build: ./ui
-    volumes:
-      - ./ui:/ui
-      - ./docker/node_modules:/ui/node_modules
-    working_dir: /ui
-    command: sh -c "npm install && npm start"  
   timedb:
     image: timescale/timescaledb:latest-pg13
     restart: unless-stopped
@@ -53,7 +37,6 @@ services:
       POSTGRES_DB: folioman
     ports:
       - "127.0.0.1:15432:5432"
-
   cache:
     image: redis:alpine
     command: [ "redis-server", "--appendonly", "yes" ]
@@ -61,7 +44,13 @@ services:
       - ./docker/cache:/data
     ports:
       - "127.0.0.1:16379:6379"
-
+  ui:
+    build: ./ui
+    volumes:
+      - ./ui:/ui
+      - ./docker/node_modules:/ui/node_modules
+    working_dir: /ui
+    command: sh -c "npm install && npm start"
   api:
     build: ./api
     command: bash -c "/wait &&
@@ -72,7 +61,20 @@ services:
     depends_on:
       - timedb
       - cache
-
+  web:
+    image: nginx:alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./docker/static:/api/static
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api
+      - ui
+    environment:
+      WAIT_HOSTS: api:8000, ui:3000
+      WAIT_HOSTS_TIMEOUT: 900
+      WAIT_AFTER_HOSTS: 5
   beat:
     <<: *celery-app
     command: bash -c "/wait && /venv/bin/celery -A taskman beat -l INFO --pidfile=/tmp/beat.pid"
