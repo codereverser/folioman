@@ -4,8 +4,10 @@ x-app: &default-app
   image: backend-image:latest
   volumes:
     - ./api:/api
-    - ./api/.env:/api/.env
     - ./docker/static:/api/static
+    - type: bind
+      source: ./api/.env
+      target: /api/.env
   restart: unless-stopped
   depends_on:
     - timedb
