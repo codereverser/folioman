@@ -2,8 +2,6 @@
 
 Portfolio manager and analysis tools for investments in Indian mutual funds, stocks and other digital assets.
 
-uses 
-- [casparser](https://github.com/codereverser/casparser)
 
 ### Pre-requisites
 
