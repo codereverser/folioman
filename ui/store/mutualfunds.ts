@@ -61,7 +61,7 @@ export const actions = actionTree(
     async updateSchemes({ commit, dispatch, getters }, force = false) {
       if (getters.schemes.length > 0 && !force) return;
       if (getters.currentPortfolio.id === -1) {
-        await dispatch("UPDATE_PORTFOLIOS", true);
+        await dispatch("updatePortfolios", true);
       }
       if (getters.currentPortfolio.id === -1) return;
       const { data } = await this.$axios.get(
