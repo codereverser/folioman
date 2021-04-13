@@ -47,6 +47,9 @@ export const mutations = mutationTree(state, {
 export const actions = actionTree(
   { state, getters, mutations },
   {
+    selectPortfolio({ commit }, portfolio: MFPortfolio) {
+      commit("UPDATE_CURRENT_PORTFOLIO", portfolio);
+    },
     async updatePortfolios({ commit, getters }, force = false) {
       if (getters.currentPortfolio.id === -1 || force) {
         const portfolios = (await this.$axios.$get(

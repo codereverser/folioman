@@ -116,6 +116,7 @@ const config: NuxtConfig = {
       "Card",
       "Column",
       "DataTable",
+      "Dropdown",
       "FileUpload",
       "InputText",
       "Panel",

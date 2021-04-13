@@ -1,5 +1,10 @@
 <template lang="pug">
   .container
+    .flex.flex-row.justify-end.items-center
+      .text-base.text-secondary.mr-4 Portfolio :
+      Dropdown(v-model="selectedPortfolio" :options="portfolios"
+               optionLabel="name" placeholder="Select portfolio"
+               @input="changePortfolio")
     .grid.grid-cols-5.gap-4.mb-4(style="min-height: 400px;")
       Card.summary.col-span-2.m-2
         template(#content)
@@ -134,7 +139,7 @@ import {
   SeriesPieOptions,
 } from "highcharts";
 
-import { Summary, Scheme } from "~/definitions/mutualfunds";
+import { MFPortfolio, Scheme, Summary } from "~/definitions/mutualfunds";
 import { Chart } from "~/definitions/charts";
 import { preparePieChartData, AllocationPieChartData } from "~/utils";
 
@@ -310,6 +315,7 @@ export default defineComponent({
     const currentPortfolio = computed(
       () => accessor.mutualfunds.currentPortfolio
     );
+    const selectedPortfolio = ref<MFPortfolio>(currentPortfolio.value);
 
     const getPortfolio = async () => {
       // await accessor.mutualfunds.
@@ -333,33 +339,20 @@ export default defineComponent({
       }
     };
 
-    const schemes = computed<Array<Scheme>>(
-      () => accessor.mutualfunds.schemes
-    );
+    const schemes = computed<Array<Scheme>>(() => accessor.mutualfunds.schemes);
     const summary = computed<Summary>(() => accessor.mutualfunds.summary);
-    // const schemes = ref<Array<Scheme>>([]);
-    // const totalInvested = ref(0.0);
-    // const totalValue = ref(0.0);
-    // const totalChange = ref({
-    //   D: 0.0,
-    //   A: 0.0,
-    // });
-    // const totalChangePct = ref({
-    //   D: 0.0,
-    //   A: 0.0,
-    // });
-    // const portfolioDate = ref("");
-    // const xirr = ref({ current: 0.0, overall: 0.0 });
+
     const schemesLoading = ref(false);
-    const getSchemes = async () => {
+    const getSchemes = async (force = false) => {
       if (currentPortfolio.value.id < 0) return;
       try {
         schemesLoading.value = true;
         pieChart.value?.showLoading();
-        await accessor.mutualfunds.updateSchemes(false);
+        await accessor.mutualfunds.updateSchemes(force);
+        selectedPortfolio.value = currentPortfolio.value;
         const pieChartData: AllocationPieChartData = preparePieChartData(
           schemes.value,
-          summary.value.totalValue,
+          summary.value.totalValue
         );
 
         (pieOptions.series as Array<SeriesPieOptions>)![0].data =
@@ -423,12 +416,24 @@ export default defineComponent({
       pieChart.value = chartObj;
     };
 
+    const changePortfolio = async (portfolio: MFPortfolio) => {
+      if (
+        Object.prototype.hasOwnProperty.call(portfolio, "id") &&
+        portfolio.id !== currentPortfolio.value.id
+      ) {
+        accessor.mutualfunds.UPDATE_CURRENT_PORTFOLIO(portfolio);
+        await getPortfolio();
+        await getSchemes(true);
+      }
+    };
+
     return {
       options,
       pieOptions,
       schemes,
       portfolios,
       currentPortfolio,
+      selectedPortfolio,
       chartLoaded,
       pieChartLoaded,
       chart,
@@ -436,6 +441,7 @@ export default defineComponent({
       formatNumber,
       formatPct,
       summary,
+      changePortfolio,
     };
   },
   head: {
