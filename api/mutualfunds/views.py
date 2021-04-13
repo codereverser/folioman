@@ -1,8 +1,10 @@
+from datetime import timedelta
 from decimal import Decimal, DivisionByZero
 import itertools
 
 import casparser
 from django.db.models import F, Func
+from django.utils import timezone
 from rest_framework import parsers
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
@@ -121,9 +123,14 @@ class PortfolioViewSet(ModelViewSet):
         except Portfolio.DoesNotExist:
             raise NotFound
         date = pf.date
-        scheme_vals = SchemeValue.objects.filter(
-            date=date, scheme__folio__portfolio_id=pk
-        ).select_related("scheme", "scheme__scheme", "scheme__folio", "scheme__scheme__category")
+        scheme_vals = (
+            SchemeValue.objects.filter(
+                scheme__folio__portfolio_id=pk, date__gte=timezone.now().date() - timedelta(days=7)
+            )
+            .order_by("scheme_id", "-date")
+            .distinct("scheme_id")
+            .select_related("scheme", "scheme__scheme", "scheme__folio", "scheme__scheme__category")
+        )
         results = []
         portfolio_change = Decimal("0.0")
         for scheme_id, group in itertools.groupby(scheme_vals, lambda x: x.scheme.scheme_id):
