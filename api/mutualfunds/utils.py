@@ -7,7 +7,7 @@ import re
 from typing import Optional, Union
 
 from dateutil.parser import parse as dateparse
-from django.db.models import F, Sum, Case, When
+from django.db.models import F, Q, Case, When, Sum
 from django.utils import timezone
 from rapidfuzz import process
 import numpy as np
@@ -175,11 +175,22 @@ def update_portfolio_xirr(pfv_obj: PortfolioValue):
     pf_date = pfv_obj.date
     portfolio_value = pfv_obj.value
 
-    scheme_vals = SchemeValue.objects.filter(
-        date=pf_date, scheme__folio__portfolio_id=portfolio_id
-    ).values_list("scheme_id", "value")
-    valuation_whens = [When(pk=sid, then=value) for (sid, value) in scheme_vals]
-    scheme_ids = [x[0] for x in scheme_vals]
+    scheme_vals = (
+        SchemeValue.objects.filter(
+            Q(date__gte=F("scheme__valuation_date"))
+            | Q(scheme__valuation_date__isnull=True)
+            | Q(value__gt=0),
+            scheme__folio__portfolio_id=portfolio_id,
+        )
+        .order_by("scheme_id", "-date")
+        .distinct("scheme_id")
+        .values_list("scheme_id", "value", "date")
+    )
+    valuation_whens = [When(pk=sid, then=value) for (sid, value, _) in scheme_vals]
+    valuation_date_whens = [
+        When(pk=sid, then=valuation_date) for (sid, _, valuation_date) in scheme_vals
+    ]
+    scheme_ids = [x[0] for x in scheme_vals if x[1] >  0]
     txns = (
         Transaction.objects.filter(scheme__folio__portfolio_id=portfolio_id)
         .values("date", "amount", "scheme_id")
@@ -194,7 +205,7 @@ def update_portfolio_xirr(pfv_obj: PortfolioValue):
     # XIRR (Live)
     live_txns = list(filter(lambda x: x["scheme_id"] in scheme_ids, txns))
     xirr_whens = []
-    scheme_val_dicts = dict(scheme_vals)
+    scheme_val_dicts = {sid: value for (sid, value, _) in scheme_vals}
 
     def scheme_key_func(x):
         return x["scheme_id"]
@@ -207,7 +218,9 @@ def update_portfolio_xirr(pfv_obj: PortfolioValue):
         ) is not None:
             xirr_whens.append(When(pk=scheme_id, then=scheme_xirr * 100))
     FolioScheme.objects.filter(pk__in=scheme_ids).update(
-        valuation=Case(*valuation_whens), xirr=Case(*xirr_whens), valuation_date=pf_date
+        valuation=Case(*valuation_whens),
+        xirr=Case(*xirr_whens),
+        valuation_date=Case(*valuation_date_whens),
     )
 
     if (live_xirr := calculate_xirr(live_txns, pf_date, portfolio_value)) is not None:
@@ -372,14 +385,57 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
         logger.info("Import success! :: %s", str(result.totals))
     logger.info("SchemeValue Imported")
     logger.info("Updating FolioValue")
-    query = (
-        SchemeValue.objects.filter(date__gte=from_date_min)
-        .annotate(folio__id=F("scheme__folio_id"))
-        .values("date", "folio__id")
-        .annotate(value=Sum("value"), invested=Sum("invested"))
-    )
-    bulk_import_daily_values(FolioValueResource, query)
+    # query = (
+    #     SchemeValue.objects.filter(date__gte=from_date_min)
+    #     .annotate(folio__id=F("scheme__folio_id"))
+    #     .values("date", "folio__id")
+    #     .annotate(value=Sum("value"), invested=Sum("invested"))
+    # )
+    # bulk_import_daily_values(FolioValueResource, query)
+    columns = ["invested", "value", "avg_nav", "nav", "balance", "scheme_id", "scheme__folio_id"]
+    svs = SchemeValue.objects.filter(date__gte=from_date_min)
+    if portfolio_id is not None:
+        svs = svs.filter(scheme__folio__portfolio_id=portfolio_id)
+    svs = svs.values_list("date", *columns)
+    sval_df = pd.DataFrame(data=svs, columns=["date"] + columns)
+    sval_df.set_index("date", inplace=True)
+    dfs = []
+    for scheme_id, group in sval_df.groupby('scheme_id'):
+        rows, _ = group.shape
+        if rows == 0:
+            continue
+        from_date = group.index.values[0]
+        balance = group.iloc[-1].balance
+        if balance > 0:
+            to_date = today
+        else:
+            to_date = group.index.values[-1]
+        index = pd.date_range(from_date, to_date)
+        df = pd.DataFrame(data=[[np.nan] * len(columns)] * len(index),
+                          index=index, columns=columns)
+        df.loc[group.index, columns] = group.loc[group.index, columns]
+        df.ffill(inplace=True)
+        dfs.append(df)
+    if len(dfs) > 0:
+        merged_df = pd.concat(dfs)
+        merged_df['scheme_id'] = merged_df['scheme_id'].astype('int')
+        merged_df['scheme__folio_id'] = merged_df['scheme__folio_id'].astype('int')
+
+        merged_df = merged_df.reset_index().rename(columns={'index': 'date', 'scheme__folio_id': 'folio__id'})
+        merged_df = merged_df.groupby(['date', 'folio__id'])[['invested', 'value']].sum().reset_index()
+        folio_dataset = Dataset().load(merged_df)
+        fv_resource = FolioValueResource()
+
+        result = fv_resource.import_data(folio_dataset, dry_run=False)
+        if result.has_errors():
+            for row in result.rows[:10]:
+                for error in row.errors:
+                    print(error.error, error.traceback)
+        else:
+            logger.info("Import success! :: %s", str(result.totals))
+
     logger.info("FolioValue updated")
+
     logger.info("Updating PortfolioValue")
     query = (
         FolioValue.objects.filter(date__gte=from_date_min)
