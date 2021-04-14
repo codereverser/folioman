@@ -2,6 +2,7 @@
 
 Portfolio manager and analysis tools for investments in Indian mutual funds, stocks and other digital assets.
 
+<img src="https://github.com/codereverser/folioman/raw/main/screenshots/mutualfunds/01.dashboard.png" alt="Demo Dashboard" width="720"/>
 
 ### Pre-requisites
 
