@@ -45,9 +45,9 @@ class FundSchemeResource(ModelResource):
         )
         skip_unchanged = True
         use_bulk = True
-        skip_diff = False
+        skip_diff = True
         instance_loader_class = CachedInstanceLoader
-        batch_size = 5000
+        batch_size = 2000
 
 
 def import_master_scheme_data(master_csv_data=None):
