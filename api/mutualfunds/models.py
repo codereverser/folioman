@@ -44,7 +44,8 @@ class FundScheme(models.Model):
         REGULAR = "REGULAR"
         DIRECT = "DIRECT"
 
-    name = models.CharField(max_length=256, unique=True)
+    sid = models.IntegerField(unique=True, help_text="Source ID for scheme")
+    name = models.CharField(max_length=512, db_index=True)
     amc = models.ForeignKey(AMC, models.CASCADE, related_name="funds")
     rta = models.CharField(max_length=12, null=True, blank=True)
     category = models.ForeignKey(
@@ -112,7 +113,7 @@ class Folio(models.Model):
 class FolioScheme(models.Model):
     """Track schemes inside a folio"""
 
-    scheme = models.ForeignKey(FundScheme, models.PROTECT)
+    scheme = models.ForeignKey(FundScheme, models.PROTECT, related_name="schemes")
     folio = models.ForeignKey(Folio, related_name="schemes", on_delete=models.CASCADE)
     valuation = models.DecimalField(max_digits=20, decimal_places=2, null=True)
     xirr = models.DecimalField(max_digits=20, decimal_places=4, null=True)
@@ -159,6 +160,9 @@ class Transaction(models.Model):
 
     def __str__(self):
         return f"{self.order_type} @ {self.amount} for {self.units} units"
+
+    class Meta:
+        ordering = ("date",)
 
 
 class DailyValue(models.Model):

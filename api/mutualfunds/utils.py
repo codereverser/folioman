@@ -190,7 +190,7 @@ def update_portfolio_xirr(pfv_obj: PortfolioValue):
     valuation_date_whens = [
         When(pk=sid, then=valuation_date) for (sid, _, valuation_date) in scheme_vals
     ]
-    scheme_ids = [x[0] for x in scheme_vals if x[1] >  0]
+    scheme_ids = [x[0] for x in scheme_vals if x[1] > 0]
     txns = (
         Transaction.objects.filter(scheme__folio__portfolio_id=portfolio_id)
         .values("date", "amount", "scheme_id")
@@ -400,7 +400,7 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
     sval_df = pd.DataFrame(data=svs, columns=["date"] + columns)
     sval_df.set_index("date", inplace=True)
     dfs = []
-    for scheme_id, group in sval_df.groupby('scheme_id'):
+    for scheme_id, group in sval_df.groupby("scheme_id"):
         rows, _ = group.shape
         if rows == 0:
             continue
@@ -411,18 +411,21 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
         else:
             to_date = group.index.values[-1]
         index = pd.date_range(from_date, to_date)
-        df = pd.DataFrame(data=[[np.nan] * len(columns)] * len(index),
-                          index=index, columns=columns)
+        df = pd.DataFrame(data=[[np.nan] * len(columns)] * len(index), index=index, columns=columns)
         df.loc[group.index, columns] = group.loc[group.index, columns]
         df.ffill(inplace=True)
         dfs.append(df)
     if len(dfs) > 0:
         merged_df = pd.concat(dfs)
-        merged_df['scheme_id'] = merged_df['scheme_id'].astype('int')
-        merged_df['scheme__folio_id'] = merged_df['scheme__folio_id'].astype('int')
+        merged_df["scheme_id"] = merged_df["scheme_id"].astype("int")
+        merged_df["scheme__folio_id"] = merged_df["scheme__folio_id"].astype("int")
 
-        merged_df = merged_df.reset_index().rename(columns={'index': 'date', 'scheme__folio_id': 'folio__id'})
-        merged_df = merged_df.groupby(['date', 'folio__id'])[['invested', 'value']].sum().reset_index()
+        merged_df = merged_df.reset_index().rename(
+            columns={"index": "date", "scheme__folio_id": "folio__id"}
+        )
+        merged_df = (
+            merged_df.groupby(["date", "folio__id"])[["invested", "value"]].sum().reset_index()
+        )
         folio_dataset = Dataset().load(merged_df)
         fv_resource = FolioValueResource()
 
