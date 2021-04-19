@@ -37,6 +37,7 @@ def fetch_bse_star_master_data():
 
 
 def fetch_quandl_amfi_metadata():
+    logger.info("Downloading quandl AMFI data...")
     params = {"api_key": settings.QUANDL_API_KEY}
     response = requests.get(settings.QUANDL_METADATA_URL, params=params, timeout=300)
     if response.status_code != 200:
@@ -78,6 +79,7 @@ def fetch_quandl_amfi_metadata():
 
 
 def fetch_amfi_scheme_data():
+    logger.info("Downloading AMFI scheme data...")
     response = requests.get(settings.AMFI_SCHEME_DATA_URL, timeout=300)
     if response.status_code != 200:
         raise requests.RequestException("Invalid response!")

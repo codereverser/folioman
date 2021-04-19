@@ -45,7 +45,7 @@ class FundSchemeResource(ModelResource):
         )
         skip_unchanged = True
         use_bulk = True
-        skip_diff = True
+        skip_diff = False
         instance_loader_class = CachedInstanceLoader
         batch_size = 2000
 
@@ -163,8 +163,10 @@ def import_master_scheme_data(master_csv_data=None):
                 category_id,
             ]
         )
+    logger.info("Starting Import")
     resource = FundSchemeResource()
     result: Result = resource.import_data(dataset, dry_run=False)
+    logger.info("Import completed")
     if result.has_errors():
         logger.error("Import failed. Printing the top 10 errors")
         item: RowResult
