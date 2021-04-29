@@ -396,7 +396,7 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
     svs = SchemeValue.objects.filter(date__gte=from_date_min)
     if portfolio_id is not None:
         svs = svs.filter(scheme__folio__portfolio_id=portfolio_id)
-    svs = svs.values_list("date", *columns)
+    svs = svs.values_list("date", *columns).order_by("scheme_id", "date")
     sval_df = pd.DataFrame(data=svs, columns=["date"] + columns)
     sval_df.set_index("date", inplace=True)
     dfs = []
