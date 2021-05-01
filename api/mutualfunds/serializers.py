@@ -1,6 +1,6 @@
 from rest_framework.serializers import ModelSerializer, SerializerMethodField
 
-from .models import Portfolio, SchemeValue
+from .models import Portfolio, Transaction
 
 
 class PortfolioSerializer(ModelSerializer):
@@ -9,8 +9,12 @@ class PortfolioSerializer(ModelSerializer):
         fields = ["id", "name", "email", "pan"]
 
 
-class SchemeSerializer(ModelSerializer):
-    name = SerializerMethodField()
+class TransactionSerializer(ModelSerializer):
+    folio = SerializerMethodField()
 
     class Meta:
-        model = SchemeValue
+        model = Transaction
+        fields = ["date", "description", "sub_type", "amount", "nav", "units", "balance", "folio"]
+
+    def get_folio(self, obj: Transaction):
+        return obj.scheme.folio.number

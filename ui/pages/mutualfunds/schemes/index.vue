@@ -26,15 +26,15 @@
 
       Column(field="name" header="Fund" :sortable="true")
         template(#body="slotProps")
-          .text-xl.capitalize.text-gray-500.font-semibold.hello {{ slotProps.data.name }}
+          NuxtLink.text-xl.capitalize.font-semibold(:to="{name: 'mutualfunds-schemes-id', params: {id: slotProps.data.id}}") {{ slotProps.data.name }}
           .grid.grid-cols-12
-                .col-span-8
-                  .flex.flex-row.items-center.my-2
-                    .text-base.fonte-medium.text-gray-500 Units
-                    .text-base.ml-2 {{ slotProps.data.units }}
-                    .text-2xl.mx-2.text-gray-500.font-semibold •
-                    ProgressBar.flex-grow(:value="100*slotProps.data.value/summary.totalValue" style="height: 0.5em" :showValue="false")
-                    .text-sm.text-left.ml-2 {{ (100*slotProps.data.value/summary.totalValue).toFixed(2) }}%
+            .col-span-8
+              .flex.flex-row.items-center.my-2
+                .text-base.fonte-medium.text-gray-500 Units
+                .text-base.ml-2 {{ slotProps.data.units }}
+                .text-2xl.mx-2.text-gray-500.font-semibold •
+                ProgressBar.flex-grow(:value="100*slotProps.data.value/summary.totalValue" style="height: 0.5em" :showValue="false")
+                .text-sm.text-left.ml-2 {{ (100*slotProps.data.value/summary.totalValue).toFixed(2) }}%
       Column(field="value" header="Value" header-class="p-text-right" :sortable="true")
         template(#body="slotProps")
           .text-lg.text-right {{ formatCurrency(slotProps.data.value) }}
@@ -125,5 +125,8 @@ export default defineComponent({
 <style lang="scss">
 .p-text-right {
   text-align: right !important;
+}
+a {
+  @apply text-secondary;
 }
 </style>

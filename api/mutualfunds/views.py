@@ -1,5 +1,5 @@
 from datetime import timedelta
-from decimal import Decimal, DivisionByZero
+from decimal import Decimal
 import itertools
 
 import casparser
@@ -8,13 +8,22 @@ from django.utils import timezone
 from rest_framework import parsers
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
+from rest_framework.mixins import RetrieveModelMixin
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import ModelViewSet, GenericViewSet
 
-from .models import Portfolio, PortfolioValue, SchemeValue, NAVHistory
-from .serializers import PortfolioSerializer
+from .models import (
+    Portfolio,
+    PortfolioValue,
+    SchemeValue,
+    NAVHistory,
+    FolioScheme,
+    FundScheme,
+    Transaction,
+)
+from .serializers import PortfolioSerializer, TransactionSerializer
 from .importers.cas import import_cas
 
 
@@ -86,41 +95,11 @@ class PortfolioViewSet(ModelViewSet):
         output = {"invested": s1, "value": s2}
         return Response(output)
 
-    # @action(["GET"], detail=True)
-    # def summary(self, request, pk=None, format=None):
-    #     portfolio_id = pk
-    #
-    #     pf = PortfolioValue.objects.filter(portfolio_id=portfolio_id).order_by('-date')[:2]
-    #     portfolio_change = None
-    #     portfolio_change_pct = None
-    #     if len(pf) == 0:
-    #         return {}
-    #     elif len(pf) == 2:
-    #         portfolio_change = pf[1].value - pf[0].value
-    #         try:
-    #             portfolio_change_pct = (portfolio_change / pf[0].value) * 100
-    #         except DivisionByZero:
-    #             portfolio_change_pct = None
-    #
-    #     portfolio = pf[0]
-    #     summary = {
-    #         'value': portfolio.value,
-    #         'change': portfolio_change,
-    #         'changePct': portfolio_change_pct,
-    #         'invested': portfolio.invested,
-    #         'date': portfolio.date,
-    #         'schemes': []
-    #     }
-    #     scheme_vals = SchemeValue.objects.filter(
-    #         date=portfolio.date, scheme__folio__portfolio_id=portfolio_id
-    #     ).select_related("scheme", "scheme__scheme", "scheme__folio", "scheme__scheme__category")
-    #
-    #     return Response(summary)
     @action(["GET"], detail=True)
     def summary(self, request, pk=None, format=None):
         try:
             pf: PortfolioValue = PortfolioValue.objects.filter(portfolio_id=pk).latest()
-        except Portfolio.DoesNotExist:
+        except PortfolioValue.DoesNotExist:
             raise NotFound
         date = pf.date
         scheme_vals = (
@@ -151,14 +130,18 @@ class PortfolioViewSet(ModelViewSet):
             for item in group:
                 if obj is None:
                     obj = {
+                        "id": item.scheme.scheme_id,
                         "name": item.scheme.scheme.name.capitalize(),
                         "xirr": item.scheme.xirr,
                         "category": {
                             "main": item.scheme.scheme.category.type,
                             "sub": item.scheme.scheme.category.subtype,
                         },
+                        "rta": item.scheme.scheme.rta,
+                        "plan": item.scheme.scheme.plan,
                         "nav0": nav0,
                         "nav1": nav1,
+                        "nav_date": item.date,
                         "folios": [],
                     }
                 obj["folios"].append(
@@ -215,6 +198,21 @@ class PortfolioViewSet(ModelViewSet):
             "schemes": results,
         }
         return Response(output)
+
+    @action(["POST"], detail=False)
+    def transactions(self, request, format=None):
+        portfolio_ids = request.data.get("portfolio_ids")
+
+        if not (isinstance(portfolio_ids, list) and "fund" in request.data):
+            raise ValidationError(detail="Required parameters missing or invalid.")
+
+        qs = Transaction.objects.filter(
+            scheme__folio__portfolio__user_id=request.user.id,
+            scheme__scheme_id=request.data["fund"],
+            scheme__folio__portfolio_id__in=portfolio_ids,
+        ).order_by("date", "scheme_id")
+        serializer = TransactionSerializer(qs, many=True)
+        return Response(serializer.data)
 
 
 @api_view(["POST"])

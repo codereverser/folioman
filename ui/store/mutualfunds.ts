@@ -1,5 +1,5 @@
 import { actionTree, getterTree, mutationTree } from "typed-vuex";
-import { MFPortfolio, Scheme, Summary } from "~/definitions/mutualfunds";
+import { MFPortfolio, Scheme, SchemeData, Summary } from "~/definitions/mutualfunds";
 
 export const state = () => ({
   portfolios: [] as Array<MFPortfolio>,
@@ -10,6 +10,7 @@ export const state = () => ({
     pan: "",
   } as MFPortfolio,
   schemes: [] as Array<Scheme>,
+  schemeData: {} as SchemeData,
   summary: {
     totalValue: 0.0,
     totalInvested: 0.0,
@@ -25,6 +26,7 @@ export type MutualfundsState = ReturnType<typeof state>;
 export const getters = getterTree(state, {
   portfolios: (state: MutualfundsState) => state.portfolios,
   currentPortfolio: (state: MutualfundsState) => state.currentPortfolio,
+  schemeData: (state: MutualfundsState) => state.schemeData,
   schemes: (state: MutualfundsState) => state.schemes,
   summary: (state: MutualfundsState) => state.summary,
 });
@@ -38,8 +40,13 @@ export const mutations = mutationTree(state, {
     state: MutualfundsState,
     newPortfolio: MFPortfolio
   ) => (state.currentPortfolio = newPortfolio),
-  UPDATE_SCHEMES: (state: MutualfundsState, newSchemes: Array<Scheme>) =>
-    (state.schemes = newSchemes),
+  UPDATE_SCHEMES: (state: MutualfundsState, newSchemes: Array<Scheme>) => {
+    state.schemes = newSchemes;
+    newSchemes.forEach((scheme) => {
+      const id = scheme.id.toString();
+      state.schemeData[id] = scheme;
+    });
+  },
   UPDATE_SUMMARY: (state: MutualfundsState, newSummary: Summary) =>
     (state.summary = newSummary),
 });
@@ -67,20 +74,22 @@ export const actions = actionTree(
         await dispatch("updatePortfolios", true);
       }
       if (getters.currentPortfolio.id === -1) return;
-      const { data } = await this.$axios.get(
-        "/api/mutualfunds/portfolio/" +
-          getters.currentPortfolio.id +
-          "/summary/"
-      );
-      commit("UPDATE_SCHEMES", data.schemes);
-      commit("UPDATE_SUMMARY", {
-        totalInvested: data.invested,
-        totalChange: data.change,
-        totalChangePct: data.change_pct,
-        xirr: data.xirr,
-        totalValue: data.value,
-        portfolioDate: data.date,
-      });
+      try {
+        const { data } = await this.$axios.get(
+          "/api/mutualfunds/portfolio/" +
+            getters.currentPortfolio.id +
+            "/summary/"
+        );
+        commit("UPDATE_SCHEMES", data.schemes);
+        commit("UPDATE_SUMMARY", {
+          totalInvested: data.invested,
+          totalChange: data.change,
+          totalChangePct: data.change_pct,
+          xirr: data.xirr,
+          totalValue: data.value,
+          portfolioDate: data.date,
+        });
+      } catch {}
     },
   }
 );

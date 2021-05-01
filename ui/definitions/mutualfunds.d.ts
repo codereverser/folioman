@@ -19,6 +19,7 @@ export interface Folio {
 }
 
 export interface Scheme {
+  id: number;
   name: string;
   category: SchemeCategory;
   nav0: number;
@@ -29,6 +30,10 @@ export interface Scheme {
   value: number;
   // eslint-disable-next-line camelcase
   avg_nav: number;
+}
+
+export interface SchemeData {
+  [id: string]: Scheme;
 }
 
 export interface ValueChange {
