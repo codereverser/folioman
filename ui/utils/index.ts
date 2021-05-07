@@ -48,9 +48,6 @@ export const preparePieChartData = (
       type: "pie",
     };
   });
-  console.log(mainPie);
-  console.log(mainLevelDrillDownPie);
-  console.log(drillDownPie);
   return {
     series: Object.values(mainPie),
     drilldown: Object.values(drillDownPie),
