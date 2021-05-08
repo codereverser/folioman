@@ -31,7 +31,6 @@ import {
 } from "@nuxtjs/composition-api";
 import { useVuelidate } from "@vuelidate/core";
 import { minLength, required } from "@vuelidate/validators";
-import { Ref } from "vue-demi";
 
 interface FileUploader {
   hasFiles: boolean;
@@ -42,7 +41,7 @@ export default defineComponent({
   setup(_, { emit }) {
     const { $axios } = useContext();
 
-    const fileUploader: Ref<FileUploader | null> = ref(null);
+    const fileUploader = ref<FileUploader | null>(null);
     const loading = ref(false);
     const error = ref("");
 

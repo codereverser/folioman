@@ -58,7 +58,7 @@ const config: NuxtConfig = {
 
   // Modules for dev and build (recommended) (https://go.nuxtjs.dev/config-modules)
   buildModules: [
-    "@nuxtjs/composition-api",
+    "@nuxtjs/composition-api/module",
     "@nuxt/typescript-build",
     "@nuxtjs/tailwindcss",
     "@nuxtjs/stylelint-module",
@@ -147,6 +147,9 @@ const config: NuxtConfig = {
         resourceRegExp: /@highcharts\/map-collection/,
       }),
     ],
+    babel: {
+      plugins: [["@babel/plugin-proposal-private-methods", { loose: true }]],
+    },
     // extend(config, { isClient }) {
     //   // Extend only webpack config for client-bundle
     //   if (isClient) {
