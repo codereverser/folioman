@@ -154,7 +154,7 @@ def import_master_scheme_data(master_csv_data=None):
                 row["RTA Agent Code"].strip(),
                 "DIRECT" if "DIRECT" in row["Scheme Plan"] else "REGULAR",
                 row["Channel Partner Code"].strip(),
-                amc_code,
+                row["AMC Scheme Code"].strip(),
                 amfi_code,
                 isin.strip(),
                 dateparse(row["Start Date"].strip()).date(),
