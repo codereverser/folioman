@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third-party apps
     "django_celery_beat",
+    "django_celery_results",
     "rest_framework",
     "import_export",
     "rest_framework_simplejwt.token_blacklist",
@@ -184,7 +185,8 @@ SIMPLE_JWT = {
 }
 
 CELERY_BROKER_URL = env("CELERY_BROKER_URL")
-CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND")
+CELERY_RESULT_BACKEND = "django-db"
+CELERY_RESULT_EXPIRES = datetime.timedelta(days=7)
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_BEAT_MAX_LOOP_INTERVAL = 60
 CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 25200}
