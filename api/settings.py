@@ -13,8 +13,9 @@ https://docs.djangoproject.com/en/3.1/ref/settings/
 import datetime
 from pathlib import Path
 
-# noinspection PyPackageRequirements
 import environ
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
 
 env = environ.Env(
     # set casting, default value
@@ -197,3 +198,16 @@ QUANDL_API_KEY = env("QUANDL_API_KEY")
 QUANDL_METADATA_URL = "https://www.quandl.com/api/v3/databases/AMFI/metadata"
 
 AMFI_SCHEME_DATA_URL = "https://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0"
+
+SENTRY_DSN = env("SENTRY_DSN", default=None)
+ENVIRONMENT = env("environment")
+if SENTRY_DSN is not None:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[DjangoIntegration()],
+        # Set traces_sample_rate to 1.0 to capture 100%
+        # of transactions for performance monitoring.
+        # We recommend adjusting this value in production.
+        traces_sample_rate=1.0,
+        environment=ENVIRONMENT,
+    )
