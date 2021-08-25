@@ -1,5 +1,6 @@
 FROM node:lts-alpine
 RUN apk add --no-cache --update g++ gcc make python3 && \
+    npm i -g npm && \
     rm -rf /var/cache/apk
 WORKDIR /ui
 COPY . .

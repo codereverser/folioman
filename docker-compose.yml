@@ -52,7 +52,7 @@ services:
       - ./ui:/ui
       - ./docker/node_modules:/ui/node_modules
     working_dir: /ui
-    command: sh -c "npm install && npm run dev"
+    command: sh -c "npm install && npm run build && npm run start"
   api:
     build: ./api
     command: bash -c "/wait &&
@@ -79,7 +79,7 @@ services:
       WAIT_AFTER_HOSTS: 5
   beat:
     <<: *celery-app
-    command: bash -c "/wait && /venv/bin/celery -A taskman beat -l INFO --pidfile=/tmp/beat.pid"
+    command: bash -c "/wait && rm -f /tmp/beat.pid && /venv/bin/celery -A taskman beat -l INFO --pidfile=/tmp/beat.pid"
 
   worker:
     <<: *celery-app
