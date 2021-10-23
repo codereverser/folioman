@@ -1,7 +1,5 @@
-FROM node:lts-alpine
-RUN apk add --no-cache --update g++ gcc make python3 && \
-    npm i -g npm && \
-    rm -rf /var/cache/apk
+FROM node:16-buster
 WORKDIR /ui
 COPY . .
-RUN npm install && npm run build
+RUN yarn install && npm run build
+CMD npm run start
