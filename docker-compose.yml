@@ -48,10 +48,11 @@ services:
       - "127.0.0.1:16379:6379"
   ui:
     build: ./ui
+    user: node
     volumes:
-      - ./ui:/ui
-      - node_modules:/ui/node_modules
-    working_dir: /ui
+      - ./ui:/home/node/ui
+      - node_modules:/home/node/ui/node_modules
+    working_dir: /home/node/ui
     command: sh -c "yarn install && npm run build && npm run start"
   api:
     build: ./api
@@ -73,10 +74,6 @@ services:
     depends_on:
       - api
       - ui
-    environment:
-      WAIT_HOSTS: api:8000, ui:3000
-      WAIT_TIMEOUT: 900
-      WAIT_AFTER: 5
   beat:
     <<: *celery-app
     command: bash -c "/wait && rm -f /tmp/beat.pid && /venv/bin/celery -A taskman beat -l INFO --pidfile=/tmp/beat.pid"

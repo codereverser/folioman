@@ -1,5 +1,9 @@
 FROM node:16-buster
-WORKDIR /ui
+USER node
+RUN mkdir /home/node/ui
+WORKDIR /home/node/ui
 COPY . .
-RUN yarn install && npm run build
+RUN mkdir -p /home/node/ui/node_modules && \
+    yarn install && \
+    npm run build
 CMD npm run start
