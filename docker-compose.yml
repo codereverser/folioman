@@ -14,8 +14,8 @@ x-app: &default-app
     - cache
   environment:
     WAIT_HOSTS: timedb:5432, cache:6379
-    WAIT_HOSTS_TIMEOUT: 60
-    WAIT_AFTER_HOSTS: 5
+    WAIT_TIMEOUT: 60
+    WAIT_AFTER: 5
 
 x-celery: &celery-app
   <<: *default-app
@@ -23,8 +23,8 @@ x-celery: &celery-app
     - api
   environment:
     WAIT_HOSTS: api:8000
-    WAIT_HOSTS_TIMEOUT: 60
-    WAIT_AFTER_HOSTS: 5
+    WAIT_TIMEOUT: 60
+    WAIT_AFTER: 5
 
 
 services:
@@ -50,9 +50,9 @@ services:
     build: ./ui
     volumes:
       - ./ui:/ui
-      - ./docker/node_modules:/ui/node_modules
+      - node_modules:/ui/node_modules
     working_dir: /ui
-    command: sh -c "npm install && npm run build && npm run start"
+    command: sh -c "yarn install && npm run build && npm run start"
   api:
     build: ./api
     command: bash -c "/wait &&
@@ -75,8 +75,8 @@ services:
       - ui
     environment:
       WAIT_HOSTS: api:8000, ui:3000
-      WAIT_HOSTS_TIMEOUT: 900
-      WAIT_AFTER_HOSTS: 5
+      WAIT_TIMEOUT: 900
+      WAIT_AFTER: 5
   beat:
     <<: *celery-app
     command: bash -c "/wait && rm -f /tmp/beat.pid && /venv/bin/celery -A taskman beat -l INFO --pidfile=/tmp/beat.pid"
@@ -84,4 +84,5 @@ services:
   worker:
     <<: *celery-app
     command: bash -c "/wait && /venv/bin/celery -A taskman worker -l INFO"
-
+volumes:
+  node_modules:

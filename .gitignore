@@ -12,3 +12,4 @@ docker/node_modules
 docker/static
 
 .nuxt
+ui/.output
