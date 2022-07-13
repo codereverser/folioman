@@ -91,3 +91,19 @@ def fetch_amfi_scheme_data():
             code = row["Code"]
             data[code.strip()] = row
     return data
+
+def fetch_amfi_code_isin_mapping():
+    logger.info("Downloading NAVAll from AMFI")
+    response = requests.get(settings.AMFI_NAVAll_URL, timeout=300)
+    if response.status_code != 200:
+        raise requests.RequestException("Invalid response!")
+    scheme_code_re = re.compile('\d{6}')
+    data = {}
+    for row in response.content.splitlines():
+         row = row.decode('utf-8')
+         if re.match(scheme_code_re, row):
+             if row.split(';')[1] != '-':
+                 data[row.split(';')[1].strip()] = row.split(';')[0].strip()
+             if row.split(';')[2] != '-':
+                 data[row.split(';')[2].strip()] = row.split(';')[0].strip()
+    return data
