@@ -57,7 +57,7 @@ def import_master_scheme_data(master_csv_data=None):
 
     if master_csv_data is None:
         master_csv_data = fetch_bse_star_master_data()
-    quandl_data = fetch_quandl_amfi_metadata()
+    #quandl_data = fetch_quandl_amfi_metadata()
     amfi_data = fetch_amfi_scheme_data()
 
     end_date_cutoff = (datetime.date.today() - datetime.timedelta(weeks=1)).isoformat()
@@ -96,6 +96,7 @@ def import_master_scheme_data(master_csv_data=None):
             isin = row["ISIN"].strip()
             code = row["Scheme Code"].strip()
             scheme_name = row["Scheme Name"].strip()
+            """
             if isin in quandl_data:
                 _, scheme_type = quandl_data[isin]
                 if scheme_type in ("payout", "reinvest") and scheme_type not in scheme_name.lower():
@@ -103,6 +104,7 @@ def import_master_scheme_data(master_csv_data=None):
             if isin in master_data and len(master_data[isin]["Scheme Code"]) <= len(code):
                 continue
             master_data[isin] = row
+            """
 
     for isin, row in master_data.items():
         scheme_name = row["Scheme Name"].strip()
@@ -117,6 +119,7 @@ def import_master_scheme_data(master_csv_data=None):
         amfi_code = None
         category_id = None
         scheme_end_date = None
+        """
         if isin in quandl_data:
             amfi_code = quandl_data[isin][0]["code"]
             if amfi_code in amfi_data:
@@ -131,6 +134,7 @@ def import_master_scheme_data(master_csv_data=None):
             end_date = quandl_data[isin][0].get("to_date")
             if re.search(r"\d{4}-\d{2}-\d{2}", end_date) and end_date < end_date_cutoff:
                 scheme_end_date = end_date
+        """
         if category_id is None:
             category = row["Scheme Type"].strip().upper().split()[0]
             if category in category_map:
