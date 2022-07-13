@@ -1,4 +1,4 @@
-casparser[mupdf]==0.5.3
+casparser[mupdf]
 celery==5.2.0rc1
 Django==3.2.8
 django-celery-beat==2.2.1

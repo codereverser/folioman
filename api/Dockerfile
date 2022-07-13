@@ -8,7 +8,7 @@ ENV DOCKER_CONTAINER 1
 RUN dnf install -y gcc g++ git \
                    python3-cryptography python3-devel python3-lxml \
                    python3-numpy python3-pandas python3-psycopg2 \
-                   python3-PyMuPDF python3-yaml && \
+                   python3-scipy python3-PyMuPDF python3-yaml && \
     python3 -m venv --system-site-packages /venv  && \
     /venv/bin/pip install -U pip setuptools wheel && \
     /venv/bin/pip3 install casparser-isin && \
