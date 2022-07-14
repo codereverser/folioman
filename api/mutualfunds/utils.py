@@ -238,6 +238,7 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
         from_date1 = min(scheme_dates.values())
         if isinstance(from_date1, str):
             from_date1 = dateparse(from_date1).date()
+        print(type(from_date1))
 
     from_date2 = today
     if isinstance(start_date, str) and start_date != "auto":
@@ -251,6 +252,7 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
         obj = query.only("date").order_by("-date").first()
         if obj is not None:
             from_date2 = obj.date
+            print(type(from_date2))
 
     start_date = min(from_date1, from_date2)
 

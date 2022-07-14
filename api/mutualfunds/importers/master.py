@@ -57,7 +57,7 @@ def import_master_scheme_data(master_csv_data=None):
 
     if master_csv_data is None:
         master_csv_data = fetch_bse_star_master_data()
-    amfi_code_isin_mapping = fetch_amfi_code_isin_mapping
+    amfi_code_isin_mapping = fetch_amfi_code_isin_mapping()
     amfi_data = fetch_amfi_scheme_data()
 
     end_date_cutoff = (datetime.date.today() - datetime.timedelta(weeks=1)).isoformat()
@@ -121,7 +121,7 @@ def import_master_scheme_data(master_csv_data=None):
         amfi_code = None
         category_id = None
         scheme_end_date = None
-        if isin in amfi_code_isin_mapping:
+        if isin in amfi_code_isin_mapping.keys():
             amfi_code = amfi_code_isin_mapping[isin]
             if amfi_code in amfi_data:
                 cat_str = amfi_data[amfi_code]["Scheme Category"]
