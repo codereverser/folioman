@@ -88,13 +88,17 @@ def import_cas(data: CASParserDataType, user_id):
                 amc_id=folio["amc_id"], number__istartswith=folio_number.split("/")[0]
             )
         except Folio.DoesNotExist:
+            if not folio["PANKYC"]:
+                folio["PANKYC"] = "notok"
+            if not folio["PAN"]:
+                folio["PAN"] = "noregister"
             folio_obj = Folio(
                 amc_id=folio["amc_id"],
                 number=folio_number,
                 portfolio_id=pf.id,
                 pan=folio["PAN"],
                 kyc=folio["KYC"].lower() == "ok",
-                pan_kyc=folio["PANKYC"].lower() == "ok",
+                pan_kyc=folio["PANKYC"].lower() == "ok"
             )
             folio_obj.save()
             new_folios += 1
