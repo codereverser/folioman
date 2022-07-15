@@ -152,7 +152,7 @@ class Transaction(models.Model):
     def get_order_type(cls, description, amount):
         if "switch" in description.lower():
             return cls.OrderType.SWITCH
-        elif amount > 0:
+        elif float(amount) > 0:
             if "reinvest" in description.lower():
                 return cls.OrderType.REINVEST
             return cls.OrderType.BUY

@@ -1,6 +1,6 @@
 from collections import deque
 from decimal import Decimal
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 import itertools
 import logging
 import re
@@ -238,7 +238,8 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
         from_date1 = min(scheme_dates.values())
         if isinstance(from_date1, str):
             from_date1 = dateparse(from_date1).date()
-        print(type(from_date1))
+        if isinstance(from_date1, datetime):
+            from_date1 = from_date1.date()
 
     from_date2 = today
     if isinstance(start_date, str) and start_date != "auto":
@@ -366,6 +367,8 @@ def update_portfolio_value(start_date=None, portfolio_id=None, scheme_dates=None
         scheme_vals.loc[nav_df.index, ["nav"]] = nav_df
         scheme_vals.ffill(inplace=True)
         scheme_vals.fillna(value=0, inplace=True)
+        scheme_vals["nav"] = scheme_vals["nav"].apply(Decimal)
+        scheme_vals["balance"] = scheme_vals["balance"].apply(Decimal)
         scheme_vals["value"] = scheme_vals["nav"] * scheme_vals["balance"]
         scheme_vals["scheme__id"] = scheme_id
         scheme_vals = scheme_vals.reset_index().rename(columns={"index": "date"})
