@@ -2,7 +2,7 @@ casparser[mupdf]==0.5.3
 celery==5.2.0rc1
 Django==3.2.8
 django-celery-beat==2.2.1
-django-celery-results==2.2.0
+django-celery-results==2.4.0
 django-click>=2.3.0
 django-environ==0.8.1
 django-import-export==2.6.1
