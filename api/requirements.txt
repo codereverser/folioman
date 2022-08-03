@@ -1,5 +1,5 @@
 casparser[mupdf]
-celery==5.2.0rc1
+celery==5.2.2
 Django==3.2.8
 django-celery-beat==2.2.1
 django-celery-results==2.2.0
