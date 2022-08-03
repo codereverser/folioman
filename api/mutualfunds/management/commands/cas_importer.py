@@ -1,4 +1,5 @@
 import logging
+import json
 
 import casparser
 import djclick as click
@@ -21,7 +22,12 @@ def cas_importer(password, input_file):
     logger = logging.getLogger(__name__)
 
     logger.info("Reading CAS PDF")
-    pdf_data = casparser.read_cas_pdf(input_file, password)
+    if input_file.endswith('json'):
+        json_data = json.load(open(input_file))
+        pdf_data = casparser.CASParserDataType(json_data)
+    else:
+        pdf_data = casparser.read_cas_pdf(input_file, password,
+                                      force_pdfminer=True)
     period = pdf_data["statement_period"]
     email = pdf_data["investor_info"]["email"]
     click.echo("CAS file type " + click.style(pdf_data["file_type"], fg="green", bold=True))

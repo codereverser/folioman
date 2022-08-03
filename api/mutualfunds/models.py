@@ -85,7 +85,7 @@ class Portfolio(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="portfolios"
     )
-    name = models.CharField(max_length=32)
+    name = models.CharField(max_length=256)
     email = models.EmailField(unique=True)
     pan = models.CharField(max_length=10, null=True, blank=True)
 
@@ -152,7 +152,7 @@ class Transaction(models.Model):
     def get_order_type(cls, description, amount):
         if "switch" in description.lower():
             return cls.OrderType.SWITCH
-        elif amount > 0:
+        elif float(amount) > 0:
             if "reinvest" in description.lower():
                 return cls.OrderType.REINVEST
             return cls.OrderType.BUY

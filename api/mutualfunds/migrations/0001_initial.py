@@ -168,7 +168,7 @@ class Migration(migrations.Migration):
                         auto_created=True, primary_key=True, serialize=False, verbose_name="ID"
                     ),
                 ),
-                ("name", models.CharField(max_length=32)),
+                ("name", models.CharField(max_length=256)),
                 ("email", models.EmailField(max_length=254, unique=True)),
                 ("pan", models.CharField(blank=True, max_length=10, null=True)),
                 (

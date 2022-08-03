@@ -14,9 +14,9 @@ from rapidfuzz import fuzz, process
 
 from mutualfunds.models import AMC, FundCategory, FundScheme
 from mutualfunds.importers.fetcher import (
+    fetch_amfi_code_isin_mapping,
     fetch_amfi_scheme_data,
-    fetch_bse_star_master_data,
-    fetch_quandl_amfi_metadata,
+    fetch_bse_star_master_data
 )
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def import_master_scheme_data(master_csv_data=None):
 
     if master_csv_data is None:
         master_csv_data = fetch_bse_star_master_data()
-    quandl_data = fetch_quandl_amfi_metadata()
+    amfi_code_isin_mapping = fetch_amfi_code_isin_mapping()
     amfi_data = fetch_amfi_scheme_data()
 
     end_date_cutoff = (datetime.date.today() - datetime.timedelta(weeks=1)).isoformat()
@@ -88,6 +88,9 @@ def import_master_scheme_data(master_csv_data=None):
         "amc_id",
         "category_id",
     ]
+    re_payout = re.compile(r'\bpayout\b', flags=re.IGNORECASE)
+    re_reinvest = re.compile(r'reinvest', flags=re.IGNORECASE)
+
     dataset = tablib.Dataset(headers=import_headers)
     master_data = {}
     with io.StringIO(master_csv_data) as fp:
@@ -96,10 +99,11 @@ def import_master_scheme_data(master_csv_data=None):
             isin = row["ISIN"].strip()
             code = row["Scheme Code"].strip()
             scheme_name = row["Scheme Name"].strip()
-            if isin in quandl_data:
-                _, scheme_type = quandl_data[isin]
-                if scheme_type in ("payout", "reinvest") and scheme_type not in scheme_name.lower():
-                    continue
+            if re.findall(re_payout, scheme_name):
+                scheme_type = "payout"
+            if re.findall(re_reinvest, scheme_name):
+                scheme_type = "reinvest"
+            
             if isin in master_data and len(master_data[isin]["Scheme Code"]) <= len(code):
                 continue
             master_data[isin] = row
@@ -117,20 +121,21 @@ def import_master_scheme_data(master_csv_data=None):
         amfi_code = None
         category_id = None
         scheme_end_date = None
-        if isin in quandl_data:
-            amfi_code = quandl_data[isin][0]["code"]
+        if isin in amfi_code_isin_mapping.keys():
+            amfi_code = amfi_code_isin_mapping[isin]
             if amfi_code in amfi_data:
                 cat_str = amfi_data[amfi_code]["Scheme Category"]
                 if cat_str.lower().strip() == "growth":
                     category_id = categories["EQUITY - NA"]
                 else:
                     closest_match, *_ = process.extractOne(
-                        cat_str, categories.keys(), scorer=fuzz.token_sort_ratio
+                            cat_str, categories.keys(), scorer=fuzz.token_sort_ratio
                     )
                     category_id = categories[closest_match]
-            end_date = quandl_data[isin][0].get("to_date")
+            end_date = amfi_data[amfi_code][' Closure Date']    
             if re.search(r"\d{4}-\d{2}-\d{2}", end_date) and end_date < end_date_cutoff:
                 scheme_end_date = end_date
+
         if category_id is None:
             category = row["Scheme Type"].strip().upper().split()[0]
             if category in category_map:

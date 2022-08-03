@@ -1,7 +1,8 @@
 version: '3.4'
 
 x-app: &default-app
-  image: backend-image:latest
+  #image: backend-image:latest
+  build: ./api
   volumes:
     - ./api:/api
     - ./docker/static:/api/static

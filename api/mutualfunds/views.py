@@ -45,8 +45,13 @@ class CASParserView(APIView):
                 raise ValidationError(detail={"message": ret["message"]})
 
             try:
-                output = casparser.read_cas_pdf(data["file"], password, sort_transactions=True)
-                return Response({"status": "OK", "message": "Success", "data": output})
+                output = casparser.read_cas_pdf(data["file"],
+                                                password,
+                                                sort_transactions=True,
+                                                force_pdfminer=True)
+                return Response({"status": "OK",
+                                 "message": "Success",
+                                 "data": output})
             except Exception as e:
                 ret["message"] = str(e)
         return Response(ret)
