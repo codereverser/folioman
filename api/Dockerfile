@@ -5,19 +5,17 @@ ENV PYTHONDONTWRITEBYTECODE 1
 ENV DOCKER_CONTAINER 1
 
 
-RUN dnf install -y gcc g++ git \
-                   python3-cryptography python3-devel python3-lxml \
-                   python3-numpy python3-pandas python3-psycopg2 \
-                   python3-scipy python3-PyMuPDF python3-yaml && \
+RUN apt -y update && \
+    apt install -y gcc g++ git libpython3-dev python3-psycopg2 python3-venv && \
     python3 -m venv --system-site-packages /venv  && \
     /venv/bin/pip install -U pip setuptools wheel && \
     /venv/bin/pip3 install casparser-isin && \
-    dnf -y remove gcc g++ git && \
-    dnf -y autoremove && \
-    dnf -y clean all
+    apt -y purge gcc g++ git && \
+    apt -y autoremove && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 COPY requirements.txt /api/requirements.txt
-RUN /venv/bin/pip3 install -r /api/requirements.txt
+RUN /venv/bin/pip3 install -r /api/requirements.txt && rm -fr /root/.cache/pip
 
 WORKDIR /api/
 EXPOSE 8000

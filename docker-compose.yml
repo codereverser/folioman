@@ -33,7 +33,7 @@ services:
     image: timescale/timescaledb:latest-pg13
     restart: unless-stopped
     volumes:
-      - ./docker/db/postgres:/var/lib/postgresql/data
+      - folioman-db:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: foliop4sswd
@@ -44,7 +44,7 @@ services:
     image: redis:alpine
     command: [ "redis-server", "--appendonly", "yes" ]
     volumes:
-      - ./docker/cache:/data
+      - folioman-cache:/data
     ports:
       - "127.0.0.1:16379:6379"
   ui:
@@ -52,7 +52,7 @@ services:
     user: node
     volumes:
       - ./ui:/home/node/ui
-      - node_modules:/home/node/ui/node_modules
+      - folioman-ui-node-modules:/home/node/ui/node_modules
     working_dir: /home/node/ui
     command: sh -c "yarn install && npm run build && npm run start"
   api:
@@ -70,7 +70,7 @@ services:
     ports:
       - "8000:80"
     volumes:
-      - ./docker/static:/api/static
+      - folioman-static:/api/static
       - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - api
@@ -83,4 +83,8 @@ services:
     <<: *celery-app
     command: bash -c "/wait && /venv/bin/celery -A taskman worker -l INFO"
 volumes:
-  node_modules:
+  folioman-db:
+  folioman-cache:
+  folioman-ui-node-modules:
+  folioman-static:
+
