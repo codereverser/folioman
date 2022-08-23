@@ -56,5 +56,6 @@
     "stylelint-config-prettier": "^8.0.2",
     "stylelint-config-standard": "^21.0.0",
     "stylelint-scss": "^3.19.0"
-  }
+  },
+  "packageManager": "yarn@3.2.2"
 }

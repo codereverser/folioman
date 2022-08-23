@@ -13,3 +13,11 @@ docker/static
 
 .nuxt
 ui/.output
+ui/.yarn/*
+ui/.pnp.cjs
+ui/.pnp.loader.mjs
+!ui/.yarn/patches
+!ui/.yarn/plugins
+!ui/.yarn/releases
+!ui/.yarn/sdks
+!ui/.yarn/versions
