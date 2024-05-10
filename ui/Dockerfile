@@ -5,8 +5,8 @@ WORKDIR /home/node/ui
 COPY . .
 
 USER root
-RUN chown -R node:node /home/node/ui/.yarn && \
-    chmod 777 /home/node/ui/.yarn
+RUN chown -R node:node /home/node/ui/ && \
+    chmod -R 755 /home/node/ui/
 
 USER node
 
