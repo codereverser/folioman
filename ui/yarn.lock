@@ -2581,11 +2581,11 @@ __metadata:
   linkType: hard
 
 "@types/nuxtjs__auth@npm:^4.8.8":
-  version: 4.8.8
-  resolution: "@types/nuxtjs__auth@npm:4.8.8"
+  version: 4.8.11
+  resolution: "@types/nuxtjs__auth@npm:4.8.11"
   dependencies:
     vue: ^2.6.10
-  checksum: 7c6efed53c93d5e953bc417c5b4e774cd52afa34ae9941bc665028227add5a5b11c5c907dc273c518c4199408b24d9325f08ff0f9c4160908f5ad0d74e6ea38c
+  checksum: b0e96f067103d3ac12a0de504bf3158ba806b5f937f196cfaa1abf525ec41fbdd5248fbe0090d52e82a68d8e8be1d8a76fd150c1a1831a063cba778f8b912a7c
   languageName: node
   linkType: hard
 
