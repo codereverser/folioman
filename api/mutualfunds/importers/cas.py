@@ -131,7 +131,7 @@ def import_cas(data: CASParserDataType, user_id):
                     units=str(transaction["units"] or 0),
                     defaults={
                         "description": transaction["description"].strip(),
-                        "amount": transaction["amount"],
+                        "amount": transaction["amount"] or 0.00001,
                         "nav": transaction["nav"] or 0,
                         "order_type": Transaction.get_order_type(
                             transaction["description"], transaction["amount"]

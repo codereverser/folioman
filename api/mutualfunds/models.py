@@ -152,6 +152,8 @@ class Transaction(models.Model):
     def get_order_type(cls, description, amount):
         if "switch" in description.lower():
             return cls.OrderType.SWITCH
+        elif "Additional Allotment Appln" in description:
+            return cls.OrderType.BUY
         elif float(amount) > 0:
             if "reinvest" in description.lower():
                 return cls.OrderType.REINVEST
