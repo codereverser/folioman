@@ -26,11 +26,12 @@ def import_cas(data: CASData, user_id):
     if not (email and name):
         raise ValueError("Email or Name invalid!")
 
+    folios: List[Folio] = data.get("folios", []) or []
     try:
         pf = Portfolio.objects.get(email=email)
     except Portfolio.DoesNotExist:
         pf = Portfolio(
-            email=email, name=name, user_id=user_id, pan=(investor_info.get("pan") or "").strip()
+            email=email, name=name, user_id=user_id, pan=(folios[0].get("PAN") or "").strip()
         )
         pf.save()
 
@@ -38,7 +39,6 @@ def import_cas(data: CASData, user_id):
     num_total = 0
     new_folios = 0
 
-    folios = data.folios or []
     fund_scheme_ids = []
     scheme_dates = {}
     for folio in folios:
