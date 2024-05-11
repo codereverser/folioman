@@ -12,6 +12,13 @@ python manage.py migrate
 ```
 
 Issue below command to start local server
+
 ```shell
 python manage.py runserver
+```
+
+## How to update the dependencies in virtual environment
+
+```shell
+pip install -r requirements.txt
 ```
