@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Django",
+            "name": "Django",
             "type": "debugpy",
             "request": "launch",
             "args": [
@@ -14,6 +14,29 @@
             "django": true,
             "autoStartBrowser": false,
             "program": "${workspaceFolder}/api/manage.py"
+        },
+        {
+            "name": "Celery",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "celery",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}/api",
+            "args": [
+                "-A",
+                "taskman",
+                "worker",
+                "-l",
+                "info",
+                "-P",
+                "solo",
+            ]
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Celery and Django",
+            "configurations": ["Celery", "Django"]
         }
     ]
 }

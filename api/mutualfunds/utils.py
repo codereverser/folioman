@@ -13,7 +13,7 @@ from rapidfuzz import process
 import numpy as np
 import pandas as pd
 from tablib import Dataset
-import xirr
+import xirr.math
 
 from .models import (
     FolioScheme,
@@ -166,7 +166,7 @@ def calculate_xirr(transactions, present_date, net_present_value):
     for dt, group in itertools.groupby(sorted(transactions, key=date_key_func), date_key_func):
         value_groups[dt] = -1 * float(sum(x["amount"] for x in group))
     value_groups[present_date] = float(net_present_value)
-    return xirr.cleanXirr(value_groups)
+    return xirr.math.cleanXirr(value_groups)
 
 
 def update_portfolio_xirr(pfv_obj: PortfolioValue):
