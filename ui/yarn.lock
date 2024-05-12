@@ -7027,7 +7027,7 @@ __metadata:
     mitt: ^2.1.0
     nuxt: ^2.15.8
     nuxt-highcharts: ^2.0.2
-    nuxt-typed-vuex: ^0.2.0
+    nuxt-typed-vuex: ^0.3.0
     postcss: ^8.2.9
     prettier: ^2.2.1
     primeicons: ^4.1.0
@@ -10409,15 +10409,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nuxt-typed-vuex@npm:^0.2.0":
-  version: 0.2.0
-  resolution: "nuxt-typed-vuex@npm:0.2.0"
+"nuxt-typed-vuex@npm:^0.3.0":
+  version: 0.3.1
+  resolution: "nuxt-typed-vuex@npm:0.3.1"
   dependencies:
-    typed-vuex: 0.2.0
+    typed-vuex: 0.3.1
     upath: ^2.0.1
   peerDependencies:
-    "@nuxt/types": ^2.15.4
-  checksum: 2df462a5d7ed2995c52c5ec9377234fabcc9175ea7bb8e80a7212e936e0fba38ad7698f982fb9775716e9e432f483b57567fcfadc7ac50114fb56870c8b606ab
+    "@nuxt/types": ^2.15.8
+  checksum: d42d25af9312d44e19b46df5faa5cb64418b2da4b5f1670b945ffa407a5f73004adcadd2280ab867c80ac169675db10c8bc29dd7f08f0e71f617b19a05fbf25d
   languageName: node
   linkType: hard
 
@@ -14741,12 +14741,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typed-vuex@npm:0.2.0":
-  version: 0.2.0
-  resolution: "typed-vuex@npm:0.2.0"
+"typed-vuex@npm:0.3.1":
+  version: 0.3.1
+  resolution: "typed-vuex@npm:0.3.1"
   peerDependencies:
-    vuex: ^3.6.2
-  checksum: d2d30f173134b00859ff7b95f1afa5d9e4af21e24194f7b54ba3c32aa5804dd41b7ab8c0c68f4b78a3cc6ab52b570e45b08eb03e5646fa277ffa48955ebc3af0
+    vuex: ^3.6.2 || ^4.0.0
+  checksum: 12704206cf1fd3d7035e2052d57533c1a890b9dc513a6a73c46e783c8a06daf7b38024ebb7888517e4ca40628e599050a3de4915c846cc4d9bde1cf55d90b6f7
   languageName: node
   linkType: hard
 
