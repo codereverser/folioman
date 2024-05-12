@@ -12209,9 +12209,12 @@ __metadata:
   linkType: hard
 
 "primevue@npm:^2.5.1":
-  version: 2.6.0
-  resolution: "primevue@npm:2.6.0"
-  checksum: ebfa0516e02ccf58617715da4d4639c1a5fb928649a4b3b296358f035809035636c8bcf702ce7e9a8e184eee092b7f5a7b7e0f8ed282602fb169cba0c80ff619
+  version: 2.10.4
+  resolution: "primevue@npm:2.10.4"
+  peerDependencies:
+    primeicons: ^5.0.0 || ^6.0.0
+    vue: ^2.6.0
+  checksum: b6c5acbae72875387e7e65d146216431d0de4ba38d0652315c30c2b3ebec690b52183d2ce1b2d70f39e62fbeced27e726c22d2430ca6c70d870f105f9b54e61e
   languageName: node
   linkType: hard
 
