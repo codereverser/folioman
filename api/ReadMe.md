@@ -27,7 +27,7 @@ pip install -r requirements.txt
 In the new terminal tab, run the following command:
 
 ```shell
-celery -A app.celery worker --loglevel=info
+celery -A taskman worker -l info -P solo
 ```
 
-where celery is the version of Celery, with the -A option to specify the celery instance to use (in our case, it's celery in the app.py file, so it's app.celery), and worker is the subcommand to run the worker, and --loglevel=info to set the verbosity log level to INFO.
+where celery is the version of Celery, with the -A option to specify the celery instance to use (in our case, it's celery in the app.py file, so it's taskman), and worker is the subcommand to run the worker, and --loglevel=info to set the verbosity log level to INFO.

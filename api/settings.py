@@ -195,9 +195,6 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 25200}
 
 BSE_STARMF_SCHEME_MASTER_URL = "https://bsestarmf.in/RptSchemeMaster.aspx"
 
-QUANDL_API_KEY = env("QUANDL_API_KEY")
-QUANDL_METADATA_URL = "https://www.quandl.com/api/v3/databases/AMFI/metadata"
-
 AMFI_SCHEME_DATA_URL = \
     "https://portal.amfiindia.com/DownloadSchemeData_Po.aspx?mf=0"
 AMFI_NAVALL_URL = "https://www.amfiindia.com/spages/NAVAll.txt"

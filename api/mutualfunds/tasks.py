@@ -2,17 +2,17 @@ import datetime
 import logging
 import time
 
+import requests
 from casparser_isin.cli import update_isin_db, print_version
 from dateutil.parser import parse as date_parse
 from django_celery_beat.models import PeriodicTask
-import requests
 from requests.exceptions import RequestException, Timeout
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 from rest_framework_simplejwt.utils import aware_utcnow
 
 from taskman import app
-from .models import FolioScheme, NAVHistory, FundScheme
 from .importers.master import import_master_scheme_data
+from .models import FolioScheme, NAVHistory, FundScheme
 from .utils import update_portfolio_value
 
 logger = logging.getLogger(__name__)

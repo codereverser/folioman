@@ -1,10 +1,10 @@
 """Bulk import various DailyValue models"""
 
+import pandas as pd
 from import_export.fields import Field
 from import_export.instance_loaders import ModelInstanceLoader
 from import_export.resources import ModelResource
 from import_export.widgets import DateWidget
-import pandas as pd
 
 from mutualfunds.models import FolioValue, PortfolioValue, SchemeValue
 

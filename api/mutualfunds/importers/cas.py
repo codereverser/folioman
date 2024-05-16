@@ -1,8 +1,8 @@
 import re
+from typing import List
 
 from casparser.types import CASParserDataType, FolioType
 from dateutil.parser import parse as dateparse
-from typing import List
 
 from mutualfunds.models import (
     Portfolio,

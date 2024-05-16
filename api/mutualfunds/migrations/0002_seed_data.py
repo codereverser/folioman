@@ -1,7 +1,7 @@
 import pathlib
 
-from django.db import migrations
 from django.core.management import call_command
+from django.db import migrations
 
 FIXTURE_DIR = pathlib.Path(__file__).resolve().parent.parent / "fixtures"
 
