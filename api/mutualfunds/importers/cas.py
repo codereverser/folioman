@@ -1,7 +1,7 @@
 from datetime import date
 import re
 
-from casparser.types import CASData
+from casparser.types import CASData, Folio
 from dateutil.parser import parse as dateparse
 from typing import List
 

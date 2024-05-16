@@ -25,7 +25,7 @@
     "mitt": "^2.1.0",
     "nuxt": "^2.15.8",
     "nuxt-highcharts": "^2.0.2",
-    "nuxt-typed-vuex": "^0.3.0",
+    "nuxt-typed-vuex": "^0.2.0",
     "primeicons": "^4.1.0",
     "primevue": "^2.5.1",
     "vue": "^2.6.14",
@@ -57,5 +57,5 @@
     "stylelint-config-standard": "^21.0.0",
     "stylelint-scss": "^3.19.0"
   },
-  "packageManager": "yarn@3.8.2"
+  "packageManager": "yarn@3.2.2"
 }
