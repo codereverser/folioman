@@ -25,7 +25,7 @@
     "mitt": "^2.1.0",
     "nuxt": "^2.15.8",
     "nuxt-highcharts": "^2.0.2",
-    "nuxt-typed-vuex": "^0.2.0",
+    "nuxt-typed-vuex": "^0.3.0",
     "primeicons": "^4.1.0",
     "primevue": "^2.5.1",
     "vue": "^2.6.14",
