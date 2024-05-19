@@ -9020,9 +9020,9 @@ __metadata:
   linkType: hard
 
 "highcharts@npm:^9.3.0":
-  version: 9.3.0
-  resolution: "highcharts@npm:9.3.0"
-  checksum: 479b0a413919c9ab2d65d2408d69024b287670f31688fd0c910b13c9fa191e58f5beb580475bc3fce92f35d77cd64776bb95b321dc1e23c7983e5a04fa30afea
+  version: 9.3.3
+  resolution: "highcharts@npm:9.3.3"
+  checksum: bd952eafcf7b1c136ab1e20d6b58172f9aeab9381c13e3d67f08b10eb6b2c1f96e62a8d276f29b1e92ef0a8cbc6d1696cd0e554691063a5183235e820b42404b
   languageName: node
   linkType: hard
 
