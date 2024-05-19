@@ -2117,7 +2117,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nuxt/kit@npm:^3.5.0":
+"@nuxt/kit@npm:^3.10.1, @nuxt/kit@npm:^3.5.0":
   version: 3.11.2
   resolution: "@nuxt/kit@npm:3.11.2"
   dependencies:
@@ -2522,16 +2522,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nuxtjs/stylelint-module@npm:^4.0.0":
-  version: 4.2.2
-  resolution: "@nuxtjs/stylelint-module@npm:4.2.2"
+"@nuxtjs/stylelint-module@npm:^5.0.0":
+  version: 5.2.0
+  resolution: "@nuxtjs/stylelint-module@npm:5.2.0"
   dependencies:
-    consola: ^3.2.3
-    stylelint-webpack-plugin: ^2.5.0
+    "@nuxt/kit": ^3.10.1
+    chokidar: ^3.5.3
+    pathe: ^1.1.2
+    stylelint-webpack-plugin: ^5.0.0
+    vite-plugin-stylelint: ^5.3.1
   peerDependencies:
     stylelint: ">=13"
-    webpack: ^4.0.0 || ^5.0.0
-  checksum: ae6fd1729b6f5a6e5ef593eeb177bc822654406701327a234629d12faacb395c944464688362bdd09c396eff903d0a71ea2584c1e4c09b7c52d9cea0d5c88851
+  checksum: 735966581b097ed3081435a814dd583c2f6bb65b92093d8a33f43d9e94dfda852fc89a800c312bf58651cabc3a9d6cf30c547d239f60b96ef79cf612c40d6352
   languageName: node
   linkType: hard
 
@@ -4098,13 +4100,6 @@ __metadata:
   version: 1.0.1
   resolution: "arrify@npm:1.0.1"
   checksum: 745075dd4a4624ff0225c331dacb99be501a515d39bcb7c84d24660314a6ec28e68131b137e6f7e16318170842ce97538cd298fc4cd6b2cc798e0b957f2747e7
-  languageName: node
-  linkType: hard
-
-"arrify@npm:^2.0.1":
-  version: 2.0.1
-  resolution: "arrify@npm:2.0.1"
-  checksum: 067c4c1afd182806a82e4c1cb8acee16ab8b5284fbca1ce29408e6e91281c36bb5b612f6ddfbd40a0f7a7e0c75bf2696eb94c027f6e328d6e9c52465c98e4209
   languageName: node
   linkType: hard
 
@@ -6029,7 +6024,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"debug@npm:4, debug@npm:^4.3.3":
+"debug@npm:4, debug@npm:^4.3.3, debug@npm:^4.3.4":
   version: 4.3.4
   resolution: "debug@npm:4.3.4"
   dependencies:
@@ -7569,7 +7564,7 @@ __metadata:
     "@nuxtjs/eslint-config-typescript": ^6.0.0
     "@nuxtjs/eslint-module": ^4.0.0
     "@nuxtjs/proxy": ^2.1.0
-    "@nuxtjs/stylelint-module": ^4.0.0
+    "@nuxtjs/stylelint-module": ^5.0.0
     "@nuxtjs/tailwindcss": ^4.2.1
     "@types/nuxtjs__auth": ^4.8.8
     "@vue/composition-api": ^1.3.0
@@ -9457,17 +9452,6 @@ __metadata:
     merge-stream: ^2.0.0
     supports-color: ^7.0.0
   checksum: f9afa3b88e3f12027901e4964ba3ff048285b5783b5225cab28fac25b4058cea8ad54001e9a1577ee2bed125fac3ccf5c80dc507b120300cc1bbcb368796533e
-  languageName: node
-  linkType: hard
-
-"jest-worker@npm:^28.1.3":
-  version: 28.1.3
-  resolution: "jest-worker@npm:28.1.3"
-  dependencies:
-    "@types/node": "*"
-    merge-stream: ^2.0.0
-    supports-color: ^8.0.0
-  checksum: e921c9a1b8f0909da9ea07dbf3592f95b653aef3a8bb0cbcd20fc7f9a795a1304adecac31eecb308992c167e8d7e75c522061fec38a5928ace0f9571c90169ca
   languageName: node
   linkType: hard
 
@@ -14105,17 +14089,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"schema-utils@npm:^3.1.1":
-  version: 3.3.0
-  resolution: "schema-utils@npm:3.3.0"
-  dependencies:
-    "@types/json-schema": ^7.0.8
-    ajv: ^6.12.5
-    ajv-keywords: ^3.5.2
-  checksum: ea56971926fac2487f0757da939a871388891bc87c6a82220d125d587b388f1704788f3706e7f63a7b70e49fc2db974c41343528caea60444afd5ce0fe4b85c0
-  languageName: node
-  linkType: hard
-
 "schema-utils@npm:^4.2.0":
   version: 4.2.0
   resolution: "schema-utils@npm:4.2.0"
@@ -14993,20 +14966,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"stylelint-webpack-plugin@npm:^2.5.0":
-  version: 2.5.0
-  resolution: "stylelint-webpack-plugin@npm:2.5.0"
+"stylelint-webpack-plugin@npm:^5.0.0":
+  version: 5.0.0
+  resolution: "stylelint-webpack-plugin@npm:5.0.0"
   dependencies:
-    arrify: ^2.0.1
     globby: ^11.1.0
-    jest-worker: ^28.1.3
+    jest-worker: ^29.7.0
     micromatch: ^4.0.5
     normalize-path: ^3.0.0
-    schema-utils: ^3.1.1
+    schema-utils: ^4.2.0
   peerDependencies:
-    stylelint: ^13.0.0 || ^14.0.0 || ^15.0.0
-    webpack: ^4.0.0 || ^5.0.0
-  checksum: ad485da209387a717916bb862ba7e119ed1d776da6010435a7747634906c66f4d27eedaa8baa0895164549bb62892ea402adc430fe6c64c5565d13a2485f02a7
+    stylelint: ^13.0.0 || ^14.0.0 || ^15.0.0 || ^16.0.0
+    webpack: ^5.0.0
+  checksum: 91282f99eb7222b93400b4a347dd15c103947f9851531f47dae3487d5246c9d6d2eb2814ed98eda9236c47d9b352c164a228cb0daf59f37c45683ef149c4e843
   languageName: node
   linkType: hard
 
@@ -16187,6 +16159,30 @@ __metadata:
     eslint: ">=7"
     vite: ">=2"
   checksum: 65598893e2063a287a690ae296ba1fc212ee50dbc810d396a6cda44ee60c6f400adb52fc4c4a5ff54a89c11100bbaaf43eada23c9a78654ab1717f097d78176f
+  languageName: node
+  linkType: hard
+
+"vite-plugin-stylelint@npm:^5.3.1":
+  version: 5.3.1
+  resolution: "vite-plugin-stylelint@npm:5.3.1"
+  dependencies:
+    "@rollup/pluginutils": ^5.1.0
+    chokidar: ^3.5.3
+    debug: ^4.3.4
+  peerDependencies:
+    "@types/stylelint": ^13.0.0
+    postcss: ^7.0.0 || ^8.0.0
+    rollup: ^2.0.0 || ^3.0.0 || ^4.0.0
+    stylelint: ^13.0.0 || ^14.0.0 || ^15.0.0 || ^16.0.0
+    vite: ^2.0.0 || ^3.0.0 || ^4.0.0 || ^5.0.0
+  peerDependenciesMeta:
+    "@types/stylelint":
+      optional: true
+    postcss:
+      optional: true
+    rollup:
+      optional: true
+  checksum: b98dea486b1e0a6ae14e6924faa4ba292dc150da8ee89f20ca2cef7900da8cffbad8175e75db3100159d2101fc4f09b6ba9afedcf9948cd07655c9352ddcc23d
   languageName: node
   linkType: hard
 
