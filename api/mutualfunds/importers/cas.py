@@ -91,6 +91,8 @@ def import_cas(data: CASParserDataType, user_id):
                 folio["PANKYC"] = "notok"
             if not folio["PAN"]:
                 folio["PAN"] = "noregister"
+            if not folio["KYC"]:
+                folio["KYC"] = "notok"
             folio_obj = Folio(
                 amc_id=folio["amc_id"],
                 number=folio_number,

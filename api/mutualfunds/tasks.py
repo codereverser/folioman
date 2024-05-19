@@ -45,17 +45,24 @@ def fetch_nav(self, scheme_ids=None, update_portfolio_kwargs=None):
             else:
                 from_date = datetime.date(1970, 1, 1)
                 logger.info("Fetching NAV for %s from beginning", scheme.name)
-            mfapi_url = f"https://api.mfapi.in/mf/{scheme.amfi_code}"
-            response = requests.get(mfapi_url, timeout=60)
-            data = response.json()
-            for item in reversed(data["data"]):
-                date = date_parse(item["date"], dayfirst=True).date()
-                if date <= from_date:
-                    continue
-                NAVHistory.objects.get_or_create(
-                    scheme_id=scheme.id, date=date, defaults={"nav": item["nav"]}
-                )
-            time.sleep(2)
+            today = datetime.date.today()
+            logger.info("today's date ", today)
+            if today.weekday() == 5:  # Saturday
+                today = today - datetime.timedelta(days=1)
+            elif today.weekday() == 6:  # Sunday
+                today = today - datetime.timedelta(days=2)
+            if from_date < today - datetime.timedelta(days=1) :
+                mfapi_url = f"https://api.mfapi.in/mf/{scheme.amfi_code}"
+                response = requests.get(mfapi_url, timeout=60)
+                data = response.json()
+                for item in reversed(data["data"]):
+                    date = date_parse(item["date"], dayfirst=True).date()
+                    if date <= from_date:
+                        continue
+                    NAVHistory.objects.get_or_create(
+                        scheme_id=scheme.id, date=date, defaults={"nav": item["nav"]}
+                    )
+                time.sleep(2)
     kwargs = {}
     if isinstance(update_portfolio_kwargs, dict):
         kwargs.update(update_portfolio_kwargs)
