@@ -1,10 +1,11 @@
-import datetime
 import logging
 import time
+from datetime import datetime, timedelta
 
 import requests
 from casparser_isin.cli import update_isin_db, print_version
 from dateutil.parser import parse as date_parse
+from django.utils import timezone
 from django_celery_beat.models import PeriodicTask
 from requests.exceptions import RequestException, Timeout
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
@@ -45,13 +46,13 @@ def fetch_nav(self, scheme_ids=None, update_portfolio_kwargs=None):
             else:
                 from_date = datetime.date(1970, 1, 1)
                 logger.info("Fetching NAV for %s from beginning", scheme.name)
-            today = datetime.date.today()
+            today = timezone.now().date()
             logger.info("today's date ", today)
             if today.weekday() == 5:  # Saturday
-                today = today - datetime.timedelta(days=1)
+                today = today - timedelta(days=1)
             elif today.weekday() == 6:  # Sunday
-                today = today - datetime.timedelta(days=2)
-            if from_date < today - datetime.timedelta(days=1) :
+                today = today - timedelta(days=2)
+            if from_date < today - timedelta(days=1):
                 mfapi_url = f"https://api.mfapi.in/mf/{scheme.amfi_code}"
                 response = requests.get(mfapi_url, timeout=60)
                 data = response.json()
