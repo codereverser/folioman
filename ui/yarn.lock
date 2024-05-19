@@ -4334,7 +4334,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"autoprefixer@npm:^10.2.5":
+"autoprefixer@npm:^10.2.5, autoprefixer@npm:^10.4.19":
   version: 10.4.19
   resolution: "autoprefixer@npm:10.4.19"
   dependencies:
@@ -8152,7 +8152,7 @@ __metadata:
     "@vue/composition-api": ^1.3.0
     "@vuelidate/core": ^2.0.0-alpha.30
     "@vuelidate/validators": ^2.0.0-alpha.24
-    autoprefixer: ^10.2.5
+    autoprefixer: ^10.4.19
     core-js: ^3.16.3
     eslint: ^7.23.0
     eslint-config-prettier: ^8.1.0
@@ -8165,13 +8165,13 @@ __metadata:
     nuxt-highcharts: ^2.0.2
     nuxt-typed-vuex: ^0.3.0
     postcss: ^8.4.31
-    prettier: ^2.2.1
+    prettier: ^2.8.8
     primeicons: ^4.1.0
     primevue: ^2.5.1
     pug: ^3.0.2
     pug-plain-loader: ^1.1.0
-    sass: ^1.32.12
-    sass-loader: ^10.1.1
+    sass: ^1.77.2
+    sass-loader: ^10.5.2
     stylelint: ^13.12.0
     stylelint-config-prettier: ^8.0.2
     stylelint-config-standard: ^21.0.0
@@ -13907,7 +13907,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"prettier@npm:^2.2.1":
+"prettier@npm:^2.8.8":
   version: 2.8.8
   resolution: "prettier@npm:2.8.8"
   bin:
@@ -15063,9 +15063,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sass-loader@npm:^10.1.1":
-  version: 10.2.0
-  resolution: "sass-loader@npm:10.2.0"
+"sass-loader@npm:^10.5.2":
+  version: 10.5.2
+  resolution: "sass-loader@npm:10.5.2"
   dependencies:
     klona: ^2.0.4
     loader-utils: ^2.0.0
@@ -15074,7 +15074,7 @@ __metadata:
     semver: ^7.3.2
   peerDependencies:
     fibers: ">= 3.1.0"
-    node-sass: ^4.0.0 || ^5.0.0 || ^6.0.0
+    node-sass: ^4.0.0 || ^5.0.0 || ^6.0.0 || ^7.0.0 || ^8.0.0 || ^9.0.0
     sass: ^1.3.0
     webpack: ^4.36.0 || ^5.0.0
   peerDependenciesMeta:
@@ -15084,11 +15084,11 @@ __metadata:
       optional: true
     sass:
       optional: true
-  checksum: d53212e5d199cdd221a67046ab4276c352d56b50ca64347115b36e8ebbb2c68ec396a14d6cf5a08853c830a6b0ec1fd2b016cdc53cbe90a0332a908f50ec2043
+  checksum: 416909a9d685aafeb4342d91575439b293f4e1d6fdf7f8f970e4b3158af38e3e7379b87c0a82d7b7b32165b1f54bcd7eca3c132ad143405a5105ea4ba79cdac2
   languageName: node
   linkType: hard
 
-"sass@npm:^1.32.12":
+"sass@npm:^1.77.2":
   version: 1.77.2
   resolution: "sass@npm:1.77.2"
   dependencies:
