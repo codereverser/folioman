@@ -1801,10 +1801,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@highcharts/map-collection@npm:^1.1.3":
-  version: 1.1.3
-  resolution: "@highcharts/map-collection@npm:1.1.3"
-  checksum: d3a594aefc9ad472825bbadc8407285e0710021a21261249844f38b6b6d67bbf69159e7ca113a78a40ec23420c05870d47b64b305b9e4de3c925e08e38905ef1
+"@highcharts/map-collection@npm:^2.0.0":
+  version: 2.1.0
+  resolution: "@highcharts/map-collection@npm:2.1.0"
+  checksum: acf19a80fc07e152c9df36ad0f14435eb4a5b9079b88f67216d1389643fc7bd32fa209ff2bc5331bd941a52c99403163a47a58ba7da2c3e3352e8c63f7e7c1f1
   languageName: node
   linkType: hard
 
@@ -9019,6 +9019,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"highcharts@npm:10.0.0":
+  version: 10.0.0
+  resolution: "highcharts@npm:10.0.0"
+  checksum: 1824e9b096fcdccd23a4533c9f7ff8bf46d48536a798c613e6564b5bb88dcdc5e0d2ccc0a9f6f20635219956d62d3b7339e8330fe2a31579f438fcabb3bd8d47
+  languageName: node
+  linkType: hard
+
 "highcharts@npm:^9.3.0":
   version: 9.3.3
   resolution: "highcharts@npm:9.3.3"
@@ -11127,6 +11134,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"mgrs@npm:1.0.0":
+  version: 1.0.0
+  resolution: "mgrs@npm:1.0.0"
+  checksum: 98b9fa3caff9986868344567996f8dcc833f939c2e140507a00e2ce9a96ef7eaeb81933a749222a2b7bcbc1a4bb6ada6120dda3a5b6af6d72ae332d8990956b9
+  languageName: node
+  linkType: hard
+
 "micromark@npm:~2.11.0":
   version: 2.11.4
   resolution: "micromark@npm:2.11.4"
@@ -11908,15 +11922,18 @@ __metadata:
   linkType: hard
 
 "nuxt-highcharts@npm:^2.0.2":
-  version: 2.0.2
-  resolution: "nuxt-highcharts@npm:2.0.2"
+  version: 2.0.4
+  resolution: "nuxt-highcharts@npm:2.0.4"
   dependencies:
-    "@highcharts/map-collection": ^1.1.3
-    highcharts: ^9.3.0
+    "@highcharts/map-collection": ^2.0.0
+    highcharts: 10.0.0
+    proj4: ^2.8.0
   dependenciesMeta:
     "@highcharts/map-collection":
       optional: true
-  checksum: de17f32a0ec924fd9b0d020096e0139925195afd1634ff7a85601aaf6b61616bb32194e0bb89903df96c0388f6d9e95aefdb13e104f618191e557d96029ecd48
+    proj4:
+      optional: true
+  checksum: 4f22f2b947b71ca711e1e59ddb1a54c5482846f1d7a5b199ae1eae59df8cbf6524456b544cd051055ae8d9828b6ae0b7f47954db3069eb7d13f800ff8b9c2802
   languageName: node
   linkType: hard
 
@@ -13900,6 +13917,16 @@ __metadata:
   version: 2.0.3
   resolution: "progress@npm:2.0.3"
   checksum: f67403fe7b34912148d9252cb7481266a354bd99ce82c835f79070643bb3c6583d10dbcfda4d41e04bbc1d8437e9af0fb1e1f2135727878f5308682a579429b7
+  languageName: node
+  linkType: hard
+
+"proj4@npm:^2.8.0":
+  version: 2.11.0
+  resolution: "proj4@npm:2.11.0"
+  dependencies:
+    mgrs: 1.0.0
+    wkt-parser: ^1.3.3
+  checksum: 1f6c78962cd3584af06ec47bd80ce7fe9e4ee41f6c8c2c60b7b592687e36eb97ed13e77adad7ca1d36296a3c2993982247610a8bd9121ec0d9803db871915eaa
   languageName: node
   linkType: hard
 
@@ -17758,6 +17785,13 @@ __metadata:
     assert-never: ^1.2.1
     babel-walk: 3.0.0-canary-5
   checksum: a00fe87b736e434bd8b9d3e62ddcd664bde7d3990a011a0f1bdeb499db0d6c28e6d2ef921dcc47650b8d436eee55459bcae8fab4ce1ed89f4926ddda407ab755
+  languageName: node
+  linkType: hard
+
+"wkt-parser@npm:^1.3.3":
+  version: 1.3.3
+  resolution: "wkt-parser@npm:1.3.3"
+  checksum: b001a7e8b83c1af66f4a1bc56d5041858191b13a530af20d80dda80de92ed672bec30c3528893480ad3ef03edf845e8e9962c79c77eae860530c99afd59ff94c
   languageName: node
   linkType: hard
 
