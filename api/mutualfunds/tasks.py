@@ -1,6 +1,6 @@
+import datetime
 import logging
 import time
-from datetime import datetime, timedelta
 
 import requests
 from casparser_isin.cli import update_isin_db, print_version
@@ -48,11 +48,12 @@ def fetch_nav(self, scheme_ids=None, update_portfolio_kwargs=None):
                 logger.info("Fetching NAV for %s from beginning", scheme.name)
             today = timezone.now().date()
             logger.info("today's date ", today)
+            logger.info("from date ", from_date)
             if today.weekday() == 5:  # Saturday
-                today = today - timedelta(days=1)
+                today = today - datetime.timedelta(days=1)
             elif today.weekday() == 6:  # Sunday
-                today = today - timedelta(days=2)
-            if from_date < today - timedelta(days=1):
+                today = today - datetime.timedelta(days=2)
+            if from_date < today - datetime.timedelta(days=1):
                 mfapi_url = f"https://api.mfapi.in/mf/{scheme.amfi_code}"
                 response = requests.get(mfapi_url, timeout=60)
                 data = response.json()
