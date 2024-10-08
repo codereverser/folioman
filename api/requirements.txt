@@ -19,5 +19,5 @@ pytz>=2021.1
 redis==5.0.7
 requests==2.32.1
 sentry-sdk==2.8.0
-tablib[pandas]==3.3.0
+tablib[pandas]==3.7.0
 xirr==0.1.8
