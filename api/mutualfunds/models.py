@@ -65,7 +65,10 @@ class FundScheme(models.Model):
         return f"{self.name} - {self.plan}"
 
     class Meta:
-        index_together = [("amc_id", "rta_code"), ("rta", "rta_code")]
+        indexes = [
+            models.Index(fields=["amc_id", "rta_code"], name="idx_rta_code_amc_id"),
+            models.Index(fields=["rta", "rta_code"], name="idx_rta_code_rta"),
+        ]
         verbose_name = "Fund Scheme"
         verbose_name_plural = "Fund Schemes"
 
@@ -152,6 +155,8 @@ class Transaction(models.Model):
     def get_order_type(cls, description, amount):
         if "switch" in description.lower():
             return cls.OrderType.SWITCH
+        elif "Additional Allotment Appln" in description:
+            return cls.OrderType.BUY
         elif float(amount) > 0:
             if "reinvest" in description.lower():
                 return cls.OrderType.REINVEST

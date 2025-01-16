@@ -1,20 +1,26 @@
-from collections import deque
-from decimal import Decimal
-from datetime import date, timedelta, datetime
 import itertools
 import logging
 import re
+from collections import deque
+from datetime import date, timedelta, datetime
+from decimal import Decimal
 from typing import Optional, Union
 
+import numpy as np
+import pandas as pd
+import xirr.math
 from dateutil.parser import parse as dateparse
 from django.db.models import F, Q, Case, When, Sum
 from django.utils import timezone
 from rapidfuzz import process
-import numpy as np
-import pandas as pd
 from tablib import Dataset
-import xirr
 
+from .importers.daily_value import (
+    DailyValueResource,
+    FolioValueResource,
+    PortfolioValueResource,
+    SchemeValueResource,
+)
 from .models import (
     FolioScheme,
     FundScheme,
@@ -23,12 +29,6 @@ from .models import (
     SchemeValue,
     FolioValue,
     PortfolioValue,
-)
-from .importers.daily_value import (
-    DailyValueResource,
-    FolioValueResource,
-    PortfolioValueResource,
-    SchemeValueResource,
 )
 
 logger = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ def calculate_xirr(transactions, present_date, net_present_value):
     for dt, group in itertools.groupby(sorted(transactions, key=date_key_func), date_key_func):
         value_groups[dt] = -1 * float(sum(x["amount"] for x in group))
     value_groups[present_date] = float(net_present_value)
-    return xirr.cleanXirr(value_groups)
+    return xirr.math.cleanXirr(value_groups)
 
 
 def update_portfolio_xirr(pfv_obj: PortfolioValue):

@@ -1,6 +1,6 @@
+import itertools
 from datetime import timedelta
 from decimal import Decimal
-import itertools
 
 import casparser
 from django.db.models import F, Func
@@ -8,23 +8,20 @@ from django.utils import timezone
 from rest_framework import parsers
 from rest_framework.decorators import action, api_view
 from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
-from rest_framework.mixins import RetrieveModelMixin
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.viewsets import ModelViewSet, GenericViewSet
+from rest_framework.viewsets import ModelViewSet
 
+from .importers.cas import import_cas
 from .models import (
     Portfolio,
     PortfolioValue,
     SchemeValue,
     NAVHistory,
-    FolioScheme,
-    FundScheme,
     Transaction,
 )
 from .serializers import PortfolioSerializer, TransactionSerializer
-from .importers.cas import import_cas
 
 
 class EpochMS(Func):

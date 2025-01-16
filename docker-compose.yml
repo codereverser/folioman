@@ -30,7 +30,7 @@ x-celery: &celery-app
 
 services:
   timedb:
-    image: timescale/timescaledb:latest-pg13
+    image: timescale/timescaledb:latest-pg16
     restart: unless-stopped
     volumes:
       - folioman-db:/var/lib/postgresql/data
@@ -82,6 +82,18 @@ services:
   worker:
     <<: *celery-app
     command: bash -c "/wait && /venv/bin/celery -A taskman worker -l INFO"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    extra_hosts: [ 'host.docker.internal:host-gateway' ]
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=pgadmin4@pgadmin.org
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+    ports:
+      - "5050:80"
 volumes:
   folioman-db:
   folioman-cache:

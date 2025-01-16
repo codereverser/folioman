@@ -1,9 +1,8 @@
-from datetime import date
 import re
+from typing import List
 
 from casparser.types import CASParserDataType, FolioType
 from dateutil.parser import parse as dateparse
-from typing import List
 
 from mutualfunds.models import (
     Portfolio,
@@ -26,11 +25,12 @@ def import_cas(data: CASParserDataType, user_id):
     if not (email and name):
         raise ValueError("Email or Name invalid!")
 
+    folios: List[FolioType] = data.get("folios", []) or []
     try:
         pf = Portfolio.objects.get(email=email)
     except Portfolio.DoesNotExist:
         pf = Portfolio(
-            email=email, name=name, user_id=user_id, pan=(investor_info.get("pan") or "").strip()
+            email=email, name=name, user_id=user_id, pan=(folios[0].get("PAN") or "").strip()
         )
         pf.save()
 
@@ -38,7 +38,6 @@ def import_cas(data: CASParserDataType, user_id):
     num_total = 0
     new_folios = 0
 
-    folios: List[FolioType] = data.get("folios", []) or []
     fund_scheme_ids = []
     scheme_dates = {}
     for folio in folios:
@@ -92,6 +91,8 @@ def import_cas(data: CASParserDataType, user_id):
                 folio["PANKYC"] = "notok"
             if not folio["PAN"]:
                 folio["PAN"] = "noregister"
+            if not folio["KYC"]:
+                folio["KYC"] = "notok"
             folio_obj = Folio(
                 amc_id=folio["amc_id"],
                 number=folio_number,
@@ -131,7 +132,7 @@ def import_cas(data: CASParserDataType, user_id):
                     units=str(transaction["units"] or 0),
                     defaults={
                         "description": transaction["description"].strip(),
-                        "amount": transaction["amount"],
+                        "amount": transaction["amount"] or 0.00001,
                         "nav": transaction["nav"] or 0,
                         "order_type": Transaction.get_order_type(
                             transaction["description"], transaction["amount"]

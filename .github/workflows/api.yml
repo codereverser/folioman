@@ -1,0 +1,51 @@
+name: Django Tests CI
+
+on:
+  push:
+    paths:
+      - "api/**"
+    branches: [ main ]
+  pull_request:
+    paths:
+      - "api/**"
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  build:
+    name: Run Unit & Integration Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: "./api"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Install Required softwares
+        run: |
+          cd ..
+          docker compose up -d timedb cache
+          sleep 5
+          docker ps -a
+      - name: Test
+        env:
+          SECRET_KEY: '%k8!x4pm=mf!iqz^jws)ijn=)-md-uf_i=^mya1t*d!4f#^74k'
+          DATABASE_URL: psql://postgres:foliop4sswd@127.0.0.1:15432/folioman
+          CACHE_URL: rediscache://localhost:16379/1?client_class=django_redis.client.DefaultClient&timeout=86400
+          CELERY_BROKER_URL: redis://localhost:16379/3
+          CELERY_RESULT_BACKEND: redis://localhost:16379/5
+          QUANDL_API_KEY: PUT_QUANDL_API_HERE
+          ENVIRONMENT: dev
+        run: python manage.py test folioman.tests mutualfunds.tests

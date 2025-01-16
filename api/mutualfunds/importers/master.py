@@ -7,17 +7,17 @@ import re
 import tablib
 from dateutil.parser import parse as dateparse
 from import_export.fields import Field
-from import_export.resources import ModelResource
 from import_export.instance_loaders import CachedInstanceLoader
+from import_export.resources import ModelResource
 from import_export.results import Error, Result, RowResult
 from rapidfuzz import fuzz, process
 
-from mutualfunds.models import AMC, FundCategory, FundScheme
 from mutualfunds.importers.fetcher import (
     fetch_amfi_code_isin_mapping,
     fetch_amfi_scheme_data,
     fetch_bse_star_master_data
 )
+from mutualfunds.models import AMC, FundCategory, FundScheme
 
 logger = logging.getLogger(__name__)
 

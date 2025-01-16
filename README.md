@@ -22,6 +22,7 @@ Once the process is complete, visit the following urls to get started.
 
 - http://localhost:8000 - frontend
 - http://localhost:8000/admin/ - backend
+- http://localhost:5050 - pgadmin
 
 The default username and password is given below; it can be changed from the backend dashboard. 
 ```
