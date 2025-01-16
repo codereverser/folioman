@@ -23,7 +23,7 @@
     "fs-extra": "^8.1.0",
     "highcharts": "^9.3.0",
     "mitt": "^2.1.0",
-    "nuxt": "^2.15.8",
+    "nuxt": "^3.12.4",
     "nuxt-highcharts": "^2.0.2",
     "nuxt-typed-vuex": "^0.3.0",
     "primeicons": "^5.0.0",
