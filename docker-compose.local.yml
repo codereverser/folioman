@@ -1,0 +1,37 @@
+
+services:
+  timedb:
+    image: timescale/timescaledb:latest-pg17
+    restart: unless-stopped
+    volumes:
+      - folioman-db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: foliop4sswd
+      POSTGRES_DB: folioman
+    ports:
+      - "127.0.0.1:15432:5432"
+  cache:
+    image: redis:alpine
+    command: [ "redis-server", "--appendonly", "yes" ]
+    volumes:
+      - folioman-cache:/data
+    ports:
+      - "127.0.0.1:16379:6379"
+  pgadmin:
+    image: dpage/pgadmin4
+    extra_hosts: [ 'host.docker.internal:host-gateway' ]
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=pgadmin4@pgadmin.org
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_CONFIG_SERVER_MODE=False
+      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=False
+    ports:
+      - "5050:80"
+    depends_on:
+      - timedb
+
+volumes:
+  folioman-db:
+  folioman-cache:
+  

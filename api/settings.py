@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/3.1/ref/settings/
 """
 
 import datetime
+import os
 from pathlib import Path
 
 import click.exceptions
@@ -22,7 +23,12 @@ env = environ.Env(
     # set casting, default value
     DEBUG=(bool, False)
 )
-environ.Env.read_env()
+
+# Ensure the .env file is loaded
+BASE_DIR = Path(__file__).resolve().parent
+ENV_FILE = BASE_DIR / '.env'
+if ENV_FILE.exists():
+    environ.Env.read_env(str(ENV_FILE))
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent

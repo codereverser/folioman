@@ -93,7 +93,9 @@ class Portfolio(models.Model):
     pan = models.CharField(max_length=10, null=True, blank=True)
 
     class Meta:
-        unique_together = ("user_id", "name")
+        constraints = [
+            models.UniqueConstraint(fields=['user_id', 'name'], name='unique_user_name')
+        ]
 
     def __str__(self):
         return self.name
@@ -103,7 +105,7 @@ class Folio(models.Model):
     """Mutual Fund Folio"""
 
     amc = models.ForeignKey(AMC, models.PROTECT)
-    portfolio = models.ForeignKey(Portfolio, models.CASCADE, related_name="folios")
+    portfolio = models.ForeignKey(Portfolio, on_delete=models.CASCADE, related_name="folios")
     number = models.CharField(max_length=128, unique=True)
     pan = models.CharField(max_length=10, null=True, blank=True)
     kyc = models.BooleanField(default=False)

@@ -21,3 +21,5 @@ ui/.pnp.loader.mjs
 !ui/.yarn/releases
 !ui/.yarn/sdks
 !ui/.yarn/versions
+api/static/
+api/beat.pid

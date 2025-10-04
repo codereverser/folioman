@@ -30,10 +30,59 @@ username: admin
 password: foliom4n
 ```
 
-
-
 This will build the container images for backend, frontend and all dependent services
-and may take quite a while to finish. 
+and may take quite a while to finish.
+
+---
+
+### Running Locally (Minimal Docker Setup)
+
+If you want to run the application locally with minimal Docker usage (only loading timedb and cache services in Docker), follow these steps:
+
+#### Step 1: Start Local Environment
+
+**On Windows:**
+```bash
+run-local.bat
+```
+
+**On Linux/Mac:**
+```bash
+./run-local.sh
+```
+
+This will:
+1. Start only the required Docker containers (timedb, cache, and pgadmin)
+2. Set up a Python virtual environment
+3. Install all Python dependencies
+4. Configure the Django environment to connect to your local Docker containers
+5. Run database migrations
+6. Start the Django API server
+7. Install Node.js dependencies for the UI
+8. Start the UI development server
+
+#### Step 2: Start Celery for Background Tasks (Optional)
+
+**On Windows:**
+```bash
+run-celery-local.bat
+```
+
+This will start Celery worker and beat scheduler processes for background tasks.
+
+#### Step 3: Access Your Application
+
+Once everything is running, you can access:
+- API: http://localhost:8000
+- UI: http://localhost:3000
+- PGAdmin: http://localhost:5050 (login: pgadmin4@pgadmin.org / admin)
+
+#### Step 4: Shutting Down
+
+Stop the Django and UI processes, then stop the Docker containers:
+```bash
+docker-compose -f docker-compose.local.yml down
+```
 
 ## Features
 
