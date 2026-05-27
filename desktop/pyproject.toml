@@ -2,13 +2,15 @@
 name = "folioman-desktop"
 version = "0.0.0"
 description = "Folioman desktop launcher (PyWebView shell, packaged via Nuitka)."
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
-    # "folioman-app",
+    "folioman-app",
+    # Activated in Phase 8 (desktop packaging):
     # "pywebview",
 ]
 
 [project.optional-dependencies]
+# Build-time only; activated in Phase 8.
 build = [
     # "nuitka",
     # "ordered-set",

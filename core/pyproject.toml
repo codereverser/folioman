@@ -2,11 +2,12 @@
 name = "folioman-core"
 version = "0.0.0"
 description = "Folioman shared domain logic: parsing, FIFO, XIRR, tax, reconciliation."
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
-    # "casparser>=1.0",
+    "pydantic>=2.7",
+    # Activated in Phase 2 (core domain library):
+    # "casparser>=1.0",        # NOT on PyPI yet — PR #124 / 1.0 unreleased
     # "casparser-isin",
-    # "pydantic>=2",
     # "requests",
 ]
 

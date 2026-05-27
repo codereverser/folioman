@@ -1,15 +1,28 @@
 # Workspace root for the Folioman v2.0 monorepo.
 # Per-package configuration lives under core/, app/, desktop/, server/.
+# This root is a "virtual" uv workspace (no [project]); it only carries
+# workspace membership, shared dev tooling, and tool configuration.
 
 [tool.uv.workspace]
 members = ["core", "app", "desktop", "server"]
 
+# Workspace-wide development dependencies (PEP 735). Installed by `uv sync`.
+[dependency-groups]
+dev = [
+    "ruff>=0.13",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "pre-commit>=4.0",
+]
+
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
+extend-exclude = ["archive"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
 testpaths = ["core/tests", "app/tests"]
+addopts = "-q --import-mode=importlib"
