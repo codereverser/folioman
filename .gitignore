@@ -1,23 +1,52 @@
+# Personal / local
 .env
-.venv
-.idea
-.vscode
+.env.*
+!.env.example
+.venv/
+venv/
+.idea/
+.vscode/
 
-__pycache__
-*.pyc
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
 
-docker/cache
-docker/db
-docker/node_modules
-docker/static
+# Node / frontend
+node_modules/
+frontend/dist/
+*.log
 
-.nuxt
-ui/.output
-ui/.yarn/*
-ui/.pnp.cjs
-ui/.pnp.loader.mjs
-!ui/.yarn/patches
-!ui/.yarn/plugins
-!ui/.yarn/releases
-!ui/.yarn/sdks
-!ui/.yarn/versions
+# Nuitka / desktop build artefacts
+*.build/
+*.dist/
+*.onefile-build/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Licenses (signed artefacts; never commit private keys or issued licenses)
+*.license
+secrets/
+
+# Legacy ignores still relevant for archive/
+archive/docker/cache
+archive/docker/db
+archive/docker/node_modules
+archive/docker/static
+archive/.nuxt
+archive/ui/.output
+archive/ui/.yarn/*
+!archive/ui/.yarn/patches
+!archive/ui/.yarn/plugins
+!archive/ui/.yarn/releases
+!archive/ui/.yarn/sdks
+!archive/ui/.yarn/versions

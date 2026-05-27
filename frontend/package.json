@@ -1,0 +1,12 @@
+{
+  "name": "folioman-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Folioman Vue 3 SPA — shared bundle for desktop and hosted.",
+  "scripts": {
+    "dev": "echo 'TODO: vite' && exit 1",
+    "build": "echo 'TODO: vite build' && exit 1",
+    "test": "echo 'TODO: vitest' && exit 0"
+  }
+}

@@ -1,0 +1,13 @@
+# Folioman self-hosted PM Pro stack.
+# Placeholder — not yet fleshed out.
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    # ports, env, depends_on TBD
+
+  db:
+    image: postgres:16
+    # volumes, env TBD

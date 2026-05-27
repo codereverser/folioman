@@ -1,52 +1,38 @@
-# folioman
+# Folioman
 
-Portfolio manager and analysis tools for investments in Indian mutual funds, stocks and other digital assets.
+Private, self-hostable Indian-investor net-worth tracker and tax helper.
 
-<img src="https://github.com/codereverser/folioman/raw/main/screenshots/mutualfunds/01.dashboard.png" alt="Demo Dashboard" width="720"/>
+> **Status: v2.0 rewrite in progress.** This repository is currently a skeleton.
+> The v1 codebase has been moved to [`archive/`](archive/) for reference and
+> will be removed once the rewrite reaches feature parity.
 
-### Pre-requisites
+## Stack (v2.0)
 
-folioman requires docker and docker-compose installed in your system
-- [Install docker](https://docs.docker.com/get-docker/)
-- [Install docker-compose](https://docs.docker.com/compose/install/)
+| Layer        | Pick                                          |
+|--------------|-----------------------------------------------|
+| Backend      | Django 5.2 + Django Ninja                     |
+| Frontend     | Vue 3 + Pinia + Vite + ECharts                |
+| Desktop      | PyWebView + Nuitka (build-from-source)        |
+| Server       | gunicorn + Docker Compose                     |
+| Database     | SQLite (desktop) / Postgres 16 (hosted)       |
+| Scheduling   | OS-native (launchd / Task Scheduler / cron)   |
+| Licensing    | Offline ed25519-signed license files          |
 
-### Setup
-To run the project, create a file called `.env` in the `api` folder based on the 
-template `api/env.template` and run
+## Layout
 
-```bash
-docker-compose up --build
+```
+core/      Shared domain logic — no Django, no I/O frameworks
+app/       Django app + Django Ninja API (shared by desktop and server)
+frontend/  Vue 3 SPA (same bundle for desktop and hosted)
+desktop/   PyWebView launcher + Nuitka build spec
+server/    gunicorn entrypoint + Dockerfile
+deploy/    Release notes + hosted deploy templates
+docs/      User and developer documentation
+archive/   Legacy v1 code — read-only, reference only
 ```
 
-Once the process is complete, visit the following urls to get started.
+See [`BUILD.md`](BUILD.md) for build instructions (TBD).
 
-- http://localhost:8000 - frontend
-- http://localhost:8000/admin/ - backend
-- http://localhost:5050 - pgadmin
+## License
 
-The default username and password is given below; it can be changed from the backend dashboard. 
-```
-username: admin
-password: foliom4n
-```
-
-
-
-This will build the container images for backend, frontend and all dependent services
-and may take quite a while to finish. 
-
-## Features
-
-### Asset classes
-- Indian Mutual funds (_Work_In_Progress_)
-- Indian Stocks (_TODO_)
-- CryptoCurrencies (_TODO_)
-
-### Screenshots
-Some screenshots are available in the [screenshots](screenshots) folder
-
-
-# Warning
-The code is a work in progress and is in pre-alpha / proof-of-concept stage. 
-It may have many critical bugs and it may also go through major 
-backward-incompatible changes.
+[MIT](LICENSE)
