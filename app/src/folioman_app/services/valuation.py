@@ -145,14 +145,25 @@ def _value_investors(investors: list[Investor], as_of: date):
     return valuation, meta_by_security
 
 
-def _rollup(valuation, meta_by_security: dict) -> dict:
-    """Shared INR rollup: total, asset mix, top holdings, and counts."""
+def _rollup(valuation, meta_by_security: dict, extras: dict[int, dict] | None = None) -> dict:
+    """Shared INR rollup: total, asset mix, top holdings, and counts.
+
+    ``extras`` (from :func:`_holding_extras`) attaches per-security cost basis and
+    intraday day-change to each holding row, and a ``return_pct`` derived from
+    value vs cost basis. Absent for callers that don't need the detail.
+    """
+    extras = extras or {}
     asset_mix: dict[str, Decimal] = defaultdict(lambda: _ZERO)
     top_holdings = []
     for row in valuation.rows:
         sec_id, name, sec_type = meta_by_security[row.security]
         if row.value_inr is not None:
             asset_mix[sec_type] += row.value_inr
+        extra = extras.get(sec_id, {})
+        invested = extra.get("invested_inr")
+        return_pct = None
+        if row.value_inr is not None and invested not in (None, _ZERO):
+            return_pct = float((row.value_inr - invested) / invested)
         top_holdings.append(
             {
                 "security_id": sec_id,
@@ -160,6 +171,11 @@ def _rollup(valuation, meta_by_security: dict) -> dict:
                 "security_type": sec_type,
                 "units": row.units,
                 "value_inr": row.value_inr,
+                "invested_inr": invested,
+                "return_pct": return_pct,
+                "xirr": extra.get("xirr"),
+                "day_change_inr": extra.get("day_change_inr"),
+                "day_change_pct": extra.get("day_change_pct"),
             }
         )
     top_holdings.sort(key=lambda r: r["value_inr"] or _ZERO, reverse=True)
@@ -174,10 +190,89 @@ def _rollup(valuation, meta_by_security: dict) -> dict:
     }
 
 
+def _security_cashflows(txn_keys: dict) -> dict[int, list[tuple[date, Decimal]]]:
+    """Per-security ``(date, invested_amount)`` rows for XIRR (folios merged).
+
+    Sign matches :func:`cashflows_from_transactions`' input: positive = capital
+    invested (buys/transfers-in), negative = capital returned (sells, cash
+    dividends). One fund's flows are independent of every other's.
+    """
+    by_sec: dict[int, list[tuple[date, Decimal]]] = defaultdict(list)
+    for (sec_id, _folio_id), rec in txn_keys.items():
+        for txn_date, ttype, cash in rec["cash"]:
+            if ttype in _BUY_TYPES:
+                by_sec[sec_id].append((txn_date, cash))  # capital invested (positive in)
+            elif ttype in _SELL_TYPES:
+                by_sec[sec_id].append((txn_date, -cash))  # capital returned
+            elif ttype == TransactionType.DIVIDEND.value and cash:
+                by_sec[sec_id].append((txn_date, -cash))  # cash dividend paid out
+    return by_sec
+
+
+def _holding_extras(investors: list[Investor], as_of: date) -> dict[int, dict]:
+    """Per-security cost basis, intraday day-change, and per-fund XIRR.
+
+    - ``invested_inr``: FIFO cost basis of the units still held (ledger), or the
+      snapshot's observed avg-cost (eCAS/manual) — the figure the value-series
+      reports as ``invested_inr``.
+    - ``day_change_inr`` / ``day_change_pct``: held units times the NAV move
+      between the two most recent prices on/before ``as_of``; ``None`` when the
+      security has fewer than two NAV points (no delta) or isn't held.
+    - ``xirr``: money-weighted annualized return of *this fund alone* — its own
+      buy/sell/dividend cashflows plus the current value of the units still held.
+      ``None`` for a snapshot-only holding (no cashflows) or a held-but-unpriced
+      fund (can't value the terminal leg). This is the per-fund growth number;
+      the portfolio headline XIRR is computed separately.
+
+    Returns ``{security_id: {invested_inr, day_change_inr, day_change_pct, xirr}}``.
+    """
+    txn_keys, hold_keys = _ledger_index(investors)
+    positions = _positions_asof(txn_keys, hold_keys, as_of)
+    nav_idx = _nav_index(positions.keys(), as_of)
+    cash_by_sec = _security_cashflows(txn_keys)
+    extras: dict[int, dict] = {}
+    for sec_id, (_sec, units, invested) in positions.items():
+        seq = nav_idx.get(sec_id) or []
+        latest = seq[-1][1] if seq else None
+        prev = seq[-2][1] if len(seq) >= 2 else None
+        day_change_inr = day_change_pct = None
+        if units > _ZERO and latest is not None and prev is not None and prev != _ZERO:
+            day_change_inr = units * (latest - prev)
+            day_change_pct = float((latest - prev) / prev)
+
+        flows = cash_by_sec.get(sec_id)
+        xirr = None
+        if flows:
+            # Held → terminal is the current value of the units; fully exited →
+            # terminal 0 (pure realized return). Held-but-unpriced can't be valued.
+            terminal = (units * latest if latest is not None else None) if units > _ZERO else _ZERO
+            if terminal is not None:
+                cashflows = cashflows_from_transactions(
+                    flows, present_date=as_of, present_value=terminal
+                )
+                xirr = compute_xirr(cashflows)
+
+        extras[sec_id] = {
+            "invested_inr": invested,
+            "day_change_inr": day_change_inr,
+            "day_change_pct": day_change_pct,
+            "xirr": xirr,
+        }
+    return extras
+
+
+def _day_change_total(extras: dict[int, dict]) -> Decimal | None:
+    """Portfolio-wide intraday change: the sum of the priced day-change rows, or
+    ``None`` when no held security has two NAV points to form a delta."""
+    contribs = [e["day_change_inr"] for e in extras.values() if e["day_change_inr"] is not None]
+    return sum(contribs, _ZERO) if contribs else None
+
+
 def build_family_aggregate(family: Family, as_of: date) -> dict:
     investors = list(family.investors.all())
     valuation, meta_by_security = _value_investors(investors, as_of)
-    rollup = _rollup(valuation, meta_by_security)
+    extras = _holding_extras(investors, as_of)
+    rollup = _rollup(valuation, meta_by_security, extras)
     return {
         "family_id": family.id,
         "as_of": as_of,
@@ -186,6 +281,7 @@ def build_family_aggregate(family: Family, as_of: date) -> dict:
         "asset_mix": rollup["asset_mix"],
         "top_holdings": rollup["top_holdings"],
         "stale_count": rollup["stale_count"],
+        "day_change_inr": _day_change_total(extras),
         "xirr": compute_portfolio_xirr(investors, as_of),
     }
 
@@ -196,7 +292,8 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
     recent successful import date.
     """
     valuation, meta_by_security = _value_investors([investor], as_of)
-    rollup = _rollup(valuation, meta_by_security)
+    extras = _holding_extras([investor], as_of)
+    rollup = _rollup(valuation, meta_by_security, extras)
 
     statuses = list(investor.integrity_statuses.values_list("status", "tax_safe"))
     tax_ready_count = sum(1 for _status, tax_safe in statuses if tax_safe)
@@ -227,7 +324,10 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
         "snapshot_count": snapshot_count,
         "stale_count": rollup["stale_count"],
         "last_import_at": last_import_at,
+        "day_change_inr": _day_change_total(extras),
         "xirr": compute_portfolio_xirr([investor], as_of),
+        "asset_mix": rollup["asset_mix"],
+        "top_holdings": rollup["top_holdings"],
     }
 
 
@@ -425,14 +525,16 @@ def family_value_series(
 
 
 def compute_portfolio_xirr(investors: list[Investor], as_of: date) -> float | None:
-    """Annualized XIRR over the ledger's cashflows + terminal ledger value.
+    """Annualized XIRR over the whole ledger's cashflows + terminal ledger value.
 
-    Cashflows are the ledger transactions (buys/transfers-in invest capital,
-    sells/transfers-out/dividends return it); the terminal inflow is the current
-    value of the **ledger-backed** positions at ``as_of``. Snapshot-only holdings
-    are excluded — they have no acquisition cashflow, so including their value
-    would inflate the return. Returns the rate as a fraction (``0.1849`` = 18.49%)
-    or ``None`` when there's nothing to solve.
+    Cashflows are every ledger transaction (buys/transfers-in invest capital,
+    sells/transfers-out/dividends return it), including positions since exited;
+    the terminal inflow is the current value of the **ledger-backed** positions at
+    ``as_of``. Snapshot-only holdings are excluded — they have no acquisition
+    cashflow, so including their value would inflate the return. This is the
+    portfolio-wide lifetime number; per-fund XIRR lives in ``_holding_extras``.
+    Returns the rate as a fraction (``0.1849`` = 18.49%) or ``None`` when there's
+    nothing to solve.
     """
     txn_keys, _hold_keys = _ledger_index(investors)
     flows: list[tuple[date, Decimal]] = []

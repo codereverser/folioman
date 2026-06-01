@@ -79,6 +79,13 @@ class HoldingValueRow(Schema):
     security_type: str
     units: Decimal
     value_inr: Decimal | None
+    invested_inr: Decimal | None = None  # FIFO cost basis of the units still held
+    return_pct: float | None = None  # (value - invested) / invested, as a fraction
+    # money-weighted annualized return of this fund alone (its cashflows + current
+    # value), as a fraction. None for snapshot-only or held-but-unpriced holdings.
+    xirr: float | None = None
+    day_change_inr: Decimal | None = None  # units * (latest NAV - prior NAV)
+    day_change_pct: float | None = None  # (latest NAV - prior NAV) / prior NAV
 
 
 class FamilyAggregateOut(Schema):
@@ -89,7 +96,10 @@ class FamilyAggregateOut(Schema):
     asset_mix: list[AssetMixRow]
     top_holdings: list[HoldingValueRow]
     stale_count: int
-    xirr: float | None = None  # annualized rate as a fraction (0.1849 = 18.49%)
+    day_change_inr: Decimal | None = None  # portfolio-wide intraday change (INR)
+    # portfolio lifetime money-weighted return as a fraction (0.1849 = 18.49%),
+    # over all cashflows incl. sold-out positions. Per-fund XIRR is on each holding.
+    xirr: float | None = None
 
 
 class InvestorSummaryOut(Schema):
@@ -104,7 +114,12 @@ class InvestorSummaryOut(Schema):
     snapshot_count: int  # snapshot-only (no transaction history)
     stale_count: int  # held but unpriced (no NAV on/before as_of)
     last_import_at: datetime | None
-    xirr: float | None = None  # annualized rate as a fraction (0.1849 = 18.49%)
+    day_change_inr: Decimal | None = None  # portfolio-wide intraday change (INR)
+    # portfolio lifetime money-weighted return as a fraction (0.1849 = 18.49%),
+    # over all cashflows incl. sold-out positions. Per-fund XIRR is on each holding.
+    xirr: float | None = None
+    asset_mix: list[AssetMixRow] = Field(default_factory=list)  # INR by security type
+    top_holdings: list[HoldingValueRow] = Field(default_factory=list)  # largest, value-desc
 
 
 class ValueSeriesPoint(Schema):

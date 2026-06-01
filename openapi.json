@@ -47,6 +47,18 @@
             "title": "Asset Mix",
             "type": "array"
           },
+          "day_change_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Change Inr"
+          },
           "family_id": {
             "title": "Family Id",
             "type": "integer"
@@ -242,9 +254,55 @@
       },
       "HoldingValueRow": {
         "properties": {
+          "day_change_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Change Inr"
+          },
+          "day_change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Change Pct"
+          },
+          "invested_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invested Inr"
+          },
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Pct"
           },
           "security_id": {
             "title": "Security Id",
@@ -270,6 +328,17 @@
               }
             ],
             "title": "Value Inr"
+          },
+          "xirr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xirr"
           }
         },
         "required": [
@@ -557,6 +626,25 @@
             "title": "As Of",
             "type": "string"
           },
+          "asset_mix": {
+            "items": {
+              "$ref": "#/components/schemas/AssetMixRow"
+            },
+            "title": "Asset Mix",
+            "type": "array"
+          },
+          "day_change_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Change Inr"
+          },
           "holdings_count": {
             "title": "Holdings Count",
             "type": "integer"
@@ -592,6 +680,13 @@
           "tax_ready_count": {
             "title": "Tax Ready Count",
             "type": "integer"
+          },
+          "top_holdings": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingValueRow"
+            },
+            "title": "Top Holdings",
+            "type": "array"
           },
           "total_inr": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",

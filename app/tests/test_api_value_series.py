@@ -177,6 +177,107 @@ def test_xirr_is_null_without_a_ledger(client, make_investor, make_security, mak
     assert body["xirr"] is None
 
 
+def test_summary_holding_carries_cost_basis_return_and_day_change(
+    client, make_investor, make_security, make_folio, make_transaction
+):
+    # 100 units bought at ₹10 (cost basis ₹1000). Two NAV points: ₹18 → ₹20.
+    # value = 100*20 = 2000; return = (2000-1000)/1000 = 1.0; day-change = 100*(20-18) = 200.
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    folio = make_folio(investor=inv)
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        date=dt.date(2024, 6, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 5, 30), nav=Decimal("18"))
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("20"))
+
+    body = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-01"}).json()
+    row = body["top_holdings"][0]
+
+    assert Decimal(str(row["invested_inr"])) == Decimal("1000")
+    assert abs(row["return_pct"] - 1.0) < 1e-9
+    assert Decimal(str(row["day_change_inr"])) == Decimal("200")
+    assert abs(row["day_change_pct"] - (2 / 18)) < 1e-9
+    assert Decimal(str(body["day_change_inr"])) == Decimal("200")
+
+
+def test_day_change_is_null_with_a_single_nav_point(
+    client, make_investor, make_security, make_folio, make_transaction
+):
+    # Only one NAV point → no prior close → no day-change delta to report.
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    folio = make_folio(investor=inv)
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        date=dt.date(2024, 6, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("20"))
+
+    body = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-01"}).json()
+
+    assert body["top_holdings"][0]["day_change_inr"] is None
+    assert body["day_change_inr"] is None
+
+
+def test_per_fund_xirr_is_isolated_per_holding(
+    client, make_investor, make_security, make_folio, make_transaction
+):
+    # Two funds bought a year ago: WINNER doubled (~100%), LAGGARD flat (~0%).
+    # Each holding row carries its own money-weighted return — not the blended one.
+    inv = make_investor()
+    winner = make_security(security_type=SecurityType.MF.value)
+    laggard = make_security(security_type=SecurityType.MF.value)
+    make_transaction(
+        investor=inv,
+        security=winner,
+        folio=make_folio(investor=inv),
+        date=dt.date(2024, 6, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    make_transaction(
+        investor=inv,
+        security=laggard,
+        folio=make_folio(investor=inv),
+        date=dt.date(2024, 6, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    NAVHistory.objects.create(security=winner, date=dt.date(2025, 6, 1), nav=Decimal("20"))
+    NAVHistory.objects.create(security=laggard, date=dt.date(2025, 6, 1), nav=Decimal("10"))
+
+    body = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-01"}).json()
+    by_id = {r["security_id"]: r for r in body["top_holdings"]}
+
+    assert 0.9 < by_id[winner.id]["xirr"] < 1.1  # doubled in a year
+    assert abs(by_id[laggard.id]["xirr"]) < 0.05  # flat
+
+
+def test_per_fund_xirr_null_for_snapshot_only_holding(
+    client, make_investor, make_security, make_holding
+):
+    # A snapshot-only holding (eCAS, no transaction ledger) has no cashflows, so no
+    # per-fund XIRR can be solved — the field is null, not a fabricated number.
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    make_holding(investor=inv, security=mf, units=Decimal("100"), as_of_date=dt.date(2025, 6, 1))
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("75"))
+
+    body = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-01"}).json()
+
+    assert body["top_holdings"][0]["xirr"] is None
+
+
 def test_family_value_series_aggregates_investors(
     client, make_family, make_investor, make_security, make_folio, make_transaction
 ):
