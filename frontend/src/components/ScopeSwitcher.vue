@@ -76,7 +76,17 @@ function onSelect(key: string | null): void {
 </template>
 
 <style scoped>
+/* Fill the sidebar column rather than forcing a fixed width wider than it (which
+   spilled the box across the border into the main area). */
 .scope-switcher {
-  min-width: 16rem;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Truncate long investor/family names instead of widening the control. */
+.scope-switcher :deep(.p-select-label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
