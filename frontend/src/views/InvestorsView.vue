@@ -103,7 +103,24 @@ const investorForm = reactive<{
   relation: string
   isHuf: boolean
   familyId: number | null
-}>({ visible: false, mode: 'create', id: null, name: '', relation: 'Self', isHuf: false, familyId: null })
+  pan: string
+}>({
+  visible: false,
+  mode: 'create',
+  id: null,
+  name: '',
+  relation: 'Self',
+  isHuf: false,
+  familyId: null,
+  pan: '',
+})
+
+// Indian PAN: five letters, four digits, one letter (e.g. ABCDE1234F).
+const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+const panError = computed(() => {
+  const value = investorForm.pan.trim()
+  return value && !PAN_PATTERN.test(value) ? 'PAN must look like ABCDE1234F' : ''
+})
 
 function openCreateInvestor(familyId: number | null = null): void {
   Object.assign(investorForm, {
@@ -114,6 +131,7 @@ function openCreateInvestor(familyId: number | null = null): void {
     relation: 'Self',
     isHuf: false,
     familyId,
+    pan: '',
   })
 }
 function openEditInvestor(inv: RosterInvestor): void {
@@ -125,11 +143,14 @@ function openEditInvestor(inv: RosterInvestor): void {
     relation: 'Self',
     isHuf: false,
     familyId: inv.familyId,
+    // The API never returns a stored PAN; blank means "leave unchanged" on save.
+    pan: '',
   })
 }
 async function saveInvestor(): Promise<void> {
   const name = investorForm.name.trim()
-  if (!name) return
+  if (!name || panError.value) return
+  const pan = investorForm.pan.trim().toUpperCase()
   const fields = {
     name,
     relation: investorForm.relation,
@@ -138,8 +159,13 @@ async function saveInvestor(): Promise<void> {
   }
   const ok =
     investorForm.mode === 'create'
-      ? await investorStore.createInvestor({ ...fields, email: '' })
-      : await investorStore.updateInvestor(investorForm.id as number, fields)
+      ? // PAN is optional on create; omit it entirely when blank.
+        await investorStore.createInvestor({ ...fields, email: '', ...(pan ? { pan } : {}) })
+      : // On edit a blank PAN field means "leave unchanged" — only PATCH it when set.
+        await investorStore.updateInvestor(investorForm.id as number, {
+          ...fields,
+          ...(pan ? { pan } : {}),
+        })
   if (ok) {
     investorForm.visible = false
     ui.notify({ severity: 'success', summary: investorForm.mode === 'create' ? 'Investor added' : 'Investor updated' })
@@ -269,6 +295,23 @@ async function moveInvestor(inv: RosterInvestor, familyId: number | null): Promi
         <Select id="inv-relation" v-model="investorForm.relation" :options="RELATIONS" editable />
       </div>
       <div class="field">
+        <label for="inv-pan">PAN <span class="optional">(optional)</span></label>
+        <InputText
+          id="inv-pan"
+          v-model="investorForm.pan"
+          :invalid="!!panError"
+          maxlength="10"
+          placeholder="ABCDE1234F"
+          style="text-transform: uppercase"
+          @input="investorForm.pan = investorForm.pan.toUpperCase()"
+        />
+        <small v-if="panError" class="field-error">{{ panError }}</small>
+        <small v-else class="field-hint">
+          {{ investorForm.mode === 'edit' ? 'Leave blank to keep the existing PAN. ' : '' }}Needed
+          for the per-PAN capital-gains (Schedule 112A) export.
+        </small>
+      </div>
+      <div class="field">
         <label for="inv-family">Family</label>
         <Select id="inv-family" v-model="investorForm.familyId" :options="familyOptions" option-label="label" option-value="value" />
       </div>
@@ -278,7 +321,7 @@ async function moveInvestor(inv: RosterInvestor, familyId: number | null): Promi
       </div>
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="investorForm.visible = false" />
-        <Button label="Save" :loading="investorStore.saving" :disabled="!investorForm.name.trim()" @click="saveInvestor" />
+        <Button label="Save" :loading="investorStore.saving" :disabled="!investorForm.name.trim() || !!panError" @click="saveInvestor" />
       </template>
     </Dialog>
   </section>
@@ -437,6 +480,18 @@ async function moveInvestor(inv: RosterInvestor, familyId: number | null): Promi
   display: flex;
   align-items: center;
   gap: var(--fm-space-2);
+}
+.field .optional {
+  font-weight: 400;
+  color: var(--fm-text-subtle, var(--fm-text-muted));
+}
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--fm-text-muted);
+}
+.field-error {
+  font-size: 0.75rem;
+  color: var(--fm-danger, #d32f2f);
 }
 
 /* Mobile: each investor becomes a stacked card; metrics wrap below the name.
