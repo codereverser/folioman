@@ -273,3 +273,17 @@ def test_read_mf_cas_rejects_non_mf_cas(monkeypatch):
     monkeypatch.setattr(casparser, "read_cas_pdf", lambda *a, **k: sentinel)
     with pytest.raises(parser.CASParseError, match="ecas_parser"):
         parser.read_mf_cas("statement.pdf", "pw")
+
+
+def test_mf_investor_identity_carries_full_pan_name_email():
+    # The statement view masks the PAN; the identity must carry the *full* PAN
+    # (plus name/email) so the import layer can resolve/create the investor.
+    cas = _cas([_txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000")])
+    identity = parser.mf_investor_identity(cas)
+    assert identity.pan == "ABCDE1234F"
+    assert identity.name == "Sample"
+    assert identity.email == "s@example.com"
+    # The persisted statement view still only carries the masked PAN (last 4 kept).
+    masked = parser.map_cas_data(cas).pan_masked
+    assert masked.endswith("234F")
+    assert masked != "ABCDE1234F"

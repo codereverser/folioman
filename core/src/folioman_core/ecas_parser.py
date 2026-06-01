@@ -18,6 +18,7 @@ from casparser.types import NSDLCASData
 
 from folioman_core._dates import parse_loose_date as _to_date
 from folioman_core.models.cas import (
+    CasInvestorIdentity,
     Depository,
     EcasAccountBlock,
     EcasHoldingLine,
@@ -113,6 +114,38 @@ def map_ecas_data(data: NSDLCASData) -> EcasStatement:
         statement_date=statement_date,
         investor_name=(info.name if info else "") or "",
         accounts=[_map_account(acc) for acc in data.accounts],
+    )
+
+
+def ecas_investor_identity(data: NSDLCASData) -> CasInvestorIdentity:
+    """Owner identity (name, email, **full** PAN) from an eCAS, for investor
+    resolution. The PAN is the **primary** holder — the first owner of the first
+    demat account. A consolidated eCAS for one person shares that PAN across
+    accounts; if accounts disagree on the primary PAN the statement spans more
+    than one taxpayer, which we reject rather than guess (message is PII-free —
+    carries no PAN). ``pan == ""`` if no owner PAN is present.
+    """
+    primary = ""
+    for account in data.accounts:
+        owners = getattr(account, "owners", None) or []
+        if not owners:
+            continue
+        pan = (getattr(owners[0], "PAN", "") or "").strip()
+        if not pan:
+            continue
+        if not primary:
+            primary = pan
+        elif pan != primary:
+            msg = (
+                "this statement spans more than one PAN; import one holder's "
+                "statement at a time (no PAN is included in this message)."
+            )
+            raise CASParseError(msg)
+    info = data.investor_info
+    return CasInvestorIdentity(
+        name=(info.name if info else "") or "",
+        email=(info.email if info else "") or "",
+        pan=primary,
     )
 
 

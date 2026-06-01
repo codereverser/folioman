@@ -22,7 +22,12 @@ from casparser.types import CASData
 from pydantic import ValidationError
 
 from folioman_core._dates import parse_loose_date as _to_date
-from folioman_core.models.cas import MfCasLineItem, MfCasSchemeBlock, MfCasStatement
+from folioman_core.models.cas import (
+    CasInvestorIdentity,
+    MfCasLineItem,
+    MfCasSchemeBlock,
+    MfCasStatement,
+)
 from folioman_core.models.investor import Folio, FolioType
 from folioman_core.models.security import Security, SecurityType
 from folioman_core.models.transaction import Transaction, TransactionSource, TransactionType
@@ -236,6 +241,19 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
         statement_from=_to_date(period.from_),
         statement_to=_to_date(period.to),
         schemes=blocks,
+    )
+
+
+def mf_investor_identity(cas: CASData) -> CasInvestorIdentity:
+    """Owner identity (name, email, **full** PAN) from an MF CAS, for investor
+    resolution. The PAN is the folio-level PAN casparser exposes; a CAMS/KFin CAS
+    is generated per PAN, so all folios share it. ``pan == ""`` if absent."""
+    info = cas.investor_info
+    pan = cas.folios[0].PAN if cas.folios else None
+    return CasInvestorIdentity(
+        name=info.name or "",
+        email=info.email or "",
+        pan=(pan or "").strip(),
     )
 
 

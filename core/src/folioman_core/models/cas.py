@@ -20,6 +20,20 @@ class Depository(StrEnum):
     CDSL = "CDSL"
 
 
+class CasInvestorIdentity(DomainModel):
+    """Owner identity extracted from a CAS for investor resolution.
+
+    Carries the **full** PAN (unlike the statement models, which keep only a
+    masked PAN for display). This is PII: it must flow only into the encrypted
+    ``Investor.pan_*`` columns and must never be logged or serialized into an
+    error message / job result. ``pan == ""`` means the statement carried none.
+    """
+
+    name: str = ""
+    email: str = ""
+    pan: str = ""
+
+
 class MfCasLineItem(DomainModel):
     """One transaction line inside an MF CAS scheme block.
 

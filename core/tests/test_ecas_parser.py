@@ -10,6 +10,7 @@ from casparser.exceptions import IncorrectPasswordError
 from casparser.types import (
     Bond,
     DematAccount,
+    DematOwner,
     Equity,
     InvestorInfo,
     MutualFund,
@@ -69,6 +70,7 @@ def _account(
     equities: list[Equity] | None = None,
     mfs: list[MutualFund] | None = None,
     bonds: list[Bond] | None = None,
+    owners: list[DematOwner] | None = None,
 ) -> DematAccount:
     return DematAccount(
         name=broker,
@@ -77,7 +79,7 @@ def _account(
         client_id=client_id,
         folios=0,  # casparser: folio *count*, not a list
         balance=Decimal("0"),
-        owners=[],
+        owners=owners or [],
         equities=equities or [],
         mutual_funds=mfs or [],
         bonds=bonds or [],
@@ -198,3 +200,34 @@ def test_read_ecas_rejects_mf_cas(monkeypatch):
     monkeypatch.setattr(casparser, "read_cas_pdf", lambda *a, **k: object())
     with pytest.raises(ecas_parser.CASParseError, match="read_mf_cas"):
         ecas_parser.read_ecas("dummy.pdf", "pw")
+
+
+def _owner(name: str, pan: str) -> DematOwner:
+    return DematOwner(name=name, PAN=pan)
+
+
+def test_ecas_investor_identity_uses_primary_owner_pan():
+    cas = _ecas([_account("Zerodha", "C1", owners=[_owner("RAHUL SHARMA", "ABCDE1234F")])])
+    identity = ecas_parser.ecas_investor_identity(cas)
+    assert identity.pan == "ABCDE1234F"
+    assert identity.name == "Sample"
+    assert identity.email == "s@example.com"
+
+
+def test_ecas_investor_identity_empty_when_no_owner_pan():
+    cas = _ecas([_account("Zerodha", "C1", owners=[])])
+    assert ecas_parser.ecas_investor_identity(cas).pan == ""
+
+
+def test_ecas_investor_identity_rejects_statement_spanning_multiple_pans():
+    cas = _ecas(
+        [
+            _account("Zerodha", "C1", owners=[_owner("A", "ABCDE1234F")]),
+            _account("Groww", "C2", owners=[_owner("B", "ZZZZZ9999Z")]),
+        ]
+    )
+    with pytest.raises(ecas_parser.CASParseError, match="more than one PAN") as exc:
+        ecas_parser.ecas_investor_identity(cas)
+    # PII-free: neither PAN appears in the message.
+    assert "ABCDE1234F" not in str(exc.value)
+    assert "ZZZZZ9999Z" not in str(exc.value)
