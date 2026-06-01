@@ -1,0 +1,115 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import VChart from 'vue-echarts'
+import type { EChartsOption } from 'echarts'
+import '@/charts/echarts' // registers the tree-shaken ECharts modules (side-effect)
+import { useChartTokens } from '@/charts/useChartTokens'
+import { formatInr } from '@/utils/format'
+
+export interface AllocationSlice {
+  name: string
+  value: number
+  /** Optional explicit colour (e.g. fixed asset-class colour). */
+  color?: string
+}
+
+const props = defineProps<{
+  data: AllocationSlice[]
+  /** Center label, e.g. total net worth. */
+  centerLabel?: string
+}>()
+
+const emit = defineEmits<{ (e: 'slice', name: string): void }>()
+
+const tokens = useChartTokens()
+
+// ECharts paints to canvas and can't read CSS vars — resolve `var(--x)` slice
+// colours to concrete values. Reads `tokens.value` so it re-resolves on theme flip.
+function resolveColor(raw: string | undefined, i: number): string {
+  const fallback = tokens.value.assetPalette[i % tokens.value.assetPalette.length]
+  if (!raw) return fallback
+  if (raw.startsWith('var(') && typeof document !== 'undefined') {
+    const name = raw.slice(4, -1).trim()
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback
+  }
+  return raw
+}
+
+const option = computed<EChartsOption>(() => ({
+  color: props.data.map((d, i) => resolveColor(d.color, i)),
+  tooltip: {
+    trigger: 'item',
+    backgroundColor: tokens.value.surface,
+    borderColor: tokens.value.border,
+    textStyle: { color: tokens.value.text },
+    valueFormatter: (v) => formatInr(v as number),
+  },
+  legend: {
+    bottom: 0,
+    icon: 'circle',
+    textStyle: { color: tokens.value.muted },
+  },
+  series: [
+    {
+      type: 'pie',
+      radius: ['58%', '82%'],
+      center: ['50%', '46%'],
+      padAngle: 2,
+      itemStyle: { borderRadius: 4, borderColor: tokens.value.surface, borderWidth: 2 },
+      label: { show: false },
+      emphasis: {
+        label: { show: true, fontSize: 14, fontWeight: 'bold', color: tokens.value.text },
+        scaleSize: 6,
+      },
+      data: props.data.map((d) => ({ name: d.name, value: d.value })),
+    },
+  ],
+}))
+
+function onClick(params: { name?: string }): void {
+  if (params.name) emit('slice', params.name)
+}
+</script>
+
+<template>
+  <div class="donut-wrap">
+    <VChart class="donut" :option="option" autoresize @click="onClick" />
+    <div v-if="centerLabel" class="center" aria-hidden="true">
+      <span class="center-label">Total</span>
+      <span class="center-value">{{ centerLabel }}</span>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.donut-wrap {
+  position: relative;
+  height: 260px;
+}
+.donut {
+  height: 100%;
+  width: 100%;
+}
+.center {
+  position: absolute;
+  top: 44%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.center-label {
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fm-text-muted);
+}
+.center-value {
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fm-text);
+}
+</style>
