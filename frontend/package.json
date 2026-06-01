@@ -4,9 +4,45 @@
   "private": true,
   "type": "module",
   "description": "Folioman Vue 3 SPA — shared bundle for desktop and hosted.",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "packageManager": "pnpm@11.5.0",
   "scripts": {
-    "dev": "echo 'TODO: vite' && exit 1",
-    "build": "echo 'TODO: vite build' && exit 1",
-    "test": "echo 'TODO: vitest' && exit 0"
+    "dev": "vite",
+    "build": "vue-tsc --build && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "type-check": "vue-tsc --build",
+    "generate-pwa-assets": "pwa-assets-generator",
+    "gen:api": "openapi-typescript ../openapi.json --output src/api/schema.d.ts"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@primevue/themes": "^4.2.5",
+    "echarts": "^6.1.0",
+    "openapi-fetch": "^0.13.4",
+    "pinia": "^2.3.0",
+    "primeicons": "^7.0.0",
+    "primevue": "^4.2.5",
+    "vue": "^3.5.13",
+    "vue-echarts": "^8.0.1",
+    "vue-router": "^4.5.0",
+    "workbox-window": "^7.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@vite-pwa/assets-generator": "^1.0.0",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.6",
+    "jsdom": "^25.0.1",
+    "openapi-typescript": "^7.4.4",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.5",
+    "vite-plugin-pwa": "^1.0.0",
+    "vitest": "^3.2.0",
+    "vue-tsc": "^2.2.0"
   }
 }

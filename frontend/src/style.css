@@ -1,0 +1,33 @@
+@layer theme, base, primevue;
+
+@import './theme/tokens.css';
+
+:root {
+  font-family: var(--fm-font-sans);
+  line-height: 1.5;
+  color-scheme: light dark;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+body {
+  background: var(--fm-ground);
+  color: var(--fm-text);
+  transition:
+    background var(--fm-dur) var(--fm-ease),
+    color var(--fm-dur) var(--fm-ease);
+}

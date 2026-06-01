@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Folioman">
+  <rect width="512" height="512" rx="96" fill="#4f46e5"/>
+  <!-- Stylised "F" with an upward trend bar, evoking portfolio growth. -->
+  <path d="M168 128h176v52H224v60h104v52H224v92h-56z" fill="#ffffff"/>
+  <rect x="300" y="300" width="32" height="84" rx="8" fill="#a5b4fc"/>
+  <rect x="344" y="252" width="32" height="132" rx="8" fill="#c7d2fe"/>
+</svg>

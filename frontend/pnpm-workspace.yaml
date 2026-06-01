@@ -1,0 +1,6 @@
+# pnpm: allow these deps to run install/build scripts.
+# esbuild + vue-demi for Vite, sharp for the PWA icon generator.
+allowBuilds:
+  esbuild: true
+  sharp: true
+  vue-demi: true
