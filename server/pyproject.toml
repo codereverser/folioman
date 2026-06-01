@@ -5,7 +5,7 @@ description = "Folioman self-hosted server entrypoint (gunicorn + Postgres + JWT
 requires-python = ">=3.13"
 dependencies = [
     "folioman-app",
-    # Activated in Phase 9 (server / Docker / PM Pro):
+    # Activated when the server / Docker build lands:
     # "gunicorn",
     # "psycopg[binary]",
     # "django-ninja-jwt",

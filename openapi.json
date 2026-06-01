@@ -1,0 +1,2382 @@
+{
+  "components": {
+    "schemas": {
+      "AccessOut": {
+        "properties": {
+          "access": {
+            "title": "Access",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access"
+        ],
+        "title": "AccessOut",
+        "type": "object"
+      },
+      "AssetMixRow": {
+        "properties": {
+          "security_type": {
+            "title": "Security Type",
+            "type": "string"
+          },
+          "value_inr": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Value Inr",
+            "type": "string"
+          }
+        },
+        "required": [
+          "security_type",
+          "value_inr"
+        ],
+        "title": "AssetMixRow",
+        "type": "object"
+      },
+      "FamilyAggregateOut": {
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "asset_mix": {
+            "items": {
+              "$ref": "#/components/schemas/AssetMixRow"
+            },
+            "title": "Asset Mix",
+            "type": "array"
+          },
+          "family_id": {
+            "title": "Family Id",
+            "type": "integer"
+          },
+          "investor_count": {
+            "title": "Investor Count",
+            "type": "integer"
+          },
+          "stale_count": {
+            "title": "Stale Count",
+            "type": "integer"
+          },
+          "top_holdings": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingValueRow"
+            },
+            "title": "Top Holdings",
+            "type": "array"
+          },
+          "total_inr": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Inr",
+            "type": "string"
+          },
+          "xirr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xirr"
+          }
+        },
+        "required": [
+          "family_id",
+          "as_of",
+          "investor_count",
+          "total_inr",
+          "asset_mix",
+          "top_holdings",
+          "stale_count"
+        ],
+        "title": "FamilyAggregateOut",
+        "type": "object"
+      },
+      "FamilyDetailOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "investor_count": {
+            "title": "Investor Count",
+            "type": "integer"
+          },
+          "investors": {
+            "items": {
+              "$ref": "#/components/schemas/InvestorOut"
+            },
+            "title": "Investors",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "investor_count",
+          "created_at",
+          "investors"
+        ],
+        "title": "FamilyDetailOut",
+        "type": "object"
+      },
+      "FamilyIn": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "FamilyIn",
+        "type": "object"
+      },
+      "FamilyOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "investor_count": {
+            "title": "Investor Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "investor_count",
+          "created_at"
+        ],
+        "title": "FamilyOut",
+        "type": "object"
+      },
+      "FolioOut": {
+        "properties": {
+          "amc_code": {
+            "title": "Amc Code",
+            "type": "string"
+          },
+          "broker": {
+            "title": "Broker",
+            "type": "string"
+          },
+          "folio_type": {
+            "title": "Folio Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "pan_kyc": {
+            "title": "Pan Kyc",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "folio_type",
+          "number",
+          "broker",
+          "amc_code",
+          "pan_kyc"
+        ],
+        "title": "FolioOut",
+        "type": "object"
+      },
+      "FolioRef": {
+        "properties": {
+          "broker": {
+            "title": "Broker",
+            "type": "string"
+          },
+          "folio_type": {
+            "title": "Folio Type",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "number",
+          "broker",
+          "folio_type"
+        ],
+        "title": "FolioRef",
+        "type": "object"
+      },
+      "HoldingValueRow": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "security_id": {
+            "title": "Security Id",
+            "type": "integer"
+          },
+          "security_type": {
+            "title": "Security Type",
+            "type": "string"
+          },
+          "units": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units",
+            "type": "string"
+          },
+          "value_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Inr"
+          }
+        },
+        "required": [
+          "security_id",
+          "name",
+          "security_type",
+          "units",
+          "value_inr"
+        ],
+        "title": "HoldingValueRow",
+        "type": "object"
+      },
+      "ImportJobOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "investor_id": {
+            "title": "Investor Id",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          },
+          "source_ref": {
+            "title": "Source Ref",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "investor_id",
+          "kind",
+          "status",
+          "filename",
+          "source_ref",
+          "result",
+          "error",
+          "started_at",
+          "finished_at",
+          "created_at"
+        ],
+        "title": "ImportJobOut",
+        "type": "object"
+      },
+      "IntegrityStatusOut": {
+        "properties": {
+          "folio": {
+            "$ref": "#/components/schemas/FolioRef"
+          },
+          "issues": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "last_reconciled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reconciled At"
+          },
+          "security": {
+            "$ref": "#/components/schemas/SecurityRef"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tax_safe": {
+            "title": "Tax Safe",
+            "type": "boolean"
+          },
+          "units_from_holdings": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units From Holdings"
+          },
+          "units_from_transactions": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units From Transactions"
+          }
+        },
+        "required": [
+          "security",
+          "folio",
+          "status",
+          "tax_safe",
+          "units_from_transactions",
+          "units_from_holdings",
+          "issues",
+          "last_reconciled_at"
+        ],
+        "title": "IntegrityStatusOut",
+        "type": "object"
+      },
+      "InvestorIn": {
+        "properties": {
+          "email": {
+            "default": "",
+            "title": "Email",
+            "type": "string"
+          },
+          "family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Id"
+          },
+          "is_huf": {
+            "default": false,
+            "title": "Is Huf",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pan"
+          },
+          "relation": {
+            "default": "",
+            "title": "Relation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "InvestorIn",
+        "type": "object"
+      },
+      "InvestorOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Id"
+          },
+          "has_pan": {
+            "title": "Has Pan",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_huf": {
+            "title": "Is Huf",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "is_huf",
+          "relation",
+          "family_id",
+          "has_pan",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "InvestorOut",
+        "type": "object"
+      },
+      "InvestorSummaryOut": {
+        "description": "Per-investor headline numbers for the roster row.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "holdings_count": {
+            "title": "Holdings Count",
+            "type": "integer"
+          },
+          "investor_id": {
+            "title": "Investor Id",
+            "type": "integer"
+          },
+          "last_import_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Import At"
+          },
+          "needs_attention_count": {
+            "title": "Needs Attention Count",
+            "type": "integer"
+          },
+          "snapshot_count": {
+            "title": "Snapshot Count",
+            "type": "integer"
+          },
+          "stale_count": {
+            "title": "Stale Count",
+            "type": "integer"
+          },
+          "tax_ready_count": {
+            "title": "Tax Ready Count",
+            "type": "integer"
+          },
+          "total_inr": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Inr",
+            "type": "string"
+          },
+          "xirr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xirr"
+          }
+        },
+        "required": [
+          "investor_id",
+          "as_of",
+          "total_inr",
+          "holdings_count",
+          "tax_ready_count",
+          "needs_attention_count",
+          "snapshot_count",
+          "stale_count",
+          "last_import_at"
+        ],
+        "title": "InvestorSummaryOut",
+        "type": "object"
+      },
+      "InvestorUpdate": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Id"
+          },
+          "is_huf": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Huf"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "pan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pan"
+          },
+          "relation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation"
+          }
+        },
+        "title": "InvestorUpdate",
+        "type": "object"
+      },
+      "Schedule112ARequest": {
+        "properties": {
+          "fy": {
+            "description": "India FY, e.g. 2024-25",
+            "pattern": "^\\d{4}-\\d{2}$",
+            "title": "Fy",
+            "type": "string"
+          },
+          "include_unreconciled": {
+            "default": false,
+            "title": "Include Unreconciled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fy"
+        ],
+        "title": "Schedule112ARequest",
+        "type": "object"
+      },
+      "Schedule112AResponse": {
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "fy": {
+            "title": "Fy",
+            "type": "string"
+          },
+          "include_unreconciled": {
+            "title": "Include Unreconciled",
+            "type": "boolean"
+          },
+          "row_count": {
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "fy",
+          "include_unreconciled",
+          "row_count",
+          "columns",
+          "rows"
+        ],
+        "title": "Schedule112AResponse",
+        "type": "object"
+      },
+      "SecurityRef": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "isin": {
+            "title": "Isin",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "security_type": {
+            "title": "Security Type",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "isin",
+          "symbol",
+          "security_type"
+        ],
+        "title": "SecurityRef",
+        "type": "object"
+      },
+      "TokenObtainIn": {
+        "properties": {
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "TokenObtainIn",
+        "type": "object"
+      },
+      "TokenPairOut": {
+        "properties": {
+          "access": {
+            "title": "Access",
+            "type": "string"
+          },
+          "refresh": {
+            "title": "Refresh",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "refresh"
+        ],
+        "title": "TokenPairOut",
+        "type": "object"
+      },
+      "TokenRefreshIn": {
+        "properties": {
+          "refresh": {
+            "title": "Refresh",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh"
+        ],
+        "title": "TokenRefreshIn",
+        "type": "object"
+      },
+      "TransactionIn": {
+        "description": "A single manually-entered transaction (security identified inline).",
+        "properties": {
+          "amfi_code": {
+            "default": "",
+            "title": "Amfi Code",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "broker": {
+            "default": "",
+            "title": "Broker",
+            "type": "string"
+          },
+          "brokerage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Brokerage"
+          },
+          "coin_id": {
+            "default": "",
+            "title": "Coin Id",
+            "type": "string"
+          },
+          "currency": {
+            "default": "INR",
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "fees": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Fees"
+          },
+          "folio_number": {
+            "title": "Folio Number",
+            "type": "string"
+          },
+          "isin": {
+            "default": "",
+            "title": "Isin",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "narration": {
+            "default": "",
+            "title": "Narration",
+            "type": "string"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Price"
+          },
+          "principal": {
+            "default": "",
+            "title": "Principal",
+            "type": "string"
+          },
+          "security_type": {
+            "title": "Security Type",
+            "type": "string"
+          },
+          "stamp_duty": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Stamp Duty"
+          },
+          "symbol": {
+            "default": "",
+            "title": "Symbol",
+            "type": "string"
+          },
+          "transaction_type": {
+            "title": "Transaction Type",
+            "type": "string"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Units"
+          }
+        },
+        "required": [
+          "security_type",
+          "name",
+          "folio_number",
+          "date",
+          "transaction_type",
+          "units",
+          "price"
+        ],
+        "title": "TransactionIn",
+        "type": "object"
+      },
+      "TransactionOut": {
+        "properties": {
+          "amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "brokerage": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Brokerage",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "fees": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Fees",
+            "type": "string"
+          },
+          "folio_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folio Id"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "investor_id": {
+            "title": "Investor Id",
+            "type": "integer"
+          },
+          "narration": {
+            "title": "Narration",
+            "type": "string"
+          },
+          "nav_or_price": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Nav Or Price",
+            "type": "string"
+          },
+          "security_id": {
+            "title": "Security Id",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "stamp_duty": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stamp Duty",
+            "type": "string"
+          },
+          "transaction_type": {
+            "title": "Transaction Type",
+            "type": "string"
+          },
+          "units": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "investor_id",
+          "security_id",
+          "folio_id",
+          "date",
+          "transaction_type",
+          "units",
+          "nav_or_price",
+          "amount",
+          "fees",
+          "stamp_duty",
+          "brokerage",
+          "currency",
+          "source",
+          "narration"
+        ],
+        "title": "TransactionOut",
+        "type": "object"
+      },
+      "ValueSeriesOut": {
+        "description": "Reconstructed net-worth-over-time series for an investor or family.",
+        "properties": {
+          "end": {
+            "format": "date",
+            "title": "End",
+            "type": "string"
+          },
+          "family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Id"
+          },
+          "granularity": {
+            "title": "Granularity",
+            "type": "string"
+          },
+          "investor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investor Id"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ValueSeriesPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "start": {
+            "format": "date",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "granularity",
+          "points"
+        ],
+        "title": "ValueSeriesOut",
+        "type": "object"
+      },
+      "ValueSeriesPoint": {
+        "description": "One sampled date in the net-worth time series.",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "invested_inr": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Invested Inr",
+            "type": "string"
+          },
+          "stale": {
+            "title": "Stale",
+            "type": "boolean"
+          },
+          "value_inr": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Value Inr",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "value_inr",
+          "invested_inr",
+          "stale"
+        ],
+        "title": "ValueSeriesPoint",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "",
+    "title": "Folioman API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/auth/token/pair": {
+      "post": {
+        "description": "Exchange username + password for an access + refresh token pair.",
+        "operationId": "folioman_app_api_tokens_obtain_token",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenObtainIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Obtain Token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/token/refresh": {
+      "post": {
+        "description": "Mint a fresh access token from a still-valid refresh token.",
+        "operationId": "folioman_app_api_tokens_refresh_token",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRefreshIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Refresh Token",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/families/": {
+      "get": {
+        "operationId": "folioman_app_api_families_list_families",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FamilyOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List Families",
+        "tags": [
+          "families"
+        ]
+      },
+      "post": {
+        "operationId": "folioman_app_api_families_create_family",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FamilyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FamilyOut"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "Create Family",
+        "tags": [
+          "families"
+        ]
+      }
+    },
+    "/api/families/{family_id}": {
+      "delete": {
+        "operationId": "folioman_app_api_families_delete_family",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "family_id",
+            "required": true,
+            "schema": {
+              "title": "Family Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "Delete Family",
+        "tags": [
+          "families"
+        ]
+      },
+      "get": {
+        "operationId": "folioman_app_api_families_get_family",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "family_id",
+            "required": true,
+            "schema": {
+              "title": "Family Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FamilyDetailOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Get Family",
+        "tags": [
+          "families"
+        ]
+      },
+      "patch": {
+        "operationId": "folioman_app_api_families_update_family",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "family_id",
+            "required": true,
+            "schema": {
+              "title": "Family Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FamilyIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FamilyOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Update Family",
+        "tags": [
+          "families"
+        ]
+      }
+    },
+    "/api/families/{family_id}/aggregate": {
+      "get": {
+        "operationId": "folioman_app_api_families_family_aggregate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "family_id",
+            "required": true,
+            "schema": {
+              "title": "Family Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FamilyAggregateOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Family Aggregate",
+        "tags": [
+          "families"
+        ]
+      }
+    },
+    "/api/families/{family_id}/value-series": {
+      "get": {
+        "description": "Family-wide net-worth-over-time, aggregated across the family's investors.",
+        "operationId": "folioman_app_api_families_family_value_series_endpoint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "family_id",
+            "required": true,
+            "schema": {
+              "title": "Family Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "default": "monthly",
+              "enum": [
+                "daily",
+                "weekly",
+                "monthly"
+              ],
+              "title": "Granularity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValueSeriesOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Family Value Series Endpoint",
+        "tags": [
+          "families"
+        ]
+      }
+    },
+    "/api/investors/": {
+      "get": {
+        "operationId": "folioman_app_api_investors_list_investors",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "family_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Family Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "unaffiliated",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Unaffiliated",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvestorOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List Investors",
+        "tags": [
+          "investors"
+        ]
+      },
+      "post": {
+        "operationId": "folioman_app_api_investors_create_investor",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestorIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestorOut"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "Create Investor",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}": {
+      "delete": {
+        "operationId": "folioman_app_api_investors_delete_investor",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "Delete Investor",
+        "tags": [
+          "investors"
+        ]
+      },
+      "get": {
+        "operationId": "folioman_app_api_investors_get_investor",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestorOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Get Investor",
+        "tags": [
+          "investors"
+        ]
+      },
+      "patch": {
+        "operationId": "folioman_app_api_investors_update_investor",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvestorUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestorOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Update Investor",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/exports/holdings": {
+      "get": {
+        "description": "Current holdings + valuation as a downloadable CSV (free tier).",
+        "operationId": "folioman_app_api_exports_export_holdings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Export Holdings",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/exports/schedule-112a": {
+      "post": {
+        "operationId": "folioman_app_api_exports_schedule_112a",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Schedule112ARequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Schedule112AResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Schedule 112A",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/exports/transactions": {
+      "get": {
+        "description": "Full transaction ledger as a CSV in the import format (round-trippable).",
+        "operationId": "folioman_app_api_exports_export_transactions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Export Transactions",
+        "tags": [
+          "exports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/folios": {
+      "get": {
+        "operationId": "folioman_app_api_investors_list_folios",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FolioOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List Folios",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/imports": {
+      "get": {
+        "operationId": "folioman_app_api_imports_list_import_jobs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImportJobOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List Import Jobs",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/imports/cas": {
+      "post": {
+        "description": "Import any CAS PDF \u2014 a CAMS/KFin MF CAS or an NSDL/CDSL eCAS.\n\nThe type is auto-detected: an MF CAS becomes a transaction ledger; an eCAS is\nthe depository's authoritative snapshot (refreshes holdings). If applying an\neCAS would *remove* securities, the job returns status ``needs_confirmation``\nwith ``result.removals`` and persists nothing \u2014 resubmit with ``confirm=true``\nto apply. An eCAS older than the latest on file is rejected.",
+        "operationId": "folioman_app_api_imports_import_cas",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "confirm": {
+                    "default": false,
+                    "title": "Confirm",
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "format": "binary",
+                    "title": "File",
+                    "type": "string"
+                  },
+                  "password": {
+                    "default": "",
+                    "title": "Password",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "title": "MultiPartBodyParams",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobOut"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "Import Cas",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/imports/csv": {
+      "post": {
+        "operationId": "folioman_app_api_imports_import_csv",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "title": "File",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "title": "FileParams",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobOut"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "Import Csv",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/imports/{job_id}": {
+      "get": {
+        "operationId": "folioman_app_api_imports_get_import_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Get Import Job",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity": {
+      "get": {
+        "operationId": "folioman_app_api_integrity_list_integrity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrityStatusOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List Integrity",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/recompute": {
+      "post": {
+        "operationId": "folioman_app_api_integrity_recompute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrityStatusOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Recompute",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/acknowledge": {
+      "post": {
+        "operationId": "folioman_app_api_integrity_acknowledge",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityStatusOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Acknowledge",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/summary": {
+      "get": {
+        "description": "Roster headline numbers: current INR value, tax-ready vs total holdings,\nitems needing attention, and the last successful import date.",
+        "operationId": "folioman_app_api_investors_investor_summary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestorSummaryOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Investor Summary",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/transactions": {
+      "get": {
+        "operationId": "folioman_app_api_investors_list_transactions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TransactionOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List Transactions",
+        "tags": [
+          "investors"
+        ]
+      },
+      "post": {
+        "description": "Manually add one transaction (security identified inline, upserted).",
+        "operationId": "folioman_app_api_investors_create_transaction",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionOut"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "Create Transaction",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/value-series": {
+      "get": {
+        "description": "Net-worth-over-time, reconstructed from the ledger + NAV history. The final\npoint matches the point-in-time ``/summary`` value for the same ``to`` date.",
+        "operationId": "folioman_app_api_investors_investor_value_series",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "default": "monthly",
+              "enum": [
+                "daily",
+                "weekly",
+                "monthly"
+              ],
+              "title": "Granularity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValueSeriesOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Investor Value Series",
+        "tags": [
+          "investors"
+        ]
+      }
+    }
+  },
+  "servers": []
+}

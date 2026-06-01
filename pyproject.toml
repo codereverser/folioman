@@ -12,17 +12,45 @@ dev = [
     "ruff>=0.13",
     "pytest>=8.3",
     "pytest-cov>=6.0",
+    "pytest-django>=4.9",
     "pre-commit>=4.0",
 ]
 
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = ["archive"]
+# Generated Django migrations are not hand-edited; don't lint/format them.
+extend-exclude = ["archive", "**/migrations"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 
+[tool.ruff.lint.per-file-ignores]
+# Django settings modules layer onto base via `from base import *` — the
+# canonical idiom. Allow the star import (F403) and star-provided names (F405).
+"app/src/folioman_app/settings/desktop.py" = ["F403", "F405"]
+"app/src/folioman_app/settings/server.py" = ["F403", "F405"]
+# Django model `Meta` (ordering/constraints/indexes) are class-level lists by
+# design; RUF012's ClassVar demand is a false positive for the ORM idiom.
+"app/src/folioman_app/models/*.py" = ["RUF012"]
+# Ninja routers use call-in-default for dependency injection (File/Form/Query) —
+# the framework idiom; B008 is a false positive here.
+"app/src/folioman_app/api/*.py" = ["B008"]
+
 [tool.pytest.ini_options]
 testpaths = ["core/tests", "app/tests"]
 addopts = "-q --import-mode=importlib"
+# pytest-django: app/tests need Django configured. Setting this session-wide is
+# the standard monorepo approach — core/tests stay framework-free in *code*
+# (folioman_core has no Django import); they just run under a Django-initialised
+# session and never touch the DB (no `db` fixture / `django_db` mark).
+DJANGO_SETTINGS_MODULE = "folioman_app.settings.base"
+# Core coverage (target 80%): pytest core/tests --cov=folioman_core --cov-report=term-missing
+
+[tool.coverage.run]
+source_pkgs = ["folioman_core"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+# fail_under = 80  # enable once core coverage reaches the target

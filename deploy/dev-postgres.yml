@@ -1,0 +1,27 @@
+# Dev-only Postgres 17, for local server-mode work and the Postgres migration
+# parity check. NOT the production stack — the real app+db+proxy compose
+# comes later. Credentials here are throwaway dev values.
+#
+#   docker compose -f deploy/dev-postgres.yml up -d      # or: make pg-up
+#   docker compose -f deploy/dev-postgres.yml down -v     # or: make pg-down
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: folioman-dev-postgres
+    environment:
+      POSTGRES_DB: folioman
+      POSTGRES_USER: folioman
+      POSTGRES_PASSWORD: folioman
+    ports:
+      - "5432:5432"
+    volumes:
+      - folioman_dev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U folioman -d folioman"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  folioman_dev_pgdata:

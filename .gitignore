@@ -19,6 +19,11 @@ htmlcov/
 build/
 dist/
 
+# Local databases (desktop SQLite, stray dev DBs)
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
 # Node / frontend
 node_modules/
 frontend/dist/
