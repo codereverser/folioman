@@ -1,0 +1,41 @@
+{
+  "depository": "CDSL",
+  "statement_date": "2025-03-15",
+  "investor_name": "Sample Investor",
+  "pan_masked": "XXXX1234X",
+  "file_hash": "sha256:sample-ecas",
+  "accounts": [
+    {
+      "folio": {
+        "folio_type": "demat",
+        "number": "1208160001234567",
+        "broker": "ZERODHA"
+      },
+      "holdings": [
+        {
+          "security": {
+            "type": "equity",
+            "name": "Reliance Industries Ltd",
+            "isin": "INE002A01018",
+            "symbol": "RELIANCE",
+            "exchange": "NSE"
+          },
+          "units": "10.0000",
+          "value_observed": "28500.00",
+          "avg_cost_observed": "2400.00"
+        },
+        {
+          "security": {
+            "type": "etf",
+            "name": "Nippon India ETF Nifty BeES",
+            "isin": "INF204KB14I2",
+            "symbol": "NIFTYBEES",
+            "exchange": "NSE"
+          },
+          "units": "25.0000",
+          "value_observed": "6500.00"
+        }
+      ]
+    }
+  ]
+}

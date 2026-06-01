@@ -1,0 +1,43 @@
+{
+  "investor_name": "Sample Investor",
+  "investor_email": "investor@example.com",
+  "pan_masked": "XXXX1234X",
+  "statement_from": "2024-04-01",
+  "statement_to": "2025-03-31",
+  "file_hash": "sha256:sample-mf-cas",
+  "schemes": [
+    {
+      "folio": {
+        "folio_type": "mf",
+        "number": "12345678/90",
+        "amc_code": "PPFAS",
+        "pan_kyc": true
+      },
+      "security": {
+        "type": "mf",
+        "name": "Parag Parikh Flexi Cap Fund",
+        "isin": "INF109K01VQ4",
+        "amfi_code": "122639"
+      },
+      "closing_units": "125.4320",
+      "transactions": [
+        {
+          "date": "2024-06-15",
+          "transaction_type": "buy",
+          "units": "50.0000",
+          "nav": "65.1200",
+          "amount": "3256.00",
+          "description": "Purchase"
+        },
+        {
+          "date": "2024-12-10",
+          "transaction_type": "sell",
+          "units": "10.0000",
+          "nav": "72.4500",
+          "amount": "724.50",
+          "description": "Redemption"
+        }
+      ]
+    }
+  ]
+}
