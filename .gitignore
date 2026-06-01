@@ -55,3 +55,5 @@ archive/ui/.yarn/*
 !archive/ui/.yarn/releases
 !archive/ui/.yarn/sdks
 !archive/ui/.yarn/versions
+
+graphify-out/
