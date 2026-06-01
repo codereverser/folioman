@@ -1,0 +1,96 @@
+"""Investors API: CRUD, family filter/move, PAN never leaks, 404s."""
+
+from __future__ import annotations
+
+import pytest
+
+pytestmark = pytest.mark.django_db
+
+
+def _post(client, url, payload):
+    return client.post(url, data=payload, content_type="application/json")
+
+
+def _patch(client, url, payload):
+    return client.patch(url, data=payload, content_type="application/json")
+
+
+def test_openapi_lists_investor_and_family_routes(client):
+    body = client.get("/api/openapi.json").json()
+    paths = body["paths"]
+    assert "/api/investors/" in paths
+    assert "/api/families/" in paths
+    assert "/api/families/{family_id}/aggregate" in paths
+
+
+def test_create_and_retrieve_investor(client):
+    resp = _post(client, "/api/investors/", {"name": "Mr Sharma", "email": "s@example.com"})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["name"] == "Mr Sharma"
+    assert body["has_pan"] is False
+    iid = body["id"]
+    assert client.get(f"/api/investors/{iid}").json()["email"] == "s@example.com"
+
+
+def test_pan_is_accepted_but_never_returned(client):
+    resp = _post(client, "/api/investors/", {"name": "PAN Person", "pan": "ABCDE1234F"})
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["has_pan"] is True
+    assert "pan" not in body and "pan_hash" not in body and "pan_encrypted" not in body
+
+
+def test_get_missing_investor_404(client):
+    assert client.get("/api/investors/999999").status_code == 404
+
+
+def test_list_filter_by_family_and_unaffiliated(client, make_family, make_investor):
+    fam = make_family()
+    make_investor(family=fam, name="In Family")
+    make_investor(name="Solo")  # no family
+
+    all_ids = {i["id"] for i in client.get("/api/investors/").json()}
+    assert len(all_ids) == 2
+
+    in_family = client.get("/api/investors/", {"family_id": fam.id}).json()
+    assert [i["name"] for i in in_family] == ["In Family"]
+
+    solo = client.get("/api/investors/", {"unaffiliated": "true"}).json()
+    assert [i["name"] for i in solo] == ["Solo"]
+
+
+def test_patch_moves_investor_into_and_out_of_family(client, make_family, make_investor):
+    fam = make_family()
+    inv = make_investor(name="Mover")
+    # move in
+    resp = _patch(client, f"/api/investors/{inv.id}", {"family_id": fam.id})
+    assert resp.status_code == 200
+    assert resp.json()["family_id"] == fam.id
+    # rename only — family unchanged
+    resp = _patch(client, f"/api/investors/{inv.id}", {"name": "Renamed"})
+    assert resp.json()["name"] == "Renamed"
+    assert resp.json()["family_id"] == fam.id
+    # explicit null clears the family (move to solo)
+    resp = _patch(client, f"/api/investors/{inv.id}", {"family_id": None})
+    assert resp.json()["family_id"] is None
+
+
+def test_patch_can_set_pan(client, make_investor):
+    inv = make_investor(name="No PAN yet")
+    resp = _patch(client, f"/api/investors/{inv.id}", {"pan": "ABCDE1234F"})
+    assert resp.status_code == 200
+    assert resp.json()["has_pan"] is True
+
+
+def test_delete_investor(client, make_investor):
+    inv = make_investor()
+    assert client.delete(f"/api/investors/{inv.id}").status_code == 204
+    assert client.get(f"/api/investors/{inv.id}").status_code == 404
+
+
+def test_list_folios_for_investor(client, make_folio):
+    folio = make_folio(number="12345/67")
+    resp = client.get(f"/api/investors/{folio.investor_id}/folios")
+    assert resp.status_code == 200
+    assert resp.json()[0]["number"] == "12345/67"

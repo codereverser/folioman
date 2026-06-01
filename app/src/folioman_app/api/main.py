@@ -1,0 +1,29 @@
+"""The NinjaAPI instance — JSON-only, mounted at /api/ (see folioman_app.urls).
+
+Auth is set once at the API level: ``FoliomanAuth`` resolves the single
+local user in desktop mode and validates a JWT bearer token in server mode
+(it reads ``settings.FOLIOMAN_API_AUTH`` per request). The token login / refresh
+routes are public (``auth=None``). OpenAPI is exposed at /api/openapi.json and
+interactive docs at /api/docs.
+"""
+
+from __future__ import annotations
+
+from ninja import NinjaAPI
+
+from folioman_app.api.auth import FoliomanAuth
+from folioman_app.api.exports import router as exports_router
+from folioman_app.api.families import router as families_router
+from folioman_app.api.imports import router as imports_router
+from folioman_app.api.integrity import router as integrity_router
+from folioman_app.api.investors import router as investors_router
+from folioman_app.api.tokens import router as tokens_router
+
+api = NinjaAPI(title="Folioman API", version="1.0.0", auth=FoliomanAuth())
+
+api.add_router("/auth", tokens_router)  # public login + refresh (server mode)
+api.add_router("/investors", investors_router)
+api.add_router("/investors", imports_router)  # /investors/{id}/imports/...
+api.add_router("/investors", exports_router)  # /investors/{id}/exports/...
+api.add_router("/investors", integrity_router)  # /investors/{id}/integrity/...
+api.add_router("/families", families_router)
