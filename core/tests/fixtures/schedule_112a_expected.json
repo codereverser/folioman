@@ -1,0 +1,22 @@
+{
+  "fy_label": "2024-25",
+  "rows": [
+    {
+      "share_unit_acquired": "BE",
+      "share_unit_transferred": "AE",
+      "isin": "INE002A01018",
+      "name": "Reliance Industries Ltd",
+      "num_units": "10.0000",
+      "sale_price_per_unit": "150.0000",
+      "full_value_consideration": "1500",
+      "cost_without_indexation": "900",
+      "cost_of_acquisition": "500",
+      "pre_2018_cost_cap": "900",
+      "fmv_per_unit_jan_2018": "90.0000",
+      "total_fmv_jan_2018": "900",
+      "transfer_expenses": "0",
+      "total_deductions": "900",
+      "balance": "600.00"
+    }
+  ]
+}
