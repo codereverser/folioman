@@ -53,8 +53,10 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/SchemeDetailView.vue'),
   },
   {
-    // Single CAS import — the server auto-detects MF CAS vs NSDL/CDSL eCAS.
-    path: '/investors/:investorId/import',
+    // Single CAS import — advisor-level: the statement identifies its own
+    // investor by PAN (the server auto-detects MF CAS vs NSDL/CDSL eCAS and
+    // resolves or creates the investor). Not scoped to a pre-selected investor.
+    path: '/import',
     name: 'import',
     component: () => import('@/views/ImportView.vue'),
     meta: { desktopOnly: true },

@@ -23,13 +23,19 @@ const toast = useToast()
 
 // Nav matches the page list; scoped links appear once a scope is selected.
 const navLinks = computed<NavLink[]>(() => {
-  const links: NavLink[] = [{ label: 'Investors', icon: 'pi pi-users', to: { name: 'investors' } }]
+  // Import is advisor-level (the CAS identifies its own investor by PAN), so it's
+  // always available — it's the primary way to onboard an investor.
+  const links: NavLink[] = [
+    { label: 'Investors', icon: 'pi pi-users', to: { name: 'investors' } },
+    { label: 'Import CAS', icon: 'pi pi-file-pdf', to: { name: 'import' } },
+  ]
   if (ui.selectedInvestorId !== null) {
     const investorId = ui.selectedInvestorId
-    links.push(
-      { label: 'Dashboard', icon: 'pi pi-chart-line', to: { name: 'dashboard', params: { investorId } } },
-      { label: 'Import CAS', icon: 'pi pi-file-pdf', to: { name: 'import', params: { investorId } } },
-    )
+    links.push({
+      label: 'Dashboard',
+      icon: 'pi pi-chart-line',
+      to: { name: 'dashboard', params: { investorId } },
+    })
   }
   if (ui.selectedFamilyId !== null) {
     links.push({

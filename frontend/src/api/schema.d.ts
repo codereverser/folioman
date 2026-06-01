@@ -118,6 +118,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/imports/cas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import Cas
+         * @description Import a CAS, resolving (or creating) its investor by PAN.
+         *
+         *     Auto-detects MF CAS vs NSDL/CDSL eCAS. An eCAS that would *remove* securities
+         *     returns the job at status ``needs_confirmation`` with ``result.removals`` and
+         *     persists nothing — resubmit with ``confirm=true`` to apply. A PAN-less
+         *     statement is rejected (422); nothing is created.
+         */
+        post: operations["folioman_app_api_imports_import_cas"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/imports/cas/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Cas
+         * @description Parse a CAS and report whose it is — without persisting anything.
+         *
+         *     Returns the owner's name + masked PAN and, when the PAN already matches an
+         *     investor, that investor's id/name so the UI can offer 'attach' vs 'create'.
+         */
+        post: operations["folioman_app_api_imports_preview_cas"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/": {
         parameters: {
             query?: never;
@@ -240,32 +288,6 @@ export interface paths {
         get: operations["folioman_app_api_imports_list_import_jobs"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/investors/{investor_id}/imports/cas": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Import Cas
-         * @description Import any CAS PDF — a CAMS/KFin MF CAS or an NSDL/CDSL eCAS.
-         *
-         *     The type is auto-detected: an MF CAS becomes a transaction ledger; an eCAS is
-         *     the depository's authoritative snapshot (refreshes holdings). If applying an
-         *     eCAS would *remove* securities, the job returns status ``needs_confirmation``
-         *     with ``result.removals`` and persists nothing — resubmit with ``confirm=true``
-         *     to apply. An eCAS older than the latest on file is rejected.
-         */
-        post: operations["folioman_app_api_imports_import_cas"];
         delete?: never;
         options?: never;
         head?: never;
@@ -436,6 +458,28 @@ export interface components {
             /** Value Inr */
             value_inr: string;
         };
+        /**
+         * CasPreviewOut
+         * @description Owner identity parsed from an uploaded CAS, before anything is persisted.
+         *
+         *     Lets the UI confirm who the statement belongs to (and whether it matches an
+         *     existing investor) before the import creates or attaches. Only a *masked* PAN
+         *     is returned — the full PAN is never sent back to the client.
+         */
+        CasPreviewOut: {
+            /** Investor Email */
+            investor_email: string;
+            /** Investor Name */
+            investor_name: string;
+            /** Kind */
+            kind: string;
+            /** Match Investor Id */
+            match_investor_id?: number | null;
+            /** Match Investor Name */
+            match_investor_name?: string | null;
+            /** Pan Masked */
+            pan_masked: string;
+        };
         /** FamilyAggregateOut */
         FamilyAggregateOut: {
             /**
@@ -445,6 +489,8 @@ export interface components {
             as_of: string;
             /** Asset Mix */
             asset_mix: components["schemas"]["AssetMixRow"][];
+            /** Day Change Inr */
+            day_change_inr?: string | null;
             /** Family Id */
             family_id: number;
             /** Investor Count */
@@ -521,8 +567,16 @@ export interface components {
         };
         /** HoldingValueRow */
         HoldingValueRow: {
+            /** Day Change Inr */
+            day_change_inr?: string | null;
+            /** Day Change Pct */
+            day_change_pct?: number | null;
+            /** Invested Inr */
+            invested_inr?: string | null;
             /** Name */
             name: string;
+            /** Return Pct */
+            return_pct?: number | null;
             /** Security Id */
             security_id: number;
             /** Security Type */
@@ -531,6 +585,8 @@ export interface components {
             units: string;
             /** Value Inr */
             value_inr: string | null;
+            /** Xirr */
+            xirr?: number | null;
         };
         /** ImportJobOut */
         ImportJobOut: {
@@ -644,6 +700,8 @@ export interface components {
             as_of: string;
             /** Asset Mix */
             asset_mix?: components["schemas"]["AssetMixRow"][];
+            /** Day Change Inr */
+            day_change_inr?: string | null;
             /** Holdings Count */
             holdings_count: number;
             /** Investor Id */
@@ -1116,6 +1174,81 @@ export interface operations {
             };
         };
     };
+    folioman_app_api_imports_import_cas: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Confirm
+                     * @default false
+                     */
+                    confirm?: boolean;
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                    /**
+                     * Password
+                     * @default
+                     */
+                    password?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportJobOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_imports_preview_cas: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                    /**
+                     * Password
+                     * @default
+                     */
+                    password?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CasPreviewOut"];
+                };
+            };
+        };
+    };
     folioman_app_api_investors_list_investors: {
         parameters: {
             query?: {
@@ -1337,48 +1470,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportJobOut"][];
-                };
-            };
-        };
-    };
-    folioman_app_api_imports_import_cas: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                investor_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": {
-                    /**
-                     * Confirm
-                     * @default false
-                     */
-                    confirm?: boolean;
-                    /**
-                     * File
-                     * Format: binary
-                     */
-                    file: string;
-                    /**
-                     * Password
-                     * @default
-                     */
-                    password?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ImportJobOut"];
                 };
             };
         };

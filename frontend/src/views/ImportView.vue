@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
-import { importCas, type ImportJobOut } from '@/api/client'
+import { importCas, previewCas, type CasPreviewOut, type ImportJobOut } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 
-const route = useRoute()
 const router = useRouter()
 const ui = useUiStore()
-
-const investorId = computed(() => Number(route.params.investorId))
 
 // --- result view-model ------------------------------------------------------
 // The job's `result` is an open dict on the wire; narrow it to the keys the two
@@ -64,6 +61,10 @@ const file = ref<File | null>(null)
 const password = ref('')
 const dragging = ref(false)
 const busy = ref(false)
+// preview (who the statement belongs to) -> import (job). The statement carries
+// the owner's PAN, so the server resolves/creates the investor — none is chosen
+// up front. We show the identity for confirmation before writing anything.
+const preview = ref<CasPreviewOut | null>(null)
 const job = ref<ImportJobOut | null>(null)
 const errorMessage = ref('')
 
@@ -74,29 +75,47 @@ const failed = computed(() => status.value === 'failed')
 const succeeded = computed(
   () => status.value === 'success' || status.value === 'completed_with_warnings',
 )
+const kindLabel = computed(() =>
+  preview.value?.kind === 'ecas' ? 'Demat eCAS (NSDL/CDSL)' : 'Mutual-fund CAS (CAMS/KFin)',
+)
 
-function pickFile(event: Event): void {
-  const target = event.target as HTMLInputElement
-  file.value = target.files?.[0] ?? null
+function clearFrom(file_: File | null): void {
+  file.value = file_
+  preview.value = null
   job.value = null
   errorMessage.value = ''
+}
+function pickFile(event: Event): void {
+  clearFrom((event.target as HTMLInputElement).files?.[0] ?? null)
 }
 function onDrop(event: DragEvent): void {
   dragging.value = false
   const dropped = event.dataTransfer?.files?.[0]
-  if (dropped) {
-    file.value = dropped
-    job.value = null
-    errorMessage.value = ''
+  if (dropped) clearFrom(dropped)
+}
+
+// Step 1: parse the file and report whose it is — nothing is persisted yet.
+async function review(): Promise<void> {
+  if (!file.value || busy.value) return
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    preview.value = await previewCas(file.value, password.value)
+  } catch (err) {
+    errorMessage.value = err instanceof Error ? err.message : 'Could not read this statement'
+  } finally {
+    busy.value = false
   }
 }
 
+// Step 2: resolve/create the investor and import. `confirm` re-runs a destructive
+// eCAS (one that would remove holdings) after the user accepts the removals.
 async function submit(confirm = false): Promise<void> {
   if (!file.value || busy.value) return
   busy.value = true
   errorMessage.value = ''
   try {
-    job.value = await importCas(investorId.value, file.value, password.value, confirm)
+    job.value = await importCas(file.value, password.value, confirm)
     if (succeeded.value) {
       ui.notify({ severity: 'success', summary: 'Import complete', detail: file.value.name })
     }
@@ -108,15 +127,15 @@ async function submit(confirm = false): Promise<void> {
 }
 
 function reset(): void {
-  file.value = null
+  clearFrom(null)
   password.value = ''
-  job.value = null
-  errorMessage.value = ''
 }
 
 function goToDashboard(): void {
-  ui.selectInvestor(investorId.value)
-  void router.push({ name: 'dashboard', params: { investorId: investorId.value } })
+  const id = job.value?.investor_id
+  if (id == null) return
+  ui.selectInvestor(id)
+  void router.push({ name: 'dashboard', params: { investorId: id } })
 }
 </script>
 
@@ -131,8 +150,8 @@ function goToDashboard(): void {
       </p>
     </header>
 
-    <!-- Upload form (hidden once we have a non-confirmation result) -->
-    <div v-if="!succeeded && !needsConfirmation" class="card">
+    <!-- Step 1: pick the file (nothing is persisted until you confirm who it's for) -->
+    <div v-if="!preview && !job" class="card">
       <label
         class="dropzone"
         :class="{ dragging }"
@@ -160,7 +179,38 @@ function goToDashboard(): void {
       <Message v-if="errorMessage" severity="error" :closable="false">{{ errorMessage }}</Message>
 
       <div class="actions">
-        <Button label="Import" icon="pi pi-upload" :disabled="!file || busy" :loading="busy" @click="submit(false)" />
+        <Button label="Continue" icon="pi pi-arrow-right" icon-pos="right" :disabled="!file || busy" :loading="busy" @click="review" />
+      </div>
+    </div>
+
+    <!-- Step 2: confirm who the statement belongs to before importing -->
+    <div v-else-if="!job" class="card">
+      <Message severity="info" :closable="false">
+        We read the holder's PAN from this {{ kindLabel }}.
+        <template v-if="preview?.match_investor_id">
+          It belongs to an investor you already track.
+        </template>
+        <template v-else>It'll create a new investor.</template>
+      </Message>
+      <dl class="summary">
+        <div><dt>Statement</dt><dd>{{ kindLabel }}</dd></div>
+        <div>
+          <dt>{{ preview?.match_investor_id ? 'Existing investor' : 'New investor' }}</dt>
+          <dd>{{ preview?.match_investor_name || preview?.investor_name || '—' }}</dd>
+        </div>
+        <div><dt>PAN</dt><dd class="mono">{{ preview?.pan_masked }}</dd></div>
+      </dl>
+
+      <Message v-if="errorMessage" severity="error" :closable="false">{{ errorMessage }}</Message>
+
+      <div class="actions">
+        <Button label="Back" severity="secondary" outlined :disabled="busy" @click="reset" />
+        <Button
+          :label="preview?.match_investor_id ? 'Import to this investor' : 'Create & import'"
+          icon="pi pi-upload"
+          :loading="busy"
+          @click="submit(false)"
+        />
       </div>
     </div>
 

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Stub openapi-fetch so the real `importCas`/`unwrap` run against a spy client.
-// `vi.hoisted` defines the spy in the same hoisted scope as `vi.mock`.
+// Stub openapi-fetch so the real `importCas`/`previewCas`/`unwrap` run against a
+// spy client. `vi.hoisted` defines the spy in the same hoisted scope as `vi.mock`.
 const { post } = vi.hoisted(() => ({ post: vi.fn() }))
 vi.mock('openapi-fetch', () => ({ default: () => ({ POST: post, GET: vi.fn() }) }))
 
-import { importCas } from '@/api/client'
+import { importCas, previewCas } from '@/api/client'
 
 function serialize(call: unknown[]): FormData {
   const init = call[1] as { body: unknown; bodySerializer: (b: unknown) => FormData }
@@ -15,16 +15,17 @@ function serialize(call: unknown[]): FormData {
 describe('importCas', () => {
   beforeEach(() => post.mockReset())
 
-  it('uploads multipart form-data and returns the job', async () => {
-    post.mockResolvedValue({ data: { id: 7, status: 'success', result: { detected: 'mf_cas' } } })
+  it('posts to the advisor-level endpoint and returns the job', async () => {
+    post.mockResolvedValue({
+      data: { id: 7, investor_id: 42, status: 'success', result: { detected: 'mf_cas' } },
+    })
     const file = new File([new Uint8Array([1, 2, 3])], 'cas.pdf', { type: 'application/pdf' })
 
-    const job = await importCas(42, file, 'secret', false)
+    const job = await importCas(file, 'secret', false)
 
     expect(job.id).toBe(7)
-    const [path, init] = post.mock.calls[0] as [string, { params: { path: { investor_id: number } } }]
-    expect(path).toBe('/api/investors/{investor_id}/imports/cas')
-    expect(init.params.path.investor_id).toBe(42)
+    const [path] = post.mock.calls[0] as [string]
+    expect(path).toBe('/api/imports/cas') // no investor_id in the path
 
     const fd = serialize(post.mock.calls[0])
     expect(fd).toBeInstanceOf(FormData)
@@ -37,7 +38,7 @@ describe('importCas', () => {
     post.mockResolvedValue({ data: { id: 8, status: 'needs_confirmation', result: {} } })
     const file = new File([new Uint8Array([1])], 'ecas.pdf')
 
-    await importCas(1, file, '', true)
+    await importCas(file, '', true)
 
     const fd = serialize(post.mock.calls[0])
     expect(fd.get('password')).toBeNull()
@@ -48,6 +49,34 @@ describe('importCas', () => {
     post.mockResolvedValue({ error: { detail: 'bad pdf' } })
     const file = new File([new Uint8Array([1])], 'x.pdf')
 
-    await expect(importCas(1, file)).rejects.toThrow('Import failed')
+    await expect(importCas(file)).rejects.toThrow('Import failed')
+  })
+})
+
+describe('previewCas', () => {
+  beforeEach(() => post.mockReset())
+
+  it('posts the file to the preview endpoint and returns the identity', async () => {
+    post.mockResolvedValue({
+      data: { kind: 'mf_cas', investor_name: 'Asha Rao', pan_masked: 'XXXXXX234F', email: '' },
+    })
+    const file = new File([new Uint8Array([1])], 'cas.pdf')
+
+    const preview = await previewCas(file, 'pw')
+
+    expect(preview.investor_name).toBe('Asha Rao')
+    const [path] = post.mock.calls[0] as [string]
+    expect(path).toBe('/api/imports/cas/preview')
+    const fd = serialize(post.mock.calls[0])
+    expect(fd.get('file')).toBeInstanceOf(File)
+    expect(fd.get('password')).toBe('pw')
+    expect(fd.get('confirm')).toBeNull() // preview never sends confirm
+  })
+
+  it('throws a labelled error on a rejected statement', async () => {
+    post.mockResolvedValue({ error: { detail: 'no PAN' } })
+    const file = new File([new Uint8Array([1])], 'x.pdf')
+
+    await expect(previewCas(file)).rejects.toThrow('Could not read this statement')
   })
 })

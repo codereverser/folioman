@@ -10,6 +10,7 @@ export type FamilyOut = Schemas['FamilyOut']
 export type FamilyIn = Schemas['FamilyIn']
 export type FolioOut = Schemas['FolioOut']
 export type ImportJobOut = Schemas['ImportJobOut']
+export type CasPreviewOut = Schemas['CasPreviewOut']
 
 /**
  * Typed HTTP client keyed by the OpenAPI paths (regenerate types with
@@ -38,31 +39,49 @@ export async function listInvestors(): Promise<InvestorOut[]> {
   return unwrap(await api.GET('/api/investors/'), 'Failed to load investors')
 }
 
+/** Build the multipart body for a CAS upload (the browser sets the boundary).
+ * openapi-fetch JSON-serializes by default, so we hand it the fields and build
+ * the `FormData` ourselves. `includeConfirm` is false for preview (which has no
+ * confirm field). */
+function casFormData(includeConfirm: boolean) {
+  return (body: { file: unknown; password?: string; confirm?: boolean }) => {
+    const fd = new FormData()
+    fd.append('file', body.file as Blob)
+    if (body.password) fd.append('password', body.password)
+    if (includeConfirm) fd.append('confirm', String(body.confirm))
+    return fd
+  }
+}
+
 /**
- * Upload a CAS PDF (CAMS/KFin MF CAS or NSDL/CDSL eCAS — the server auto-detects).
- * The endpoint always returns the job at HTTP 201; inspect `status`/`result` for
- * the outcome (`success`, `completed_with_warnings`, `needs_confirmation`, or
- * `failed`). Pass `confirm` to apply a destructive eCAS that removes holdings.
- *
- * Multipart upload: openapi-fetch JSON-serializes by default, so we hand it the
- * fields and build the `FormData` ourselves (the browser sets the boundary).
+ * Preview a CAS upload: parse it server-side and report whose statement it is
+ * (name + masked PAN) and whether the PAN matches an existing investor — without
+ * persisting anything. Throws on a wrong password (400) or a PAN-less /
+ * unparseable statement (422); the thrown message is safe to surface.
+ */
+export async function previewCas(file: File, password = ''): Promise<CasPreviewOut> {
+  const res = await api.POST('/api/imports/cas/preview', {
+    body: { file: file as unknown as string, password },
+    bodySerializer: casFormData(false),
+  })
+  return unwrap(res, 'Could not read this statement')
+}
+
+/**
+ * Import a CAS PDF (CAMS/KFin MF CAS or NSDL/CDSL eCAS — the server auto-detects
+ * and resolves/creates the investor by PAN). Returns the job at HTTP 201; inspect
+ * `status`/`result` for the outcome (`success`, `completed_with_warnings`,
+ * `needs_confirmation`, or `failed`). Pass `confirm` to apply a destructive eCAS
+ * that removes holdings.
  */
 export async function importCas(
-  investorId: number,
   file: File,
   password = '',
   confirm = false,
 ): Promise<ImportJobOut> {
-  const res = await api.POST('/api/investors/{investor_id}/imports/cas', {
-    params: { path: { investor_id: investorId } },
+  const res = await api.POST('/api/imports/cas', {
     body: { file: file as unknown as string, password, confirm },
-    bodySerializer(body) {
-      const fd = new FormData()
-      fd.append('file', body.file as unknown as Blob)
-      if (body.password) fd.append('password', body.password)
-      fd.append('confirm', String(body.confirm))
-      return fd
-    },
+    bodySerializer: casFormData(true),
   })
   return unwrap(res, 'Import failed')
 }
