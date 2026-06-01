@@ -5,10 +5,9 @@ description = "Folioman shared domain logic: parsing, FIFO, XIRR, tax, reconcili
 requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.7",
-    # Activated in Phase 2 (core domain library):
-    # "casparser>=1.0",        # NOT on PyPI yet — PR #124 / 1.0 unreleased
-    # "casparser-isin",
-    # "requests",
+    "casparser",  # pinned to git feature/v1.0 via [tool.uv.sources] below (PR #124)
+    "casparser-isin",
+    "httpx>=0.27",  # MF NAV feed (mfapi.in); also covers the equity/crypto price feeds
 ]
 
 [build-system]
@@ -17,3 +16,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/folioman_core"]
+
+# Develop against the casparser 1.0 branch (PR #124) until it
+# releases on PyPI. On merge, drop this source and pin `casparser==1.0.0` in
+# [project].dependencies, then re-lock.
+[tool.uv.sources]
+casparser = { git = "https://github.com/codereverser/casparser", branch = "feature/v1.0" }
