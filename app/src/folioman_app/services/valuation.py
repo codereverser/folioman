@@ -1,0 +1,460 @@
+"""Family aggregate valuation — combines investors' current positions into one
+INR rollup via the core ``value_holdings`` engine.
+
+v1 scope: values the **latest holding snapshot per (investor, security)** priced
+from ``NAVHistory`` (latest point on/before ``as_of``). Securities with no
+NAVHistory price, or priced in a non-INR currency, surface as stale (the core
+engine handles that). XIRR and reconciled-units valuation are layered on later
+(reconciliation is separate; richer valuation feeds the dashboard later).
+"""
+
+from __future__ import annotations
+
+import calendar
+from collections import defaultdict
+from datetime import date, timedelta
+from decimal import Decimal
+
+from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
+from folioman_core.models import Holding as CoreHolding
+from folioman_core.models import HoldingSource, Quote, TransactionType
+from folioman_core.reconciliation import IntegrityStatus
+from folioman_core.valuation import value_holdings
+from folioman_core.xirr import cashflows_from_transactions, compute_xirr
+
+from folioman_app.mappers import to_core_security, to_core_transaction
+from folioman_app.models import Family, Investor, NAVHistory
+from folioman_app.models.jobs import ImportJobStatus
+
+_ZERO = Decimal("0")
+
+# Transaction types that deploy / return capital, for the invested baseline and
+# XIRR cashflows. Bonus/split/dividend-reinvest move units without fresh cash.
+_BUY_TYPES = frozenset({TransactionType.BUY.value, TransactionType.TRANSFER_IN.value})
+_SELL_TYPES = frozenset({TransactionType.SELL.value, TransactionType.TRANSFER_OUT.value})
+
+
+def _latest_price(security_id: int, as_of: date) -> Decimal | None:
+    return (
+        NAVHistory.objects.filter(security_id=security_id, date__lte=as_of)
+        .order_by("-date")
+        .values_list("nav", flat=True)
+        .first()
+    )
+
+
+def _current_positions(investor: Investor):
+    """Yield (django_security, units, as_of_date, source) — current units per security.
+
+    Units come per (security, folio) from the **transaction ledger** when one
+    exists (a full-history scheme has transactions but no holding snapshot), else
+    from the latest **holding snapshot** (eCAS/manual/incomplete-CAS). Preferring
+    the ledger avoids double-counting a reconciled folio (ledger + eCAS holding)
+    and is what lets full-history MF holdings contribute to net worth at all.
+    Aggregated per security for the rollup.
+
+    Nets the whole ledger in Python on each call — deliberately, at the current
+    scale (a handful of portfolios). This generator is the single seam every
+    valuation path funnels through: if a long ledger ever makes ``/summary`` slow,
+    swap this body for DB-side signed aggregation (or a materialized
+    current-units table updated on import) with no change to callers.
+    """
+    txns_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
+    for txn in investor.transactions.select_related("security", "folio"):
+        txns_by_key[(txn.security_id, txn.folio_id)].append(txn)
+    holdings_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
+    for holding in investor.holdings.select_related("security", "folio"):
+        holdings_by_key[(holding.security_id, holding.folio_id)].append(holding)
+
+    # security_id -> [django_security, units, latest_as_of, source]
+    agg: dict[int, list] = {}
+    for key in set(txns_by_key) | set(holdings_by_key):
+        sec_id = key[0]
+        if key in txns_by_key:
+            txns = txns_by_key[key]
+            units = net_units_from_transactions([to_core_transaction(t) for t in txns])
+            security = txns[0].security
+            as_of = max(t.date for t in txns)
+            source = HoldingSource.LEDGER.value
+        else:
+            rows = holdings_by_key[key]
+            latest = max(h.as_of_date for h in rows)
+            units = sum((h.units for h in rows if h.as_of_date == latest), _ZERO)
+            security = rows[0].security
+            as_of = latest
+            source = rows[0].source
+        slot = agg.setdefault(sec_id, [security, _ZERO, as_of, source])
+        slot[0] = security
+        slot[1] += units
+        slot[2] = max(slot[2], as_of)
+        # A ledger position wins the (informational) source label for the security.
+        if source == HoldingSource.LEDGER.value:
+            slot[3] = source
+
+    for security, units, as_of, source in agg.values():
+        if units > _ZERO:
+            yield security, units, as_of, source
+
+
+def _value_investors(investors: list[Investor], as_of: date):
+    """Value the latest holding snapshot per (investor, security) across the set.
+
+    Returns the core valuation plus a map from core Security → (id, name, type)
+    so Django metadata can be reattached to the priced rows.
+    """
+    core_holdings: list[CoreHolding] = []
+    price_by_security: dict = {}
+    meta_by_security: dict = {}  # core Security -> (id, name, security_type)
+
+    for investor in investors:
+        for django_security, units, snapshot_date, source in _current_positions(investor):
+            core_security = to_core_security(django_security)
+            core_holdings.append(
+                CoreHolding(
+                    security=core_security,
+                    as_of_date=snapshot_date,
+                    units=units,
+                    source=HoldingSource(source),
+                )
+            )
+            meta_by_security[core_security] = (
+                django_security.id,
+                django_security.name,
+                django_security.security_type,
+            )
+            price = _latest_price(django_security.id, as_of)
+            if price is not None:
+                price_by_security[core_security] = price
+
+    def nav_provider(security, _as_of):
+        return price_by_security.get(security)
+
+    def quote_provider(security, _as_of):
+        price = price_by_security.get(security)
+        if price is None:
+            return None
+        return Quote(as_of=as_of, price=price, currency=security.currency, source="navhistory")
+
+    valuation = value_holdings(
+        core_holdings,
+        as_of=as_of,
+        nav_provider=nav_provider,
+        quote_provider=quote_provider,
+        crypto_provider=quote_provider,
+    )
+    return valuation, meta_by_security
+
+
+def _rollup(valuation, meta_by_security: dict) -> dict:
+    """Shared INR rollup: total, asset mix, top holdings, and counts."""
+    asset_mix: dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    top_holdings = []
+    for row in valuation.rows:
+        sec_id, name, sec_type = meta_by_security[row.security]
+        if row.value_inr is not None:
+            asset_mix[sec_type] += row.value_inr
+        top_holdings.append(
+            {
+                "security_id": sec_id,
+                "name": name,
+                "security_type": sec_type,
+                "units": row.units,
+                "value_inr": row.value_inr,
+            }
+        )
+    top_holdings.sort(key=lambda r: r["value_inr"] or _ZERO, reverse=True)
+    return {
+        "total_inr": valuation.total_inr,
+        "asset_mix": [
+            {"security_type": stype, "value_inr": value} for stype, value in asset_mix.items()
+        ],
+        "top_holdings": top_holdings[:10],
+        "stale_count": len(valuation.stale_rows),
+        "holdings_count": len(valuation.rows),
+    }
+
+
+def build_family_aggregate(family: Family, as_of: date) -> dict:
+    investors = list(family.investors.all())
+    valuation, meta_by_security = _value_investors(investors, as_of)
+    rollup = _rollup(valuation, meta_by_security)
+    return {
+        "family_id": family.id,
+        "as_of": as_of,
+        "investor_count": len(investors),
+        "total_inr": rollup["total_inr"],
+        "asset_mix": rollup["asset_mix"],
+        "top_holdings": rollup["top_holdings"],
+        "stale_count": rollup["stale_count"],
+        "xirr": compute_portfolio_xirr(investors, as_of),
+    }
+
+
+def build_investor_summary(investor: Investor, as_of: date) -> dict:
+    """Per-investor headline numbers for the roster: current INR value, the
+    tax-ready vs total-holdings split, items needing attention, and the most
+    recent successful import date.
+    """
+    valuation, meta_by_security = _value_investors([investor], as_of)
+    rollup = _rollup(valuation, meta_by_security)
+
+    statuses = list(investor.integrity_statuses.values_list("status", "tax_safe"))
+    tax_ready_count = sum(1 for _status, tax_safe in statuses if tax_safe)
+    needs_attention_count = sum(
+        1 for status, _ in statuses if status == IntegrityStatus.MISMATCH.value
+    )
+    snapshot_count = sum(
+        1 for status, _ in statuses if status == IntegrityStatus.SNAPSHOT_ONLY.value
+    )
+
+    # Most recent import that actually committed data (success, or warnings).
+    last_job = (
+        investor.import_jobs.filter(
+            status__in=[ImportJobStatus.SUCCESS, ImportJobStatus.COMPLETED_WITH_WARNINGS]
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    last_import_at = (last_job.finished_at or last_job.created_at) if last_job else None
+
+    return {
+        "investor_id": investor.id,
+        "as_of": as_of,
+        "total_inr": rollup["total_inr"],
+        "holdings_count": rollup["holdings_count"],
+        "tax_ready_count": tax_ready_count,
+        "needs_attention_count": needs_attention_count,
+        "snapshot_count": snapshot_count,
+        "stale_count": rollup["stale_count"],
+        "last_import_at": last_import_at,
+        "xirr": compute_portfolio_xirr([investor], as_of),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Value-series (net worth over time) + XIRR — reconstructed on demand from the
+# transaction ledger + NAVHistory. No snapshot tables: a sampled date's value is
+# the ledger's net units as-of that date, priced at the latest NAV on/before it.
+# ---------------------------------------------------------------------------
+
+
+def _txn_cash(txn) -> Decimal:
+    """Cash moved by a transaction (the recorded amount, or units*price)."""
+    if txn.amount is not None:
+        return txn.amount
+    return txn.units * txn.nav_or_price
+
+
+def _ledger_index(investors: list[Investor]):
+    """Load every investor's ledger + snapshots once, grouped by (security, folio).
+
+    Returns ``(txn_keys, hold_keys)``. Transactions are pre-converted to core
+    value objects so the per-date netting below doesn't re-convert. This is the
+    single load every series/XIRR path funnels through (the perf seam: swap for
+    DB-side aggregation if a long ledger makes it slow).
+    """
+    txn_keys: dict[tuple[int, int | None], dict] = {}
+    for investor in investors:
+        for txn in investor.transactions.select_related("security", "folio"):
+            key = (txn.security_id, txn.folio_id)
+            rec = txn_keys.setdefault(key, {"security": txn.security, "core": [], "cash": []})
+            rec["core"].append((txn.date, to_core_transaction(txn)))
+            rec["cash"].append((txn.date, txn.transaction_type, _txn_cash(txn)))
+    hold_keys: dict[tuple[int, int | None], dict] = {}
+    for investor in investors:
+        for holding in investor.holdings.select_related("security", "folio"):
+            key = (holding.security_id, holding.folio_id)
+            rec = hold_keys.setdefault(key, {"security": holding.security, "rows": []})
+            rec["rows"].append(holding)
+    return txn_keys, hold_keys
+
+
+def _positions_asof(txn_keys: dict, hold_keys: dict, as_of: date) -> dict[int, list]:
+    """Net units + invested capital per security as-of ``as_of``.
+
+    Per (security, folio): the ledger wins when one exists — FIFO over the
+    transactions on/before the date gives both net units and ``invested`` (the
+    cost basis of the units *still held*, always >= 0, so ``value - invested`` is a
+    true unrealized gain). Otherwise fall back to the latest holding snapshot's
+    observed cost basis. Aggregated per security.
+    Returns ``{security_id: [django_security, units, invested_inr]}``.
+    """
+    agg: dict[int, list] = {}
+    for (sec_id, _folio_id), rec in txn_keys.items():
+        cores = [core for (txn_date, core) in rec["core"] if txn_date <= as_of]
+        if not cores:
+            continue  # ledger-managed folio, but nothing acquired yet as-of date
+        try:
+            fifo = apply_fifo(cores)
+            units, invested = fifo.balance, fifo.invested
+        except InsufficientUnitsError:
+            # An over-sell (only reachable via malformed manual entry — CAS ledgers
+            # are gate-checked complete). Don't 500 the chart: report net units and
+            # leave cost basis at 0 for this pathological bucket.
+            units, invested = net_units_from_transactions(cores), _ZERO
+        slot = agg.setdefault(sec_id, [rec["security"], _ZERO, _ZERO])
+        slot[1] += units
+        slot[2] += invested
+    for (sec_id, folio_id), rec in hold_keys.items():
+        if (sec_id, folio_id) in txn_keys:
+            continue  # a ledger owns this folio; snapshot would double-count
+        rows = [h for h in rec["rows"] if h.as_of_date <= as_of]
+        if not rows:
+            continue
+        latest = max(h.as_of_date for h in rows)
+        current = [h for h in rows if h.as_of_date == latest]
+        units = sum((h.units for h in current), _ZERO)
+        invested = sum(
+            (h.avg_cost_observed * h.units for h in current if h.avg_cost_observed is not None),
+            _ZERO,
+        )
+        slot = agg.setdefault(sec_id, [rec["security"], _ZERO, _ZERO])
+        slot[1] += units
+        slot[2] += invested
+    return agg
+
+
+def _nav_index(security_ids, upto: date) -> dict[int, list]:
+    """Per-security ascending ``[(date, nav)]`` up to ``upto`` — one query, then
+    bisected per sample date so a multi-year series stays a single price load."""
+    idx: dict[int, list] = defaultdict(list)
+    rows = (
+        NAVHistory.objects.filter(security_id__in=list(security_ids), date__lte=upto)
+        .order_by("security_id", "date")
+        .values_list("security_id", "date", "nav")
+    )
+    for sec_id, nav_date, nav in rows:
+        idx[sec_id].append((nav_date, nav))
+    return idx
+
+
+def _price_at(nav_idx: dict, sec_id: int, as_of: date) -> Decimal | None:
+    """Latest NAV on/before ``as_of`` for the security, or ``None``."""
+    seq = nav_idx.get(sec_id)
+    if not seq:
+        return None
+    lo, hi = 0, len(seq)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if seq[mid][0] <= as_of:
+            lo = mid + 1
+        else:
+            hi = mid
+    return seq[lo - 1][1] if lo > 0 else None
+
+
+def _add_months(start: date, months: int) -> date:
+    """``start`` + ``months`` calendar months, clamping the day to month length."""
+    index = start.month - 1 + months
+    year = start.year + index // 12
+    month = index % 12 + 1
+    day = min(start.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _sample_dates(from_: date, to: date, granularity: str) -> list[date]:
+    """Evenly-spaced sample dates in ``[from_, to]``, always ending exactly on
+    ``to`` so the final series point matches the point-in-time aggregate."""
+    if from_ > to:
+        from_ = to
+    out: list[date] = []
+    cursor = from_
+    if granularity == "daily":
+        while cursor < to:
+            out.append(cursor)
+            cursor += timedelta(days=1)
+    elif granularity == "weekly":
+        while cursor < to:
+            out.append(cursor)
+            cursor += timedelta(days=7)
+    else:  # monthly (default)
+        while cursor < to:
+            out.append(cursor)
+            cursor = _add_months(cursor, 1)
+    out.append(to)
+    return out
+
+
+def _value_series(investors: list[Investor], from_: date, to: date, granularity: str) -> list[dict]:
+    txn_keys, hold_keys = _ledger_index(investors)
+    sec_ids = {k[0] for k in txn_keys} | {k[0] for k in hold_keys}
+    nav_idx = _nav_index(sec_ids, to)
+
+    points: list[dict] = []
+    for sample in _sample_dates(from_, to, granularity):
+        agg = _positions_asof(txn_keys, hold_keys, sample)
+        value = _ZERO
+        invested = _ZERO
+        stale = False
+        for sec_id, (_sec, units, inv_amt) in agg.items():
+            if units <= _ZERO:
+                continue
+            invested += inv_amt
+            price = _price_at(nav_idx, sec_id, sample)
+            if price is None:
+                stale = True  # held but unpriced — flag the point, don't drop it
+                continue
+            value += units * price
+        points.append(
+            {"date": sample, "value_inr": value, "invested_inr": invested, "stale": stale}
+        )
+    return points
+
+
+def default_series_start(to: date) -> date:
+    """Default value-series window start: one year before ``to`` (clamped for
+    leap-day ``to``)."""
+    try:
+        return to.replace(year=to.year - 1)
+    except ValueError:  # Feb 29 → Feb 28
+        return to.replace(year=to.year - 1, day=28)
+
+
+def value_series(
+    investor: Investor, *, from_: date, to: date, granularity: str = "monthly"
+) -> list[dict]:
+    """Per-investor net-worth time series: ``[{date, value_inr, invested_inr, stale}]``."""
+    return _value_series([investor], from_, to, granularity)
+
+
+def family_value_series(
+    family: Family, *, from_: date, to: date, granularity: str = "monthly"
+) -> list[dict]:
+    """Family-wide net-worth time series, aggregated across the family's investors."""
+    return _value_series(list(family.investors.all()), from_, to, granularity)
+
+
+def compute_portfolio_xirr(investors: list[Investor], as_of: date) -> float | None:
+    """Annualized XIRR over the ledger's cashflows + terminal ledger value.
+
+    Cashflows are the ledger transactions (buys/transfers-in invest capital,
+    sells/transfers-out/dividends return it); the terminal inflow is the current
+    value of the **ledger-backed** positions at ``as_of``. Snapshot-only holdings
+    are excluded — they have no acquisition cashflow, so including their value
+    would inflate the return. Returns the rate as a fraction (``0.1849`` = 18.49%)
+    or ``None`` when there's nothing to solve.
+    """
+    txn_keys, _hold_keys = _ledger_index(investors)
+    flows: list[tuple[date, Decimal]] = []
+    for rec in txn_keys.values():
+        for txn_date, ttype, cash in rec["cash"]:
+            if ttype in _BUY_TYPES:
+                flows.append((txn_date, cash))  # capital invested (positive in)
+            elif ttype in _SELL_TYPES:
+                flows.append((txn_date, -cash))  # capital returned
+            elif ttype == TransactionType.DIVIDEND.value and cash:
+                flows.append((txn_date, -cash))  # cash dividend paid out
+    if not flows:
+        return None
+
+    nav_idx = _nav_index({k[0] for k in txn_keys}, as_of)
+    terminal = _ZERO
+    for sec_id, (_sec, units, _inv) in _positions_asof(txn_keys, {}, as_of).items():
+        if units <= _ZERO:
+            continue
+        price = _price_at(nav_idx, sec_id, as_of)
+        if price is not None:
+            terminal += units * price
+
+    cashflows = cashflows_from_transactions(flows, present_date=as_of, present_value=terminal)
+    return compute_xirr(cashflows)
