@@ -1,0 +1,255 @@
+"""CSV import + manual transaction entry.
+
+CSV (registered as the ``csv`` processor): bulk transactions for securities not
+covered by a CAS — stocks, crypto, etc. Each row carries its own security
+identity. Validation is per-row: a bad row is collected into ``errors`` and
+skipped (partial success); valid rows still persist. Re-importing the same CSV
+is idempotent via a content-hash ``dedup_key``.
+
+Manual: a single hand-entered transaction. No dedup — manual entries are
+intentional, so an identical second entry is allowed.
+
+Expected CSV columns (header row): security_type, name, date, transaction_type,
+units, price (required); symbol, isin, amfi_code, coin_id, principal, amount,
+fees, stamp_duty, brokerage, currency (optional). The frontend maps arbitrary
+CSVs onto these; the backend consumes this canonical shape.
+
+Charge semantics: ``brokerage`` is buy-side and enters cost basis; ``fees`` is
+sell-side STT and ``stamp_duty`` a transfer expense — neither enters cost basis.
+"""
+
+from __future__ import annotations
+
+import csv
+import hashlib
+import io
+from datetime import date as date_cls
+from decimal import Decimal, InvalidOperation
+
+from django.db import transaction as db_transaction
+from folioman_core._dates import parse_loose_date
+from folioman_core.models import SecurityType, TransactionSource, TransactionType
+from folioman_core.models.investor import Folio as CoreFolio
+from folioman_core.models.investor import FolioType
+from folioman_core.models.security import Security as CoreSecurity
+from pydantic import ValidationError
+
+from folioman_app.models import ImportJob, Security, Transaction
+from folioman_app.models.jobs import ImportKind
+from folioman_app.services.imports import register_processor
+from folioman_app.tasks._upsert import upsert_folio, upsert_security
+from folioman_app.tasks.reconcile import reconcile_after_import, reconcile_security_folio
+
+_REQUIRED_COLUMNS = ("security_type", "name", "date", "transaction_type", "units", "price")
+_METADATA_COLUMNS = ("coin_id", "principal", "rate", "account_ref")
+
+
+def _core_security(
+    *, security_type, name, symbol="", isin="", amfi_code="", currency="INR", metadata=None
+) -> CoreSecurity:
+    return CoreSecurity(
+        type=SecurityType((security_type or "").strip().lower()),
+        name=(name or "").strip(),
+        symbol=(symbol or "").strip(),
+        isin=(isin or "").strip(),
+        amfi_code=(amfi_code or "").strip(),
+        currency=(currency or "INR").strip().upper(),
+        metadata=metadata or {},
+    )
+
+
+def _dedup_key(
+    security: Security,
+    on: date_cls,
+    txn_type: str,
+    *,
+    units,
+    price,
+    amount,
+    fees,
+    stamp_duty,
+    brokerage,
+    currency,
+) -> str:
+    # Hash every field that distinguishes one ledger row from another. Omitting a
+    # field collapses genuinely distinct rows (e.g. two sells differing only in
+    # fees/STT) into one, under-reporting. Re-importing the same row stays
+    # idempotent because identical content yields the same hash — no row index.
+    identity = security.amfi_code or security.isin or security.symbol or security.name
+    parts = [
+        identity,
+        on.isoformat(),
+        txn_type,
+        str(units),
+        str(price),
+        str(amount or ""),
+        str(fees),
+        str(stamp_duty),
+        str(brokerage),
+        currency,
+    ]
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()
+
+
+def _cell_decimal(row: dict, key: str, default):
+    raw = (row.get(key) or "").strip()
+    return Decimal(raw) if raw else default
+
+
+def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
+    missing = [c for c in _REQUIRED_COLUMNS if not (row.get(c) or "").strip()]
+    if missing:
+        msg = f"missing required column(s): {', '.join(missing)}"
+        raise ValueError(msg)
+
+    metadata = {k: row[k].strip() for k in _METADATA_COLUMNS if (row.get(k) or "").strip()}
+    security = upsert_security(
+        _core_security(
+            security_type=row["security_type"],
+            name=row["name"],
+            symbol=row.get("symbol", ""),
+            isin=row.get("isin", ""),
+            amfi_code=row.get("amfi_code", ""),
+            currency=row.get("currency", "INR"),
+            metadata=metadata,
+        )
+    )
+
+    on = parse_loose_date(row["date"])
+    if on is None:
+        msg = f"unparseable date: {row['date']!r}"
+        raise ValueError(msg)
+    txn_type = TransactionType(row["transaction_type"].strip().lower()).value
+    units = Decimal(row["units"].strip())
+    price = Decimal(row["price"].strip())
+    amount = _cell_decimal(row, "amount", None)
+    fees = _cell_decimal(row, "fees", Decimal("0"))
+    stamp = _cell_decimal(row, "stamp_duty", Decimal("0"))
+    brokerage = _cell_decimal(row, "brokerage", Decimal("0"))
+    currency = (row.get("currency") or "INR").strip().upper()
+
+    _, created = Transaction.objects.get_or_create(
+        investor=investor,
+        dedup_key=_dedup_key(
+            security,
+            on,
+            txn_type,
+            units=units,
+            price=price,
+            amount=amount,
+            fees=fees,
+            stamp_duty=stamp,
+            brokerage=brokerage,
+            currency=currency,
+        ),
+        defaults={
+            "security": security,
+            "date": on,
+            "transaction_type": txn_type,
+            "units": units,
+            "nav_or_price": price,
+            "amount": amount,
+            "fees": fees,
+            "stamp_duty": stamp,
+            "brokerage": brokerage,
+            "currency": currency,
+            "source": TransactionSource.CSV_IMPORT.value,
+            "source_ref": source_ref,
+        },
+    )
+    return security, created
+
+
+def process_csv(job: ImportJob, content: bytes, password: str) -> dict:
+    reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
+    if not reader.fieldnames:
+        msg = "CSV has no header row"
+        raise ValueError(msg)
+
+    summary: dict = {"rows": 0, "created": 0, "skipped": 0, "errors": []}
+    affected: dict[int, Security] = {}
+    for line_no, row in enumerate(reader, start=2):  # row 1 is the header
+        summary["rows"] += 1
+        try:
+            with db_transaction.atomic():  # isolate each row (Postgres-safe)
+                security, created = _process_row(job.investor, row, job.source_ref)
+        except (ValueError, InvalidOperation, ValidationError) as exc:
+            summary["errors"].append({"row": line_no, "error": str(exc)})
+            summary["skipped"] += 1
+            continue
+        affected[security.id] = security
+        summary["created" if created else "skipped"] += 1
+
+    errors = reconcile_after_import(job.investor, affected.values())
+    if errors:
+        summary["reconcile_errors"] = errors
+    return summary
+
+
+def _manual_core_folio(data: dict) -> CoreFolio:
+    """Build the folio a manual entry belongs to (no folio-less entries).
+
+    MF -> an AMC folio; everything else -> a demat account (the number matches
+    eCAS exactly, so a manual equity ledger reconciles against its eCAS holding).
+    `CoreFolio` validation enforces a non-empty number and a broker for demat,
+    surfacing as a 422 on the manual-entry endpoint.
+    """
+    stype = SecurityType((data.get("security_type") or "").strip().lower())
+    folio_type = FolioType.MF if stype is SecurityType.MF else FolioType.DEMAT
+    return CoreFolio(
+        folio_type=folio_type,
+        number=(data.get("folio_number") or "").strip(),
+        broker=(data.get("broker") or "").strip(),
+    )
+
+
+def create_manual_transaction(investor, data: dict) -> Transaction:
+    """Create a single hand-entered transaction (no dedup). Raises on bad input."""
+    metadata = {k: data[k] for k in ("coin_id", "principal") if data.get(k)}
+    security = upsert_security(
+        _core_security(
+            security_type=data["security_type"],
+            name=data["name"],
+            symbol=data.get("symbol", ""),
+            isin=data.get("isin", ""),
+            amfi_code=data.get("amfi_code", ""),
+            currency=data.get("currency", "INR"),
+            metadata=metadata,
+        )
+    )
+    folio = upsert_folio(investor, _manual_core_folio(data))
+    txn = Transaction.objects.create(
+        investor=investor,
+        security=security,
+        folio=folio,
+        date=data["date"],
+        transaction_type=TransactionType(data["transaction_type"]).value,
+        units=data["units"],
+        nav_or_price=data["price"],
+        amount=data.get("amount"),
+        fees=data.get("fees") or Decimal("0"),
+        stamp_duty=data.get("stamp_duty") or Decimal("0"),
+        brokerage=data.get("brokerage") or Decimal("0"),
+        currency=(data.get("currency") or "INR"),
+        source=TransactionSource.MANUAL.value,
+        narration=data.get("narration") or "",
+    )
+    reconcile_security_folio(investor, security, folio)
+    return txn
+
+
+def _csv_disabled(job: ImportJob, content: bytes, password: str, *, confirm: bool = False) -> dict:
+    """Guard: the generic CSV importer is parked until the multi-asset phase.
+
+    Imports are security-specific now — mutual funds via CAS PDF, equities via
+    eCAS or per-broker templated CSV (with completeness checks). `process_csv`
+    above is kept intact; re-enable by registering it again in place of this
+    guard. The HTTP endpoint (`api/imports.py`) is also gated, so a user can't
+    reach this path; the guard is defense-in-depth for any internal caller.
+    """
+    msg = "CSV import is disabled until the multi-asset phase (mutual funds import via CAS PDF)."
+    raise NotImplementedError(msg)
+
+
+# Disabled — see _csv_disabled. Re-enable: register `process_csv` here instead.
+register_processor(ImportKind.CSV.value, _csv_disabled)

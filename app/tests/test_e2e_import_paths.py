@@ -1,0 +1,216 @@
+"""End-to-end import paths over the HTTP API: eCAS, CSV, manual — plus the
+cross-source mismatch the integrity layer surfaces and the 112A export withholds.
+Completes the four-path import matrix (CAS PDF is in test_e2e_cas_path).
+
+eCAS reads are mocked with synthetic statements (real ISINs, fake identity and
+units, no PII); manual entry uses real client payloads. Generic CSV import is
+disabled until the multi-asset phase. The mismatch case uses an equity (cost
+history from manual entry, holding from eCAS) so it's 112A-eligible by type —
+independent of fund metadata.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+
+import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
+from folioman_app.models import Holding
+from folioman_core.models import SecurityType
+from folioman_core.models.cas import (
+    Depository,
+    EcasAccountBlock,
+    EcasHoldingLine,
+    EcasStatement,
+)
+from folioman_core.models.investor import Folio as CoreFolio
+from folioman_core.models.security import Security as CoreSecurity
+
+pytestmark = pytest.mark.django_db
+
+_RELIANCE = "INE002A01018"
+_BOND = "INE020B08DG9"
+
+
+def _post(client, url, payload=None):
+    return client.post(url, data=payload or {}, content_type="application/json")
+
+
+def _upload(client, investor_id, kind, name, content, password=None):
+    data = {"file": SimpleUploadedFile(name, content)}
+    if password is not None:
+        data["password"] = password
+    return client.post(f"/api/investors/{investor_id}/imports/{kind}", data)
+
+
+# --- eCAS path: holdings -> snapshot-only integrity -------------------------
+
+
+def _ecas_two_holdings() -> EcasStatement:
+    reliance = CoreSecurity(type=SecurityType.EQUITY, name="Reliance Industries", isin=_RELIANCE)
+    bond = CoreSecurity(type=SecurityType.BOND, name="REC Ltd Bond", isin=_BOND)
+    return EcasStatement(
+        depository=Depository.CDSL,
+        statement_date=dt.date(2025, 6, 1),
+        accounts=[
+            EcasAccountBlock(
+                folio=CoreFolio(folio_type="demat", number="1208160001234567", broker="ZERODHA"),
+                holdings=[EcasHoldingLine(security=reliance, units="10", value_observed="28500")],
+            ),
+            EcasAccountBlock(
+                folio=CoreFolio(folio_type="demat", number="IN30021412345678", broker="HDFC SEC"),
+                holdings=[EcasHoldingLine(security=bond, units="5", value_observed="50000")],
+            ),
+        ],
+    )
+
+
+def test_ecas_path_holdings_then_snapshot_only_integrity(client, make_investor, monkeypatch):
+    import folioman_app.tasks.import_cas as mod
+    from folioman_core.cas_reader import ParsedCas
+
+    monkeypatch.setattr(
+        mod, "read_cas", lambda _content, _password: ParsedCas(ecas=_ecas_two_holdings())
+    )
+    inv = make_investor()
+
+    resp = _upload(client, inv.id, "cas", "ecas.pdf", b"%PDF synthetic", password="x")
+    assert resp.status_code == 201
+    assert resp.json()["status"] == "success"
+    assert resp.json()["result"]["detected"] == "ecas"
+    assert resp.json()["result"]["holdings_created"] == 2
+    assert Holding.objects.filter(investor=inv).count() == 2
+
+    # Holdings but no transactions -> snapshot only, not tax-safe (no cost basis).
+    statuses = client.get(f"/api/investors/{inv.id}/integrity").json()
+    assert len(statuses) == 2
+    assert all(s["status"] == "snapshot_only" for s in statuses)
+    assert all(s["tax_safe"] is False for s in statuses)
+
+
+# --- cross-source mismatch: surfaced by integrity, withheld from 112A -------
+
+
+def _ecas_reliance(units: str) -> EcasStatement:
+    sec = CoreSecurity(type=SecurityType.EQUITY, name="Reliance Industries", isin=_RELIANCE)
+    return EcasStatement(
+        depository=Depository.CDSL,
+        statement_date=dt.date(2025, 6, 1),
+        accounts=[
+            EcasAccountBlock(
+                folio=CoreFolio(folio_type="demat", number="1208160009999999", broker="ZERODHA"),
+                holdings=[EcasHoldingLine(security=sec, units=units, value_observed="9000")],
+            )
+        ],
+    )
+
+
+_CSV_HEADER = "security_type,name,symbol,isin,date,transaction_type,units,price,amount\n"
+
+
+def test_cross_source_mismatch_withheld_from_112a(client, make_investor, monkeypatch):
+    import folioman_app.tasks.import_cas as cas_mod
+    from folioman_core.cas_reader import ParsedCas
+
+    inv = make_investor()
+    # Cost history via manual entry: net 60 units, incl. a long-term sale (a real
+    # LTCG). (CSV import is disabled until the multi-asset phase; manual entry is
+    # the live equity-transaction path.)
+    txns_url = f"/api/investors/{inv.id}/transactions"
+    base = {
+        "security_type": "equity",
+        "name": "Reliance Industries",
+        "symbol": "RELIANCE",
+        "isin": _RELIANCE,
+        # Same demat account number as the eCAS holding below -> same folio ->
+        # the cross-source check compares them.
+        "folio_number": "1208160009999999",
+        "broker": "ZERODHA",
+    }
+    assert (
+        _post(
+            client,
+            txns_url,
+            {
+                **base,
+                "date": "2020-01-01",
+                "transaction_type": "buy",
+                "units": "100",
+                "price": "50",
+            },
+        ).status_code
+        == 201
+    )
+    assert (
+        _post(
+            client,
+            txns_url,
+            {
+                **base,
+                "date": "2024-08-01",
+                "transaction_type": "sell",
+                "units": "40",
+                "price": "200",
+            },
+        ).status_code
+        == 201
+    )
+
+    # Demat eCAS says 50 for the same ISIN -> the sources disagree.
+    monkeypatch.setattr(
+        cas_mod, "read_cas", lambda _content, _password: ParsedCas(ecas=_ecas_reliance("50"))
+    )
+    assert _upload(client, inv.id, "cas", "ecas.pdf", b"%PDF", password="x").status_code == 201
+
+    statuses = client.get(f"/api/investors/{inv.id}/integrity").json()
+    assert len(statuses) == 1
+    assert statuses[0]["status"] == "mismatch"
+    assert statuses[0]["tax_safe"] is False
+
+    # The real LTCG is withheld from the tax export until the gap is acknowledged.
+    url = f"/api/investors/{inv.id}/exports/schedule-112a"
+    assert _post(client, url, {"fy": "2024-25"}).json()["row_count"] == 0
+    forced = _post(client, url, {"fy": "2024-25", "include_unreconciled": True}).json()
+    assert forced["row_count"] == 1
+
+
+# --- CSV path: disabled until the multi-asset phase -------------------------
+
+
+def test_csv_import_path_is_disabled(client, make_investor):
+    # Imports are security-specific now; the generic CSV endpoint is parked.
+    # (The transactions -> full_history behaviour is covered via manual entry below.)
+    inv = make_investor()
+    csv = _CSV_HEADER + f"equity,Reliance,RELIANCE,{_RELIANCE},2024-01-15,buy,10,2800,28000\n"
+    resp = _upload(client, inv.id, "csv", "txns.csv", csv.encode())
+    assert resp.status_code == 503
+    assert len(client.get(f"/api/investors/{inv.id}/transactions").json()) == 0
+
+
+# --- manual entry: one transaction --------------------------------------------
+
+
+def test_manual_entry_single_transaction_and_integrity(client, make_investor):
+    inv = make_investor()
+    resp = _post(
+        client,
+        f"/api/investors/{inv.id}/transactions",
+        {
+            "security_type": "equity",
+            "name": "TCS",
+            "symbol": "TCS",
+            "isin": "INE467B01029",
+            "folio_number": "1208160000000002",
+            "broker": "ZERODHA",
+            "date": "2024-03-01",
+            "transaction_type": "buy",
+            "units": "5",
+            "price": "3800",
+        },
+    )
+    assert resp.status_code == 201
+    assert resp.json()["source"] == "manual"
+
+    assert len(client.get(f"/api/investors/{inv.id}/transactions").json()) == 1
+    statuses = client.get(f"/api/investors/{inv.id}/integrity").json()
+    assert statuses[0]["status"] == "full_history"
