@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
@@ -10,11 +10,10 @@ import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import AllocationDonut from '@/components/charts/AllocationDonut.vue'
 import PortfolioValueChart from '@/components/charts/PortfolioValueChart.vue'
-import { useDashboard } from '@/composables/useDashboard'
-import { useIntegrity } from '@/composables/useIntegrity'
+import { useDashboard, type RangeKey } from '@/composables/useDashboard'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
-import { formatInr } from '@/utils/format'
+import { formatInr, formatUnits } from '@/utils/format'
 
 const route = useRoute()
 const roster = useRosterStore()
@@ -27,24 +26,15 @@ const investorId = computed(() => {
 })
 const investorName = computed(() => roster.investorName(investorId.value) ?? 'Investor')
 
-const { summary, seedIntegrityRollup } = useDashboard(investorId)
-const integrity = useIntegrity(investorId)
-
-// Prefer live integrity; fall back to seed until the backend responds.
-const rollup = computed(() => (integrity.loaded.value ? integrity.rollup.value : seedIntegrityRollup))
+// Live summary + net-worth series; the range toggle re-fetches the series.
+const { summary, rollup, range, setRange } = useDashboard(investorId)
 const integrityTo = computed(() => ({ name: 'import', params: { investorId: investorId.value } }))
 
-// Range toggle actually slices the value series so it's never a dead control.
-const ranges = [
-  { label: '6M', value: 7 },
-  { label: '1Y', value: 13 },
-  { label: 'All', value: 999 },
+const ranges: { label: string; value: RangeKey }[] = [
+  { label: '6M', value: '6M' },
+  { label: '1Y', value: '1Y' },
+  { label: 'All', value: 'All' },
 ]
-const range = ref(13)
-const valueSeries = computed(() => {
-  const s = summary.value.valueSeries
-  return s.slice(Math.max(0, s.length - range.value))
-})
 </script>
 
 <template>
@@ -57,15 +47,7 @@ const valueSeries = computed(() => {
     </header>
 
     <div class="bento">
-      <MetricCard
-        class="span-6 hero-card"
-        label="Net worth"
-        :value="summary.netWorth"
-        :delta-amount="summary.dayChangeAmount"
-        :delta-percent="summary.dayChangePercent"
-        hero
-        count-up
-      >
+      <MetricCard class="span-6 hero-card" label="Net worth" :value="summary.netWorth" hero count-up>
         <p class="hero-note">
           Invested {{ formatInr(summary.invested) }} ·
           <span class="total-return">
@@ -75,7 +57,13 @@ const valueSeries = computed(() => {
         </p>
       </MetricCard>
 
-      <MetricCard class="span-3" label="XIRR (annualised)" :value="summary.xirr" format="percent" />
+      <MetricCard
+        class="span-3"
+        label="XIRR (annualised)"
+        :value="summary.xirr"
+        format="percent"
+        :display="summary.xirr === null ? '—' : undefined"
+      />
 
       <IntegrityHealthCard class="span-3" :rollup="rollup" :review-to="integrityTo" />
 
@@ -87,9 +75,17 @@ const valueSeries = computed(() => {
       <article class="span-8 card chart-card">
         <div class="chart-head">
           <h2>Portfolio value</h2>
-          <SelectButton v-model="range" :options="ranges" option-label="label" option-value="value" :allow-empty="false" size="small" />
+          <SelectButton
+            :model-value="range"
+            :options="ranges"
+            option-label="label"
+            option-value="value"
+            :allow-empty="false"
+            size="small"
+            @update:model-value="(v: RangeKey | null) => v && setRange(v)"
+          />
         </div>
-        <PortfolioValueChart :data="valueSeries" />
+        <PortfolioValueChart :data="summary.valueSeries" />
       </article>
 
       <article class="span-12 card">
@@ -106,10 +102,8 @@ const valueSeries = computed(() => {
           <Column header="Value" class="num">
             <template #body="{ data }">{{ formatInr(data.value) }}</template>
           </Column>
-          <Column header="Return" class="num">
-            <template #body="{ data }">
-              <DeltaChip :percent="data.returnPct" :value="data.returnPct" size="sm" />
-            </template>
+          <Column header="Units" class="num">
+            <template #body="{ data }">{{ formatUnits(data.units) }}</template>
           </Column>
           <Column header="Integrity">
             <template #body="{ data }">

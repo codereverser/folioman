@@ -98,6 +98,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/families/{family_id}/value-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Family Value Series Endpoint
+         * @description Family-wide net-worth-over-time, aggregated across the family's investors.
+         */
+        get: operations["folioman_app_api_families_family_value_series_endpoint"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/": {
         parameters: {
             query?: never;
@@ -379,6 +399,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/value-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Investor Value Series
+         * @description Net-worth-over-time, reconstructed from the ledger + NAV history. The final
+         *     point matches the point-in-time ``/summary`` value for the same ``to`` date.
+         */
+        get: operations["folioman_app_api_investors_investor_value_series"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -414,6 +455,8 @@ export interface components {
             top_holdings: components["schemas"]["HoldingValueRow"][];
             /** Total Inr */
             total_inr: string;
+            /** Xirr */
+            xirr?: number | null;
         };
         /** FamilyDetailOut */
         FamilyDetailOut: {
@@ -599,6 +642,8 @@ export interface components {
              * Format: date
              */
             as_of: string;
+            /** Asset Mix */
+            asset_mix?: components["schemas"]["AssetMixRow"][];
             /** Holdings Count */
             holdings_count: number;
             /** Investor Id */
@@ -613,8 +658,12 @@ export interface components {
             stale_count: number;
             /** Tax Ready Count */
             tax_ready_count: number;
+            /** Top Holdings */
+            top_holdings?: components["schemas"]["HoldingValueRow"][];
             /** Total Inr */
             total_inr: string;
+            /** Xirr */
+            xirr?: number | null;
         };
         /** InvestorUpdate */
         InvestorUpdate: {
@@ -742,6 +791,11 @@ export interface components {
             isin: string;
             /** Name */
             name: string;
+            /**
+             * Narration
+             * @default
+             */
+            narration: string;
             /** Price */
             price: number | string;
             /**
@@ -787,6 +841,8 @@ export interface components {
             id: number;
             /** Investor Id */
             investor_id: number;
+            /** Narration */
+            narration: string;
             /** Nav Or Price */
             nav_or_price: string;
             /** Security Id */
@@ -799,6 +855,47 @@ export interface components {
             transaction_type: string;
             /** Units */
             units: string;
+        };
+        /**
+         * ValueSeriesOut
+         * @description Reconstructed net-worth-over-time series for an investor or family.
+         */
+        ValueSeriesOut: {
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Family Id */
+            family_id?: number | null;
+            /** Granularity */
+            granularity: string;
+            /** Investor Id */
+            investor_id?: number | null;
+            /** Points */
+            points: components["schemas"]["ValueSeriesPoint"][];
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+        };
+        /**
+         * ValueSeriesPoint
+         * @description One sampled date in the net-worth time series.
+         */
+        ValueSeriesPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Invested Inr */
+            invested_inr: string;
+            /** Stale */
+            stale: boolean;
+            /** Value Inr */
+            value_inr: string;
         };
     };
     responses: never;
@@ -989,6 +1086,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FamilyAggregateOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_families_family_value_series_endpoint: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+                granularity?: "daily" | "weekly" | "monthly";
+            };
+            header?: never;
+            path: {
+                family_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValueSeriesOut"];
                 };
             };
         };
@@ -1451,6 +1574,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_investors_investor_value_series: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+                granularity?: "daily" | "weekly" | "monthly";
+            };
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValueSeriesOut"];
                 };
             };
         };
