@@ -1,0 +1,150 @@
+"""Shared model factories for app tests.
+
+Exposed as pytest fixtures returning factory callables (the idiomatic
+pytest-django pattern — DB-bound via the ``db`` fixture, no import gymnastics).
+Sensible unique-ish defaults keep tests terse; pass kwargs to override.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import itertools
+from collections.abc import Callable
+from decimal import Decimal
+
+import pytest
+from folioman_app.models import (
+    Family,
+    Folio,
+    Holding,
+    Investor,
+    Security,
+    Transaction,
+)
+from folioman_core.models import (
+    FolioType,
+    HoldingSource,
+    SecurityType,
+    TransactionSource,
+    TransactionType,
+)
+
+_seq = itertools.count(1)
+
+
+@pytest.fixture(autouse=True)
+def _local_auth_mode(settings):
+    """Default every test to local (no-login) auth, independent of the settings
+    module — so the suite behaves identically on SQLite (base) and Postgres
+    (server, which forces jwt). The dedicated JWT tests opt back in explicitly."""
+    settings.FOLIOMAN_API_AUTH = "local"
+
+
+@pytest.fixture
+def user(db):
+    """The single local advisor user — the one local-mode API auth resolves, so
+    factory-created and API-created rows share an owner and are mutually visible."""
+    from folioman_app.api.auth import get_local_user
+
+    return get_local_user()
+
+
+@pytest.fixture
+def make_family(user) -> Callable[..., Family]:
+    def _make(**kw) -> Family:
+        kw.setdefault("name", f"Family {next(_seq)}")
+        kw.setdefault("owned_by", user)
+        return Family.objects.create(**kw)
+
+    return _make
+
+
+@pytest.fixture
+def make_investor(user) -> Callable[..., Investor]:
+    def _make(**kw) -> Investor:
+        kw.setdefault("name", f"Investor {next(_seq)}")
+        kw.setdefault("owned_by", user)
+        return Investor.objects.create(**kw)
+
+    return _make
+
+
+@pytest.fixture
+def make_security(db) -> Callable[..., Security]:
+    def _make(**kw) -> Security:
+        kw.setdefault("security_type", SecurityType.MF.value)
+        n = next(_seq)
+        kw.setdefault("name", f"Fund {n}")
+        if kw["security_type"] == SecurityType.MF.value and "isin" not in kw:
+            kw.setdefault("amfi_code", f"1{n:05d}")
+        return Security.objects.create(**kw)
+
+    return _make
+
+
+@pytest.fixture
+def make_folio(make_investor) -> Callable[..., Folio]:
+    def _make(investor: Investor | None = None, **kw) -> Folio:
+        kw.setdefault("folio_type", FolioType.MF.value)
+        kw.setdefault("number", f"FOLIO{next(_seq)}")
+        return Folio.objects.create(investor=investor or make_investor(), **kw)
+
+    return _make
+
+
+@pytest.fixture
+def make_transaction(make_investor, make_security, make_folio) -> Callable[..., Transaction]:
+    # One default folio per investor so buys/sells for the same investor land in
+    # the same (per-folio) bucket; pass folio=... explicitly for multi-folio cases.
+    _default_folio: dict[int, Folio] = {}
+
+    def _make(
+        investor: Investor | None = None,
+        security: Security | None = None,
+        folio: Folio | None = None,
+        **kw,
+    ) -> Transaction:
+        inv = investor or make_investor()
+        if folio is None:
+            folio = _default_folio.get(inv.id)
+            if folio is None:
+                folio = make_folio(investor=inv)
+                _default_folio[inv.id] = folio
+        kw.setdefault("date", dt.date(2025, 1, 1))
+        kw.setdefault("transaction_type", TransactionType.BUY.value)
+        kw.setdefault("units", Decimal("100"))
+        kw.setdefault("nav_or_price", Decimal("10"))
+        kw.setdefault("source", TransactionSource.CAS_PDF.value)
+        return Transaction.objects.create(
+            investor=inv,
+            security=security or make_security(),
+            folio=folio,
+            **kw,
+        )
+
+    return _make
+
+
+@pytest.fixture
+def make_holding(make_investor, make_security) -> Callable[..., Holding]:
+    def _make(investor: Investor | None = None, security: Security | None = None, **kw) -> Holding:
+        kw.setdefault("as_of_date", dt.date(2025, 6, 1))
+        kw.setdefault("units", Decimal("100"))
+        kw.setdefault("source", HoldingSource.MANUAL.value)
+        return Holding.objects.create(
+            investor=investor or make_investor(),
+            security=security or make_security(),
+            **kw,
+        )
+
+    return _make
+
+
+@pytest.fixture
+def investor(make_investor) -> Investor:
+    return make_investor()
+
+
+@pytest.fixture
+def security(make_security) -> Security:
+    return make_security()
