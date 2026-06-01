@@ -1,0 +1,135 @@
+/*
+ * Folioman app design tokens.
+ *
+ * These complement the PrimeVue preset (folioman-preset.ts) with values PrimeVue
+ * doesn't own: gains/losses, integrity states, the data-viz palette, fonts,
+ * spacing, radius, elevation, motion.
+ *
+ * Light is the :root default; .dark on <html> swaps the theme-aware values.
+ * Green/red are reserved exclusively for gains/losses — never decoration.
+ */
+
+:root {
+  /* fonts (bundled via @fontsource/ibm-plex-* — never a CDN, for privacy) */
+  --fm-font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --fm-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* spacing — 4px base */
+  --fm-space-1: 0.25rem;
+  --fm-space-2: 0.5rem;
+  --fm-space-3: 0.75rem;
+  --fm-space-4: 1rem;
+  --fm-space-5: 1.25rem;
+  --fm-space-6: 1.5rem;
+  --fm-space-8: 2rem;
+  --fm-space-10: 2.5rem;
+  --fm-space-12: 3rem;
+
+  /* radius */
+  --fm-radius-sm: 6px;
+  --fm-radius-md: 10px;
+  --fm-radius-lg: 14px;
+  --fm-radius-xl: 20px;
+  --fm-radius-pill: 999px;
+
+  /* motion */
+  --fm-dur-fast: 120ms;
+  --fm-dur: 180ms;
+  --fm-dur-slow: 240ms;
+  --fm-ease: cubic-bezier(0.2, 0, 0, 1);
+
+  /* layout */
+  --fm-content-max: 1440px;
+
+  /* --- light theme (default) --- */
+  --fm-ground: #f6f8fb;
+  --fm-surface: #ffffff;
+  --fm-surface-raised: #f1f5f9;
+  --fm-surface-overlay: #ffffff;
+  --fm-border-subtle: #eef2f7;
+  --fm-border: #e2e8f0;
+  --fm-text: #0f172a;
+  --fm-text-muted: #475569;
+  --fm-text-subtle: #64748b;
+
+  --fm-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --fm-shadow-md: 0 4px 16px rgba(15, 23, 42, 0.1);
+  --fm-shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+
+  /* gains / losses (theme-aware, ≥4.5:1 on the canvas) */
+  --fm-gain: #15803d;
+  --fm-gain-bg: #dcfce7;
+  --fm-loss: #b91c1c;
+  --fm-loss-bg: #fee2e2;
+
+  /* integrity — teal = "Folioman-verified" */
+  --fm-verified: #0f766e;
+  --fm-verified-bg: #f0fdfa;
+  --fm-warn: #b45309;
+  --fm-warn-bg: #fef3c7;
+  --fm-critical: #be123c;
+  --fm-critical-bg: #ffe4e6;
+  --fm-ack: #64748b;
+
+  /* asset-class data-viz palette (fixed/semantic) */
+  --fm-asset-equity: #14b8a6;
+  --fm-asset-debt: #3b82f6;
+  --fm-asset-gold: #f59e0b;
+  --fm-asset-cash: #64748b;
+  --fm-asset-realestate: #8b5cf6;
+  --fm-asset-crypto: #d946ef;
+  --fm-asset-intl: #22d3ee;
+}
+
+.dark {
+  --fm-ground: #0b1120;
+  --fm-surface: #131c2e;
+  --fm-surface-raised: #1b2740;
+  --fm-surface-overlay: #1f2c46;
+  --fm-border-subtle: #1e293b;
+  --fm-border: #2a3a55;
+  --fm-text: #e8edf4;
+  --fm-text-muted: #94a3b8;
+  --fm-text-subtle: #64748b;
+
+  --fm-shadow-sm: 0 1px 2px rgba(2, 6, 23, 0.4);
+  --fm-shadow-md: 0 4px 16px rgba(2, 6, 23, 0.45);
+  --fm-shadow-lg: 0 12px 32px rgba(2, 6, 23, 0.5);
+
+  --fm-gain: #4ade80;
+  --fm-gain-bg: rgba(74, 222, 128, 0.14);
+  --fm-loss: #f87171;
+  --fm-loss-bg: rgba(248, 113, 113, 0.14);
+
+  --fm-verified: #2dd4bf;
+  --fm-verified-bg: rgba(20, 184, 166, 0.14);
+  --fm-warn: #fbbf24;
+  --fm-warn-bg: rgba(251, 191, 36, 0.14);
+  --fm-critical: #fb7185;
+  --fm-critical-bg: rgba(251, 113, 133, 0.14);
+  --fm-ack: #64748b;
+
+  --fm-asset-equity: #2dd4bf;
+  --fm-asset-debt: #60a5fa;
+  --fm-asset-gold: #fbbf24;
+  --fm-asset-cash: #94a3b8;
+  --fm-asset-realestate: #a78bfa;
+  --fm-asset-crypto: #e879f9;
+  --fm-asset-intl: #67e8f9;
+}
+
+/* numbers align in columns and don't jitter on count-up */
+.fm-tnum,
+table,
+.p-datatable {
+  font-feature-settings: 'tnum' 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
