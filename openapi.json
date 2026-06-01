@@ -33,6 +33,57 @@
         "title": "AssetMixRow",
         "type": "object"
       },
+      "CasPreviewOut": {
+        "description": "Owner identity parsed from an uploaded CAS, before anything is persisted.\n\nLets the UI confirm who the statement belongs to (and whether it matches an\nexisting investor) before the import creates or attaches. Only a *masked* PAN\nis returned \u2014 the full PAN is never sent back to the client.",
+        "properties": {
+          "investor_email": {
+            "title": "Investor Email",
+            "type": "string"
+          },
+          "investor_name": {
+            "title": "Investor Name",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "match_investor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Investor Id"
+          },
+          "match_investor_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Investor Name"
+          },
+          "pan_masked": {
+            "title": "Pan Masked",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "investor_name",
+          "investor_email",
+          "pan_masked"
+        ],
+        "title": "CasPreviewOut",
+        "type": "object"
+      },
       "FamilyAggregateOut": {
         "properties": {
           "as_of": {
@@ -1639,6 +1690,109 @@
         ]
       }
     },
+    "/api/imports/cas": {
+      "post": {
+        "description": "Import a CAS, resolving (or creating) its investor by PAN.\n\nAuto-detects MF CAS vs NSDL/CDSL eCAS. An eCAS that would *remove* securities\nreturns the job at status ``needs_confirmation`` with ``result.removals`` and\npersists nothing \u2014 resubmit with ``confirm=true`` to apply. A PAN-less\nstatement is rejected (422); nothing is created.",
+        "operationId": "folioman_app_api_imports_import_cas",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "confirm": {
+                    "default": false,
+                    "title": "Confirm",
+                    "type": "boolean"
+                  },
+                  "file": {
+                    "format": "binary",
+                    "title": "File",
+                    "type": "string"
+                  },
+                  "password": {
+                    "default": "",
+                    "title": "Password",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "title": "MultiPartBodyParams",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobOut"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        },
+        "summary": "Import Cas",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/imports/cas/preview": {
+      "post": {
+        "description": "Parse a CAS and report whose it is \u2014 without persisting anything.\n\nReturns the owner's name + masked PAN and, when the PAN already matches an\ninvestor, that investor's id/name so the UI can offer 'attach' vs 'create'.",
+        "operationId": "folioman_app_api_imports_preview_cas",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "title": "File",
+                    "type": "string"
+                  },
+                  "password": {
+                    "default": "",
+                    "title": "Password",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "title": "MultiPartBodyParams",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CasPreviewOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Preview Cas",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
     "/api/investors/": {
       "get": {
         "operationId": "folioman_app_api_investors_list_investors",
@@ -1978,70 +2132,6 @@
           }
         },
         "summary": "List Import Jobs",
-        "tags": [
-          "imports"
-        ]
-      }
-    },
-    "/api/investors/{investor_id}/imports/cas": {
-      "post": {
-        "description": "Import any CAS PDF \u2014 a CAMS/KFin MF CAS or an NSDL/CDSL eCAS.\n\nThe type is auto-detected: an MF CAS becomes a transaction ledger; an eCAS is\nthe depository's authoritative snapshot (refreshes holdings). If applying an\neCAS would *remove* securities, the job returns status ``needs_confirmation``\nwith ``result.removals`` and persists nothing \u2014 resubmit with ``confirm=true``\nto apply. An eCAS older than the latest on file is rejected.",
-        "operationId": "folioman_app_api_imports_import_cas",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "investor_id",
-            "required": true,
-            "schema": {
-              "title": "Investor Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "properties": {
-                  "confirm": {
-                    "default": false,
-                    "title": "Confirm",
-                    "type": "boolean"
-                  },
-                  "file": {
-                    "format": "binary",
-                    "title": "File",
-                    "type": "string"
-                  },
-                  "password": {
-                    "default": "",
-                    "title": "Password",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "file"
-                ],
-                "title": "MultiPartBodyParams",
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ImportJobOut"
-                }
-              }
-            },
-            "description": "Created"
-          }
-        },
-        "summary": "Import Cas",
         "tags": [
           "imports"
         ]

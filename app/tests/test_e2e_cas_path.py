@@ -99,36 +99,34 @@ def _post(client, url, payload=None):
     return client.post(url, data=payload or {}, content_type="application/json")
 
 
-def test_cas_pdf_full_chain_to_112a(client, make_investor, monkeypatch):
-    import folioman_app.tasks.import_cas as mod
-    from folioman_core.cas_reader import ParsedCas
-
-    monkeypatch.setattr(mod, "read_cas", lambda _content, _password: ParsedCas(mf=_statement()))
-    inv = make_investor()
+def test_cas_pdf_full_chain_to_112a(client, patch_cas, make_parsed_cas):
+    # The CAS identifies its own investor by PAN — no investor is created up front.
+    patch_cas(make_parsed_cas(mf=_statement()))
 
     # 1) Upload the CAS PDF — the unified import auto-detects MF CAS + persists.
     upload = SimpleUploadedFile("cams.pdf", b"%PDF synthetic")
-    resp = client.post(f"/api/investors/{inv.id}/imports/cas", {"file": upload, "password": "x"})
+    resp = client.post("/api/imports/cas", {"file": upload, "password": "x"})
     assert resp.status_code == 201
     job = resp.json()
     assert job["status"] == "success"
     assert job["result"]["transactions_created"] == 4
     assert job["result"]["securities"] == 2
+    inv_id = job["investor_id"]  # resolved/created from the statement PAN
 
     # 2) Transactions landed (buy + sell per scheme).
-    txns = client.get(f"/api/investors/{inv.id}/transactions").json()
+    txns = client.get(f"/api/investors/{inv_id}/transactions").json()
     assert len(txns) == 4
 
     # 3) Reconcile — MF CAS is transaction-only, so both funds are full-history
     #    and tax-safe (no demat snapshot to disagree with).
-    statuses = client.post(f"/api/investors/{inv.id}/integrity/recompute").json()
+    statuses = client.post(f"/api/investors/{inv_id}/integrity/recompute").json()
     assert len(statuses) == 2
     assert all(s["status"] == "full_history" for s in statuses)
     assert sum(1 for s in statuses if s["tax_safe"]) == 2
 
     # 4) Schedule 112A preview — only the equity-oriented long-term sale qualifies;
     #    the (tax-safe) debt disposal is filtered out by eligibility.
-    body = _post(client, f"/api/investors/{inv.id}/exports/schedule-112a", {"fy": "2024-25"}).json()
+    body = _post(client, f"/api/investors/{inv_id}/exports/schedule-112a", {"fy": "2024-25"}).json()
     assert body["row_count"] == 1
     row = body["rows"][0]
     assert row["ISIN Code(2)"] == _EQUITY_ISIN

@@ -142,6 +142,22 @@ class ValueSeriesOut(Schema):
     points: list[ValueSeriesPoint]
 
 
+class CasPreviewOut(Schema):
+    """Owner identity parsed from an uploaded CAS, before anything is persisted.
+
+    Lets the UI confirm who the statement belongs to (and whether it matches an
+    existing investor) before the import creates or attaches. Only a *masked* PAN
+    is returned — the full PAN is never sent back to the client.
+    """
+
+    kind: str  # "mf_cas" | "ecas"
+    investor_name: str
+    investor_email: str
+    pan_masked: str
+    match_investor_id: int | None = None  # set when the PAN matches an existing investor
+    match_investor_name: str | None = None
+
+
 class ImportJobOut(Schema):
     id: int
     investor_id: int

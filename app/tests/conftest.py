@@ -141,6 +141,39 @@ def make_holding(make_investor, make_security) -> Callable[..., Holding]:
 
 
 @pytest.fixture
+def make_parsed_cas() -> Callable[..., object]:
+    """Build a ``ParsedCas`` carrying an owner identity (PAN), as ``read_cas`` now
+    returns. The PAN drives investor resolution on import; override it to test the
+    attach-vs-create paths."""
+    from folioman_core.cas_reader import ParsedCas
+    from folioman_core.models.cas import CasInvestorIdentity
+
+    def _make(*, mf=None, ecas=None, name="Test Investor", email="", pan="ABCDE1234F") -> object:
+        return ParsedCas(
+            mf=mf,
+            ecas=ecas,
+            investor=CasInvestorIdentity(name=name, email=email, pan=pan),
+        )
+
+    return _make
+
+
+@pytest.fixture
+def patch_cas(monkeypatch) -> Callable[[object], None]:
+    """Serve a fixed ``ParsedCas`` from both seams the CAS import uses: the upload
+    endpoint (which parses for the investor identity) and the job processor (which
+    re-parses to persist). Pass the ``ParsedCas`` to return for the upload."""
+    import folioman_app.api.imports as api_mod
+    import folioman_app.tasks.import_cas as task_mod
+
+    def _set(parsed: object) -> None:
+        monkeypatch.setattr(api_mod, "read_cas", lambda _content, _password: parsed)
+        monkeypatch.setattr(task_mod, "read_cas", lambda _content, _password: parsed)
+
+    return _set
+
+
+@pytest.fixture
 def investor(make_investor) -> Investor:
     return make_investor()
 

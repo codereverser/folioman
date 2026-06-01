@@ -19,6 +19,15 @@ def normalize_pan(pan: str) -> str:
     return pan.strip().upper()
 
 
+def mask_pan(pan: str) -> str:
+    """Display form: keep the last 4 characters, mask the rest (``XXXXXX234F``).
+
+    For showing *which* PAN a statement carries without exposing the full value
+    (e.g. the import preview). Never the value we store — that is encrypted."""
+    normalized = normalize_pan(pan)
+    return ("X" * (len(normalized) - 4) + normalized[-4:]) if len(normalized) > 4 else normalized
+
+
 def pan_hash(pan: str) -> str:
     """Keyed (HMAC-SHA256) hash of the normalized PAN, for equality lookup/dedup."""
     return hmac.new(get_key_bytes(), normalize_pan(pan).encode(), hashlib.sha256).hexdigest()

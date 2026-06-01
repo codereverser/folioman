@@ -236,22 +236,17 @@ def test_ledger_and_ecas_in_same_folio_reconcile(make_investor):
     assert status.tax_safe is True
 
 
-def test_import_via_api_end_to_end(client, make_investor, monkeypatch):
+def test_import_via_api_end_to_end(client, patch_cas, make_parsed_cas):
     # The unified /imports/cas endpoint auto-detects an eCAS and routes it to
-    # holdings persistence, with a notice that it's a net-worth snapshot.
-    import folioman_app.tasks.import_cas as mod
-    from folioman_core.cas_reader import ParsedCas
-
-    monkeypatch.setattr(
-        mod, "read_cas", lambda _content, _password: ParsedCas(ecas=_cdsl_statement())
-    )
-    inv = make_investor()
+    # holdings persistence, with a notice that it's a net-worth snapshot. The
+    # investor is resolved/created from the statement's (primary owner) PAN.
+    patch_cas(make_parsed_cas(ecas=_cdsl_statement()))
     upload = SimpleUploadedFile("ecas.pdf", b"%PDF fake")
-    resp = client.post(f"/api/investors/{inv.id}/imports/cas", {"file": upload, "password": "x"})
+    resp = client.post("/api/imports/cas", {"file": upload, "password": "x"})
     assert resp.status_code == 201
     body = resp.json()
     assert body["status"] == "success"
     assert body["result"]["detected"] == "ecas"
     assert body["result"]["notice"]
     assert body["result"]["holdings_created"] == 2
-    assert Holding.objects.filter(investor=inv).count() == 2
+    assert Holding.objects.filter(investor_id=body["investor_id"]).count() == 2

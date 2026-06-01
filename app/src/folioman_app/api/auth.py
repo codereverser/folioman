@@ -24,6 +24,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
+from folioman_core.models.cas import CasInvestorIdentity
 
 from folioman_app.models import Family, Investor
 
@@ -83,3 +84,23 @@ def families_for(request: HttpRequest):
 def get_owned_family(request: HttpRequest, family_id: int) -> Family:
     """Fetch one owned family or 404."""
     return get_object_or_404(Family, id=family_id, owned_by=request.auth)
+
+
+def resolve_or_create_investor(user, identity: CasInvestorIdentity) -> tuple[Investor, bool]:
+    """Find the advisor's investor matching the CAS PAN, or create one from it.
+
+    Matches on the keyed ``pan_hash`` within ``owned_by`` (so a re-import of any
+    statement for the same PAN routes to the same investor). On a miss, creates an
+    investor from the statement identity — name + email + the full PAN, encrypted
+    via ``set_pan``. Returns ``(investor, created)``. The caller must ensure
+    ``identity.pan`` is non-empty (a PAN-less statement is rejected upstream).
+    """
+    from folioman_app.security.pan import pan_hash
+
+    investor = Investor.objects.filter(owned_by=user, pan_hash=pan_hash(identity.pan)).first()
+    if investor is not None:
+        return investor, False
+    investor = Investor(owned_by=user, name=identity.name, email=identity.email)
+    investor.set_pan(identity.pan)
+    investor.save()
+    return investor, True

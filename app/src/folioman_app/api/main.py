@@ -14,6 +14,7 @@ from ninja import NinjaAPI
 from folioman_app.api.auth import FoliomanAuth
 from folioman_app.api.exports import router as exports_router
 from folioman_app.api.families import router as families_router
+from folioman_app.api.imports import cas_router
 from folioman_app.api.imports import router as imports_router
 from folioman_app.api.integrity import router as integrity_router
 from folioman_app.api.investors import router as investors_router
@@ -23,7 +24,8 @@ api = NinjaAPI(title="Folioman API", version="1.0.0", auth=FoliomanAuth())
 
 api.add_router("/auth", tokens_router)  # public login + refresh (server mode)
 api.add_router("/investors", investors_router)
-api.add_router("/investors", imports_router)  # /investors/{id}/imports/...
+api.add_router("/imports", cas_router)  # /imports/cas, /imports/cas/preview (PAN-resolved)
+api.add_router("/investors", imports_router)  # /investors/{id}/imports/... (job reads + csv)
 api.add_router("/investors", exports_router)  # /investors/{id}/exports/...
 api.add_router("/investors", integrity_router)  # /investors/{id}/integrity/...
 api.add_router("/families", families_router)

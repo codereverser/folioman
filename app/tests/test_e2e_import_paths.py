@@ -65,24 +65,22 @@ def _ecas_two_holdings() -> EcasStatement:
     )
 
 
-def test_ecas_path_holdings_then_snapshot_only_integrity(client, make_investor, monkeypatch):
-    import folioman_app.tasks.import_cas as mod
-    from folioman_core.cas_reader import ParsedCas
+def test_ecas_path_holdings_then_snapshot_only_integrity(client, patch_cas, make_parsed_cas):
+    # The eCAS identifies its own investor by (primary owner) PAN.
+    patch_cas(make_parsed_cas(ecas=_ecas_two_holdings()))
 
-    monkeypatch.setattr(
-        mod, "read_cas", lambda _content, _password: ParsedCas(ecas=_ecas_two_holdings())
-    )
-    inv = make_investor()
-
-    resp = _upload(client, inv.id, "cas", "ecas.pdf", b"%PDF synthetic", password="x")
+    upload = SimpleUploadedFile("ecas.pdf", b"%PDF synthetic")
+    resp = client.post("/api/imports/cas", {"file": upload, "password": "x"})
     assert resp.status_code == 201
-    assert resp.json()["status"] == "success"
-    assert resp.json()["result"]["detected"] == "ecas"
-    assert resp.json()["result"]["holdings_created"] == 2
-    assert Holding.objects.filter(investor=inv).count() == 2
+    body = resp.json()
+    assert body["status"] == "success"
+    assert body["result"]["detected"] == "ecas"
+    assert body["result"]["holdings_created"] == 2
+    inv_id = body["investor_id"]
+    assert Holding.objects.filter(investor_id=inv_id).count() == 2
 
     # Holdings but no transactions -> snapshot only, not tax-safe (no cost basis).
-    statuses = client.get(f"/api/investors/{inv.id}/integrity").json()
+    statuses = client.get(f"/api/investors/{inv_id}/integrity").json()
     assert len(statuses) == 2
     assert all(s["status"] == "snapshot_only" for s in statuses)
     assert all(s["tax_safe"] is False for s in statuses)
@@ -108,11 +106,14 @@ def _ecas_reliance(units: str) -> EcasStatement:
 _CSV_HEADER = "security_type,name,symbol,isin,date,transaction_type,units,price,amount\n"
 
 
-def test_cross_source_mismatch_withheld_from_112a(client, make_investor, monkeypatch):
-    import folioman_app.tasks.import_cas as cas_mod
-    from folioman_core.cas_reader import ParsedCas
-
+def test_cross_source_mismatch_withheld_from_112a(
+    client, make_investor, patch_cas, make_parsed_cas
+):
     inv = make_investor()
+    # The eCAS upload below resolves to this investor by PAN — set it to match the
+    # statement identity so the cross-source check compares the same investor.
+    inv.set_pan("ABCDE1234F")
+    inv.save()
     # Cost history via manual entry: net 60 units, incl. a long-term sale (a real
     # LTCG). (CSV import is disabled until the multi-asset phase; manual entry is
     # the live equity-transaction path.)
@@ -157,10 +158,9 @@ def test_cross_source_mismatch_withheld_from_112a(client, make_investor, monkeyp
     )
 
     # Demat eCAS says 50 for the same ISIN -> the sources disagree.
-    monkeypatch.setattr(
-        cas_mod, "read_cas", lambda _content, _password: ParsedCas(ecas=_ecas_reliance("50"))
-    )
-    assert _upload(client, inv.id, "cas", "ecas.pdf", b"%PDF", password="x").status_code == 201
+    patch_cas(make_parsed_cas(ecas=_ecas_reliance("50")))
+    upload = SimpleUploadedFile("ecas.pdf", b"%PDF")
+    assert client.post("/api/imports/cas", {"file": upload, "password": "x"}).status_code == 201
 
     statuses = client.get(f"/api/investors/{inv.id}/integrity").json()
     assert len(statuses) == 1

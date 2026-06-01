@@ -17,6 +17,7 @@ from folioman_app.models import (
     AMC,
     Folio,
     Holding,
+    Investor,
     Security,
     SecurityIntegrityStatus,
     Transaction,
@@ -129,21 +130,15 @@ def test_incomplete_history_scheme_snapshotted_not_ledgered(make_investor):
     assert status.tax_safe is False
 
 
-def test_incomplete_history_marks_job_completed_with_warnings(client, make_investor, monkeypatch):
-    import folioman_app.tasks.import_cas as mod
-    from folioman_core.cas_reader import ParsedCas
-
-    monkeypatch.setattr(
-        mod, "read_cas", lambda _content, _password: ParsedCas(mf=_partial_statement())
-    )
-    inv = make_investor()
+def test_incomplete_history_marks_job_completed_with_warnings(client, patch_cas, make_parsed_cas):
+    patch_cas(make_parsed_cas(mf=_partial_statement()))
     upload = SimpleUploadedFile("cams.pdf", b"%PDF fake bytes")
-    resp = client.post(f"/api/investors/{inv.id}/imports/cas", {"file": upload, "password": "x"})
+    resp = client.post("/api/imports/cas", {"file": upload, "password": "x"})
     assert resp.status_code == 201
     body = resp.json()
     assert body["status"] == "completed_with_warnings"
     assert body["result"]["incomplete_history"]
-    assert Transaction.objects.filter(investor=inv).count() == 0
+    assert Transaction.objects.filter(investor_id=body["investor_id"]).count() == 0
 
 
 def _full_statement_for_partial() -> MfCasStatement:
@@ -558,17 +553,15 @@ def test_persist_runs_reconcile_full_history(make_investor):
     assert status.units_from_transactions == Decimal("60")  # 100 buy - 40 sell
 
 
-def test_malformed_pdf_fails_job_gracefully(client, make_investor):
-    # Garbage bytes reach casparser, which errors -> the job records FAILED
-    # (no 500), proving the runner contains parse failures.
-    inv = make_investor()
+def test_malformed_pdf_rejected_before_any_investor_is_touched(client):
+    # Garbage bytes reach casparser, which errors. Because the investor is resolved
+    # from the (unparseable) file, the upload is rejected up front with a 4xx — no
+    # job, no investor, nothing created (the runner still can't 500).
     upload = SimpleUploadedFile("not-a.pdf", b"definitely not a pdf")
-    resp = client.post(f"/api/investors/{inv.id}/imports/cas", {"file": upload, "password": ""})
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["status"] == "failed"
-    assert body["error"]  # a parse error message, recorded on the job
-    assert Transaction.objects.filter(investor=inv).count() == 0
+    resp = client.post("/api/imports/cas", {"file": upload, "password": ""})
+    assert resp.status_code == 422
+    assert Transaction.objects.count() == 0
+    assert Investor.objects.count() == 0
 
 
 def test_later_import_does_not_wipe_equity_oriented_metadata(make_investor):
@@ -627,18 +620,19 @@ def test_upsert_does_not_steal_isin_owned_by_another_row():
     assert Security.objects.get(pk=a.pk).isin == isin
 
 
-def test_import_via_api_end_to_end(client, make_investor, monkeypatch):
-    import folioman_app.tasks.import_cas as mod
-    from folioman_core.cas_reader import ParsedCas
-
-    monkeypatch.setattr(mod, "read_cas", lambda _content, _password: ParsedCas(mf=_statement()))
-    inv = make_investor()
+def test_import_via_api_end_to_end(client, patch_cas, make_parsed_cas):
+    # No investor created up front: the upload resolves/creates one from the
+    # statement's PAN, then imports under it.
+    patch_cas(make_parsed_cas(mf=_statement(), name="Asha Rao"))
     upload = SimpleUploadedFile("cams.pdf", b"%PDF fake bytes")
-    resp = client.post(f"/api/investors/{inv.id}/imports/cas", {"file": upload, "password": "x"})
+    resp = client.post("/api/imports/cas", {"file": upload, "password": "x"})
     assert resp.status_code == 201
     body = resp.json()
     assert body["status"] == "success"
     assert body["result"]["detected"] == "mf_cas"
     assert body["result"]["transactions_created"] == 2
+    inv = Investor.objects.get(id=body["investor_id"])
+    assert inv.name == "Asha Rao"  # created from the statement
+    assert inv.has_pan  # PAN captured (encrypted), not returned
     assert Transaction.objects.filter(investor=inv).count() == 2
     assert SecurityIntegrityStatus.objects.filter(investor=inv).count() == 1
