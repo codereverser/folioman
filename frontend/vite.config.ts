@@ -59,4 +59,12 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  // Dev: the SPA is served by Vite and proxies /api to the Django dev server, so
+  // the browser sees one origin (no CORS) — matching production, where Django
+  // serves both. Override the API target with VITE_DEV_API_TARGET if needed.
+  server: {
+    proxy: {
+      '/api': process.env.VITE_DEV_API_TARGET ?? 'http://localhost:8000',
+    },
+  },
 })

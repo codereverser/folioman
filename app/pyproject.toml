@@ -8,6 +8,9 @@ dependencies = [
     "django>=5.2,<5.3",
     "django-ninja>=1.3",
     "cryptography>=43",
+    # Serves the built SPA (hashed assets) from one origin alongside the API, in
+    # both desktop and server modes. Pure Python, so it bundles fine under Nuitka.
+    "whitenoise>=6.6",
 ]
 
 # Server-mode-only runtime deps. The desktop Nuitka build excludes these:

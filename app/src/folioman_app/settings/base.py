@@ -40,9 +40,11 @@ INSTALLED_APPS = [
 
 # Lean middleware: this is a JSON API (Django Ninja), not a server-rendered
 # site. Session/auth/CSRF middleware are intentionally omitted — server-mode auth
-# is JWT. Add back deliberately if a real need appears.
+# is JWT. WhiteNoise (right after SecurityMiddleware, per its docs) serves the
+# built SPA's hashed assets from one origin alongside the API.
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
 
@@ -86,6 +88,23 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# --- Built SPA (single-origin serving) -------------------------------------
+# The Vue build lands in <repo>/frontend/dist. In production WhiteNoise serves
+# its hashed assets (and index.html at /) from that directory, and the SPA
+# fallback in urls.py returns index.html for client-side deep links. In dev the
+# Vite server hosts the SPA and proxies /api here, so this is unused.
+# BASE_DIR = .../app/src/folioman_app → repo root is three parents up. A packaged
+# desktop build sets FOLIOMAN_FRONTEND_DIST explicitly.
+_REPO_ROOT = BASE_DIR.parent.parent.parent
+FRONTEND_DIST = os.environ.get("FOLIOMAN_FRONTEND_DIST") or str(_REPO_ROOT / "frontend" / "dist")
+
+if Path(FRONTEND_DIST).is_dir():
+    # Serve dist/ contents at the site root: /assets/*, /sw.js, /manifest, and
+    # index.html at /. Hashed asset filenames get long-lived immutable caching;
+    # WhiteNoise keeps index.html uncached so new builds are picked up.
+    WHITENOISE_ROOT = FRONTEND_DIST
+    WHITENOISE_INDEX_FILE = True
 
 # --- PAN-at-rest encryption key (security/keys.py) -------------------------
 # Resolution order: FOLIOMAN_FERNET_KEY env -> FERNET_KEY_PATH file (autogen on

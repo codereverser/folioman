@@ -45,6 +45,12 @@ addopts = "-q --import-mode=importlib"
 # (folioman_core has no Django import); they just run under a Django-initialised
 # session and never touch the DB (no `db` fixture / `django_db` mark).
 DJANGO_SETTINGS_MODULE = "folioman_app.settings.base"
+# WhiteNoise warns that STATIC_ROOT is missing — expected under tests (no
+# `collectstatic`); production runs it. The SPA itself is served from
+# WHITENOISE_ROOT, not STATIC_ROOT, so the warning is purely cosmetic here.
+filterwarnings = [
+    "ignore:No directory at:UserWarning",
+]
 # Core coverage (target 80%): pytest core/tests --cov=folioman_core --cov-report=term-missing
 
 [tool.coverage.run]

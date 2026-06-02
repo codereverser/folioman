@@ -33,6 +33,29 @@ archive/   Legacy v1 code — read-only, reference only
 
 See [`BUILD.md`](BUILD.md) for build instructions (TBD).
 
+## Running
+
+**Development** — two servers, one origin in the browser:
+
+```
+make frontend-dev     # Vite on :5173, proxies /api → http://localhost:8000
+uv run app/manage.py runserver   # Django API on :8000
+```
+
+The Vite proxy means the SPA talks to `/api` same-origin, so there's no CORS to
+configure. (Point the proxy elsewhere with `VITE_DEV_API_TARGET`.)
+
+**Production / single origin** — Django serves both the API and the built SPA:
+
+```
+make frontend-build   # → frontend/dist/
+uv run app/manage.py runserver   # / serves the SPA, /api/ the API
+```
+
+WhiteNoise serves the hashed assets from `frontend/dist`, and any non-`/api`
+route falls back to the SPA shell (Vue Router handles it client-side). A packaged
+desktop build can point elsewhere with `FOLIOMAN_FRONTEND_DIST`.
+
 ## Not tax advice
 
 Folioman can build a **capital-gains worksheet** from the transactions you
