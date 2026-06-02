@@ -514,6 +514,11 @@ export interface components {
             day_change_inr?: string | null;
             /** Family Id */
             family_id: number;
+            /**
+             * Folio Count
+             * @default 0
+             */
+            folio_count: number;
             /** Investor Count */
             investor_count: number;
             /** Stale Count */

@@ -5,6 +5,9 @@ import type { ValuePoint } from '@/components/charts/PortfolioValueChart.vue'
 import { useIntegrity } from '@/composables/useIntegrity'
 import { toIntegrityStatus, type IntegrityStatus } from '@/integrity/status'
 import { formatDate } from '@/utils/format'
+import { ASSET_META, RANGES, assetLabel, num, type RangeKey } from '@/utils/portfolio'
+
+export type { RangeKey }
 
 export interface HoldingRow {
   securityId: number
@@ -28,43 +31,6 @@ export interface DashboardSummary {
   allocation: AllocationSlice[]
   valueSeries: ValuePoint[]
   topHoldings: HoldingRow[]
-}
-
-export type RangeKey = '6M' | '1Y' | 'All'
-
-// Each range maps to a value-series window + sampling granularity. "All" reaches
-// back far enough to cover any real portfolio; the leading all-zero points
-// (before the first holding) are trimmed below.
-const RANGES: Record<RangeKey, { from: () => string; granularity: 'daily' | 'weekly' | 'monthly' }> = {
-  '6M': { from: () => monthsAgo(6), granularity: 'monthly' },
-  '1Y': { from: () => monthsAgo(12), granularity: 'monthly' },
-  All: { from: () => '2000-01-01', granularity: 'monthly' },
-}
-
-// Display label + a fixed colour per security type, so donut slices stay
-// semantic. (MF is the common case; the rest get distinct asset-class colours.)
-const ASSET_META: Record<string, { label: string; color: string }> = {
-  mf: { label: 'Mutual funds', color: 'var(--fm-asset-equity)' },
-  equity: { label: 'Stocks', color: 'var(--fm-asset-intl)' },
-  etf: { label: 'ETFs', color: 'var(--fm-asset-gold)' },
-  bond: { label: 'Bonds', color: 'var(--fm-asset-debt)' },
-  fd: { label: 'Fixed deposits', color: 'var(--fm-asset-cash)' },
-  crypto: { label: 'Crypto', color: 'var(--fm-asset-crypto)' },
-  foreign_equity: { label: 'International', color: 'var(--fm-asset-realestate)' },
-}
-function assetLabel(securityType: string): string {
-  return ASSET_META[securityType]?.label ?? securityType
-}
-
-function monthsAgo(n: number): string {
-  const d = new Date()
-  d.setMonth(d.getMonth() - n)
-  return d.toISOString().slice(0, 10)
-}
-
-function num(v: string | number | null | undefined): number {
-  const n = typeof v === 'string' ? Number(v) : (v ?? 0)
-  return Number.isFinite(n) ? n : 0
 }
 
 const EMPTY: DashboardSummary = {
