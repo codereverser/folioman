@@ -88,7 +88,7 @@ def test_list_jobs_for_investor(client, make_investor):
 
 
 def test_csv_upload_is_disabled(client, make_investor):
-    # Generic CSV import is parked until the multi-asset phase: the endpoint
+    # Generic CSV import is parked until the multi-asset release: the endpoint
     # rejects the upload and creates no job.
     inv = make_investor()
     resp = client.post(

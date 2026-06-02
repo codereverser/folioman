@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from ninja import Query, Router, Status
 from ninja.errors import HttpError
@@ -147,7 +148,13 @@ def list_transactions(request, investor_id: int):
 
 @router.post("/{investor_id}/transactions", response={201: TransactionOut})
 def create_transaction(request, investor_id: int, payload: TransactionIn):
-    """Manually add one transaction (security identified inline, upserted)."""
+    """Manually add one transaction (security identified inline, upserted).
+
+    Gated off by default in the first release (CAS/eCAS imports only). Flip
+    ``FOLIOMAN_MANUAL_TXNS=1`` to enable; the logic below is unchanged.
+    """
+    if not settings.MANUAL_TRANSACTIONS_ENABLED:
+        raise HttpError(503, "Manual transaction entry isn't available yet — import a CAS instead.")
     investor = get_owned_investor(request, investor_id)
     try:
         txn = create_manual_transaction(investor, payload.model_dump())

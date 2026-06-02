@@ -239,7 +239,7 @@ def create_manual_transaction(investor, data: dict) -> Transaction:
 
 
 def _csv_disabled(job: ImportJob, content: bytes, password: str, *, confirm: bool = False) -> dict:
-    """Guard: the generic CSV importer is parked until the multi-asset phase.
+    """Guard: the generic CSV importer is parked for the multi-asset release.
 
     Imports are security-specific now — mutual funds via CAS PDF, equities via
     eCAS or per-broker templated CSV (with completeness checks). `process_csv`
@@ -247,7 +247,7 @@ def _csv_disabled(job: ImportJob, content: bytes, password: str, *, confirm: boo
     guard. The HTTP endpoint (`api/imports.py`) is also gated, so a user can't
     reach this path; the guard is defense-in-depth for any internal caller.
     """
-    msg = "CSV import is disabled until the multi-asset phase (mutual funds import via CAS PDF)."
+    msg = "CSV import isn't available yet (mutual funds import via CAS PDF)."
     raise NotImplementedError(msg)
 
 

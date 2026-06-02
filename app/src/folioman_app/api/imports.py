@@ -105,10 +105,11 @@ def import_cas(
 
 @router.post("/{investor_id}/imports/csv", response={201: ImportJobOut})
 def import_csv(request, investor_id: int, file: UploadedFile = File(...)):
-    # Disabled until the multi-asset phase: imports are security-specific now
-    # (mutual funds via CAS PDF; equities via eCAS / per-broker templated CSV).
-    # Endpoint kept so the contract is stable; re-enable by restoring the call.
-    raise HttpError(503, "CSV import is disabled until the multi-asset phase.")
+    # Disabled in the first release: imports are security-specific now (mutual
+    # funds via CAS PDF; equities via eCAS / per-broker templated CSV, which ship
+    # with multi-asset support). Endpoint kept so the contract is stable;
+    # re-enable by restoring the call.
+    raise HttpError(503, "CSV import isn't available yet — import a CAS instead.")
 
 
 @router.get("/{investor_id}/imports", response=list[ImportJobOut])

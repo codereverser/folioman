@@ -438,6 +438,9 @@ export interface paths {
         /**
          * Create Transaction
          * @description Manually add one transaction (security identified inline, upserted).
+         *
+         *     Gated off by default in the first release (CAS/eCAS imports only). Flip
+         *     ``FOLIOMAN_MANUAL_TXNS=1`` to enable; the logic below is unchanged.
          */
         post: operations["folioman_app_api_investors_create_transaction"];
         delete?: never;

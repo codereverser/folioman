@@ -2760,7 +2760,7 @@
         ]
       },
       "post": {
-        "description": "Manually add one transaction (security identified inline, upserted).",
+        "description": "Manually add one transaction (security identified inline, upserted).\n\nGated off by default in the first release (CAS/eCAS imports only). Flip\n``FOLIOMAN_MANUAL_TXNS=1`` to enable; the logic below is unchanged.",
         "operationId": "folioman_app_api_investors_create_transaction",
         "parameters": [
           {

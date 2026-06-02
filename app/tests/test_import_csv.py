@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from folioman_app.models import Security, SecurityIntegrityStatus, Transaction
 from folioman_app.models.jobs import ImportJob, ImportKind
 from folioman_app.tasks.import_csv import process_csv
@@ -19,7 +20,7 @@ _CRYPTO = "crypto,Bitcoin,BTC,,2024-02-01,buy,0.01,4500000,45000\n"
 
 def _run_csv(investor, text: str) -> dict:
     # CSV import is disabled at the HTTP endpoint + job runner until the
-    # multi-asset phase; exercise the preserved parsing logic directly so it
+    # multi-asset release; exercise the preserved parsing logic directly so it
     # stays covered for re-enable.
     job = ImportJob.objects.create(investor=investor, kind=ImportKind.CSV)
     return process_csv(job, text.encode(), "")
@@ -79,7 +80,7 @@ def test_reconcile_failure_keeps_data_and_records_error(make_investor, monkeypat
 def test_csv_rows_are_folio_less_so_not_reconciled(make_investor):
     # The parked generic CSV importer writes folio-less rows; integrity is
     # per-(security, folio), so these aren't reconciled until the templated
-    # per-broker importer (multi-asset phase) attaches a folio. The rows persist.
+    # per-broker importer (multi-asset release) attaches a folio. The rows persist.
     inv = make_investor()
     _run_csv(inv, _HEADER + _EQUITY)
     sec = Security.objects.get(isin="INE002A01018")
@@ -88,23 +89,48 @@ def test_csv_rows_are_folio_less_so_not_reconciled(make_investor):
 
 
 def test_csv_import_endpoint_is_disabled(client, make_investor):
-    # Disabled until the multi-asset phase — the endpoint rejects the upload and
+    # Disabled until the multi-asset release — the endpoint rejects the upload and
     # persists nothing. (process_csv logic is still covered via _run_csv above.)
     inv = make_investor()
     upload = SimpleUploadedFile("txns.csv", (_HEADER + _EQUITY + _CRYPTO).encode())
     resp = client.post(f"/api/investors/{inv.id}/imports/csv", {"file": upload})
     assert resp.status_code == 503
-    assert "disabled" in resp.json()["detail"].lower()
+    assert "csv" in resp.json()["detail"].lower()
     assert Transaction.objects.filter(investor=inv).count() == 0
 
 
 # --- manual transaction entry ----------------------------------------------
+# Authoring is gated off by default in the first release (CAS/eCAS only); these
+# exercise the endpoint with the flag flipped on, plus the disabled-by-default
+# guard. create_manual_transaction() itself stays covered directly elsewhere.
 
 
 def _post(client, url, payload):
     return client.post(url, data=payload, content_type="application/json")
 
 
+def test_manual_transaction_disabled_by_default(client, make_investor):
+    inv = make_investor()
+    resp = _post(
+        client,
+        f"/api/investors/{inv.id}/transactions",
+        {
+            "security_type": "equity",
+            "folio_number": "1208160000000001",
+            "broker": "ZERODHA",
+            "name": "TCS",
+            "isin": "INE467B01029",
+            "date": "2024-03-01",
+            "transaction_type": "buy",
+            "units": "5",
+            "price": "3800",
+        },
+    )
+    assert resp.status_code == 503
+    assert Transaction.objects.filter(investor=inv).count() == 0
+
+
+@override_settings(MANUAL_TRANSACTIONS_ENABLED=True)
 def test_manual_transaction_creates_and_reconciles(client, make_investor):
     inv = make_investor()
     resp = _post(
@@ -131,6 +157,7 @@ def test_manual_transaction_creates_and_reconciles(client, make_investor):
     assert SecurityIntegrityStatus.objects.filter(investor=inv, security=sec).exists()
 
 
+@override_settings(MANUAL_TRANSACTIONS_ENABLED=True)
 def test_manual_transaction_allows_intentional_duplicate(client, make_investor):
     inv = make_investor()
     payload = {
@@ -149,6 +176,7 @@ def test_manual_transaction_allows_intentional_duplicate(client, make_investor):
     assert Transaction.objects.filter(investor=inv).count() == 2  # no dedup on manual
 
 
+@override_settings(MANUAL_TRANSACTIONS_ENABLED=True)
 def test_manual_transaction_invalid_security_422(client, make_investor):
     inv = make_investor()
     # equity needs symbol or isin — neither given.
@@ -169,6 +197,7 @@ def test_manual_transaction_invalid_security_422(client, make_investor):
     assert resp.status_code == 422
 
 
+@override_settings(MANUAL_TRANSACTIONS_ENABLED=True)
 def test_manual_to_missing_investor_404(client):
     resp = _post(
         client,
@@ -228,6 +257,7 @@ def test_csv_sells_differing_only_in_fees_are_not_deduped(make_investor):
     assert Transaction.objects.filter(investor=inv).count() == 2
 
 
+@override_settings(MANUAL_TRANSACTIONS_ENABLED=True)
 def test_manual_transaction_accepts_brokerage(client, make_investor):
     inv = make_investor()
     resp = _post(

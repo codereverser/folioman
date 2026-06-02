@@ -56,6 +56,14 @@ MIDDLEWARE = [
 # @override_settings without rebuilding the NinjaAPI instance.
 FOLIOMAN_API_AUTH = "local"
 
+# --- feature flags ----------------------------------------------------------
+# Manual transaction authoring (POST /api/investors/{id}/transactions). The
+# first release imports mutual funds via CAS PDF and equities as eCAS snapshots
+# only; hand-entering transactions ships in the multi-asset release. The
+# endpoint and create_manual_transaction() stay in the tree — flip this on
+# (FOLIOMAN_MANUAL_TXNS=1) to re-enable, no code change needed.
+MANUAL_TRANSACTIONS_ENABLED = os.environ.get("FOLIOMAN_MANUAL_TXNS", "0") == "1"
+
 ROOT_URLCONF = "folioman_app.urls"
 
 TEMPLATES = [

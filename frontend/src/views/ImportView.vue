@@ -148,6 +148,11 @@ function goToDashboard(): void {
         type is auto-detected. An MF CAS builds a full transaction ledger; an eCAS refreshes
         demat holdings as a net-worth snapshot only.
       </p>
+      <p class="scope-note">
+        Right now that's the whole story — mutual funds from a CAS and demat holdings from an
+        eCAS. Stocks, bonds and the rest still show up from your eCAS as snapshots; typing in
+        your own transactions is coming later.
+      </p>
     </header>
 
     <!-- Step 1: pick the file (nothing is persisted until you confirm who it's for) -->
@@ -310,6 +315,15 @@ function goToDashboard(): void {
 }
 .muted {
   color: var(--fm-text-muted);
+}
+.scope-note {
+  margin: var(--fm-space-3) 0 0;
+  padding: var(--fm-space-3) var(--fm-space-4);
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+  background: var(--fm-surface-raised);
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-md);
 }
 .mono {
   font-family: var(--fm-font-mono);

@@ -1,6 +1,6 @@
 """Targeted coverage closers for branches not exercised by behavior-led suites.
 
-Phase-gate housekeeping — every test here pins a single branch
+Coverage housekeeping — every test here pins a single branch
 that the larger suites skipped because it isn't load-bearing on its own. Adding
 them as standalone units makes the gap obvious in coverage and keeps the
 behavior tests focused on what they're really asserting.

@@ -4,7 +4,7 @@ Completes the four-path import matrix (CAS PDF is in test_e2e_cas_path).
 
 eCAS reads are mocked with synthetic statements (real ISINs, fake identity and
 units, no PII); manual entry uses real client payloads. Generic CSV import is
-disabled until the multi-asset phase. The mismatch case uses an equity (cost
+disabled until the multi-asset release. The mismatch case uses an equity (cost
 history from manual entry, holding from eCAS) so it's 112A-eligible by type —
 independent of fund metadata.
 """
@@ -15,6 +15,7 @@ import datetime as dt
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from folioman_app.models import Holding
 from folioman_core.models import SecurityType
 from folioman_core.models.cas import (
@@ -106,6 +107,7 @@ def _ecas_reliance(units: str) -> EcasStatement:
 _CSV_HEADER = "security_type,name,symbol,isin,date,transaction_type,units,price,amount\n"
 
 
+@override_settings(MANUAL_TRANSACTIONS_ENABLED=True)
 def test_cross_source_mismatch_withheld_from_112a(
     client, make_investor, patch_cas, make_parsed_cas
 ):
@@ -115,7 +117,7 @@ def test_cross_source_mismatch_withheld_from_112a(
     inv.set_pan("ABCDE1234F")
     inv.save()
     # Cost history via manual entry: net 60 units, incl. a long-term sale (a real
-    # LTCG). (CSV import is disabled until the multi-asset phase; manual entry is
+    # LTCG). (CSV import is disabled until the multi-asset release; manual entry is
     # the live equity-transaction path.)
     txns_url = f"/api/investors/{inv.id}/transactions"
     base = {
@@ -174,7 +176,7 @@ def test_cross_source_mismatch_withheld_from_112a(
     assert forced["row_count"] == 1
 
 
-# --- CSV path: disabled until the multi-asset phase -------------------------
+# --- CSV path: disabled until the multi-asset release -------------------------
 
 
 def test_csv_import_path_is_disabled(client, make_investor):
@@ -190,6 +192,7 @@ def test_csv_import_path_is_disabled(client, make_investor):
 # --- manual entry: one transaction --------------------------------------------
 
 
+@override_settings(MANUAL_TRANSACTIONS_ENABLED=True)
 def test_manual_entry_single_transaction_and_integrity(client, make_investor):
     inv = make_investor()
     resp = _post(

@@ -110,7 +110,7 @@ def test_transactions_csv_round_trips_into_another_investor(client, make_investo
     csv_text = client.get(f"/api/investors/{src.id}/exports/transactions").content.decode()
 
     # Re-import the exported CSV into a fresh investor. CSV import is disabled at
-    # the runner/endpoint (multi-asset phase), so round-trip via the preserved
+    # the runner/endpoint (multi-asset release), so round-trip via the preserved
     # parser directly to verify the exported CSV re-imports faithfully.
     dest = make_investor()
     job = ImportJob.objects.create(investor=dest, kind=ImportKind.CSV)
