@@ -331,6 +331,81 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
     }
 
 
+def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
+    """Per-(investor, security) detail for the scheme page.
+
+    Identity + current metrics (units / value / cost basis / per-fund XIRR /
+    intraday change) computed from the same seams the dashboard uses, plus the
+    full NAV history and this security's transaction ledger and integrity rows.
+    """
+    txn_keys, hold_keys = _ledger_index([investor])
+    positions = _positions_asof(txn_keys, hold_keys, as_of)
+    extras = _holding_extras([investor], as_of)
+
+    pos = positions.get(security.id)
+    units = pos[1] if pos else _ZERO
+    ex = extras.get(security.id, {})
+    invested = ex.get("invested_inr")
+
+    price = _latest_price(security.id, as_of)
+    if units <= _ZERO:
+        value = _ZERO
+    elif price is not None:
+        value = units * price
+    else:
+        value = None  # held but unpriced — stale
+
+    return_pct = None
+    if value is not None and invested not in (None, _ZERO):
+        return_pct = float((value - invested) / invested)
+
+    latest = (
+        NAVHistory.objects.filter(security=security, date__lte=as_of)
+        .order_by("-date")
+        .values_list("date", "nav")
+        .first()
+    )
+    latest_nav_date, latest_nav = latest if latest else (None, None)
+
+    txns = list(
+        investor.transactions.filter(security=security)
+        .select_related("folio")
+        .order_by("date", "id")
+    )
+    return {
+        "security": {
+            "id": security.id,
+            "name": security.name,
+            "isin": security.isin,
+            "symbol": security.symbol,
+            "security_type": security.security_type,
+            "amfi_code": security.amfi_code,
+            "amc": security.amc.name if security.amc_id else None,
+            "category": (security.metadata or {}).get("category"),
+        },
+        "as_of": as_of,
+        "units": units,
+        "value_inr": value,
+        "invested_inr": invested,
+        "return_pct": return_pct,
+        "xirr": ex.get("xirr"),
+        "day_change_inr": ex.get("day_change_inr"),
+        "day_change_pct": ex.get("day_change_pct"),
+        "latest_nav": latest_nav,
+        "latest_nav_date": latest_nav_date,
+        "has_transactions": bool(txns),
+        "integrity": list(
+            investor.integrity_statuses.filter(security=security).select_related(
+                "security", "folio"
+            )
+        ),
+        "nav_history": list(
+            NAVHistory.objects.filter(security=security, date__lte=as_of).order_by("date")
+        ),
+        "transactions": txns,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Value-series (net worth over time) + XIRR — reconstructed on demand from the
 # transaction ledger + NAVHistory. No snapshot tables: a sampled date's value is

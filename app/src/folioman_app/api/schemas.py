@@ -245,6 +245,45 @@ class IntegrityStatusOut(Schema):
     last_reconciled_at: datetime | None
 
 
+class SchemeRef(Schema):
+    """Security identity for the scheme-detail header band."""
+
+    id: int
+    name: str
+    isin: str
+    symbol: str
+    security_type: str
+    amfi_code: str
+    amc: str | None = None  # AMC name, when known
+    category: str | None = None  # fund category from metadata, when known
+
+
+class NavPoint(Schema):
+    date: date
+    nav: Decimal
+
+
+class SchemeDetailOut(Schema):
+    """Everything one scheme page needs in a single call: identity, current
+    metrics, integrity per folio, the NAV history series, and the ledger."""
+
+    security: SchemeRef
+    as_of: date
+    units: Decimal
+    value_inr: Decimal | None
+    invested_inr: Decimal | None  # FIFO cost basis of units still held (>= 0)
+    return_pct: float | None  # (value - invested) / invested, as a fraction
+    xirr: float | None  # money-weighted annualized return of this fund alone
+    day_change_inr: Decimal | None
+    day_change_pct: float | None
+    latest_nav: Decimal | None
+    latest_nav_date: date | None
+    has_transactions: bool  # false → snapshot-only (show the no-history banner)
+    integrity: list[IntegrityStatusOut]  # one per folio the security is held in
+    nav_history: list[NavPoint]
+    transactions: list[TransactionOut]
+
+
 class Schedule112ARequest(Schema):
     fy: str = Field(pattern=r"^\d{4}-\d{2}$", description="India FY, e.g. 2024-25")
     include_unreconciled: bool = False

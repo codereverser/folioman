@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
+from django.shortcuts import get_object_or_404
 from ninja import Query, Router, Status
 from ninja.errors import HttpError
 from pydantic import ValidationError
@@ -21,13 +22,15 @@ from folioman_app.api.schemas import (
     InvestorOut,
     InvestorSummaryOut,
     InvestorUpdate,
+    SchemeDetailOut,
     TransactionIn,
     TransactionOut,
     ValueSeriesOut,
 )
-from folioman_app.models import Investor
+from folioman_app.models import Investor, Security
 from folioman_app.services.valuation import (
     build_investor_summary,
+    build_scheme_detail,
     default_series_start,
     value_series,
 )
@@ -113,6 +116,21 @@ def investor_value_series(
         "granularity": granularity,
         "points": points,
     }
+
+
+@router.get("/{investor_id}/holdings/{security_id}", response=SchemeDetailOut)
+def scheme_detail(request, investor_id: int, security_id: int, as_of: date | None = None):
+    """One scheme's detail: identity, metrics, integrity, NAV history, ledger.
+    404 if the investor has never held or transacted this security."""
+    investor = get_owned_investor(request, investor_id)
+    security = get_object_or_404(Security, id=security_id)
+    held = (
+        investor.transactions.filter(security=security).exists()
+        or investor.holdings.filter(security=security).exists()
+    )
+    if not held:
+        raise HttpError(404, "investor has no holding for this security")
+    return build_scheme_detail(investor, security, as_of or date.today())
 
 
 @router.get("/{investor_id}/folios", response=list[FolioOut])

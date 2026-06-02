@@ -842,6 +842,26 @@
         "title": "InvestorUpdate",
         "type": "object"
       },
+      "NavPoint": {
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "nav": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Nav",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "nav"
+        ],
+        "title": "NavPoint",
+        "type": "object"
+      },
       "Schedule112ARequest": {
         "properties": {
           "fy": {
@@ -902,6 +922,222 @@
           "rows"
         ],
         "title": "Schedule112AResponse",
+        "type": "object"
+      },
+      "SchemeDetailOut": {
+        "description": "Everything one scheme page needs in a single call: identity, current\nmetrics, integrity per folio, the NAV history series, and the ledger.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "day_change_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Change Inr"
+          },
+          "day_change_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Change Pct"
+          },
+          "has_transactions": {
+            "title": "Has Transactions",
+            "type": "boolean"
+          },
+          "integrity": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrityStatusOut"
+            },
+            "title": "Integrity",
+            "type": "array"
+          },
+          "invested_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invested Inr"
+          },
+          "latest_nav": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Nav"
+          },
+          "latest_nav_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Nav Date"
+          },
+          "nav_history": {
+            "items": {
+              "$ref": "#/components/schemas/NavPoint"
+            },
+            "title": "Nav History",
+            "type": "array"
+          },
+          "return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Return Pct"
+          },
+          "security": {
+            "$ref": "#/components/schemas/SchemeRef"
+          },
+          "transactions": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionOut"
+            },
+            "title": "Transactions",
+            "type": "array"
+          },
+          "units": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units",
+            "type": "string"
+          },
+          "value_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Inr"
+          },
+          "xirr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xirr"
+          }
+        },
+        "required": [
+          "security",
+          "as_of",
+          "units",
+          "value_inr",
+          "invested_inr",
+          "return_pct",
+          "xirr",
+          "day_change_inr",
+          "day_change_pct",
+          "latest_nav",
+          "latest_nav_date",
+          "has_transactions",
+          "integrity",
+          "nav_history",
+          "transactions"
+        ],
+        "title": "SchemeDetailOut",
+        "type": "object"
+      },
+      "SchemeRef": {
+        "description": "Security identity for the scheme-detail header band.",
+        "properties": {
+          "amc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amc"
+          },
+          "amfi_code": {
+            "title": "Amfi Code",
+            "type": "string"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "isin": {
+            "title": "Isin",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "security_type": {
+            "title": "Security Type",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "isin",
+          "symbol",
+          "security_type",
+          "amfi_code"
+        ],
+        "title": "SchemeRef",
         "type": "object"
       },
       "SecurityRef": {
@@ -2096,6 +2332,65 @@
           }
         },
         "summary": "List Folios",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/holdings/{security_id}": {
+      "get": {
+        "description": "One scheme's detail: identity, metrics, integrity, NAV history, ledger.\n404 if the investor has never held or transacted this security.",
+        "operationId": "folioman_app_api_investors_scheme_detail",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemeDetailOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Scheme Detail",
         "tags": [
           "investors"
         ]
