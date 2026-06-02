@@ -952,13 +952,6 @@
             "title": "As Of",
             "type": "string"
           },
-          "brokers": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Brokers",
-            "type": "array"
-          },
           "day_change_inr": {
             "anyOf": [
               {

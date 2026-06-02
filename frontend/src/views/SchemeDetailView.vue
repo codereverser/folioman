@@ -91,9 +91,6 @@ function back(): void {
         <div class="chips">
           <span v-if="detail.security.amc" class="chip">{{ detail.security.amc }}</span>
           <span v-if="detail.security.category" class="chip">{{ detail.security.category }}</span>
-          <span v-for="b in detail.brokers" :key="b" class="chip broker">
-            <i class="pi pi-shopping-bag" aria-hidden="true" /> {{ b }}
-          </span>
           <span class="chip subtle">{{ idLine }}</span>
         </div>
         <p v-if="detail.latest_nav != null" class="nav-line">
@@ -229,14 +226,6 @@ function back(): void {
 .chip.subtle {
   color: var(--fm-text-muted);
   font-variant-numeric: tabular-nums;
-}
-.chip.broker {
-  color: var(--fm-verified);
-  border-color: var(--fm-verified-bg);
-  background: var(--fm-verified-bg);
-}
-.chip.broker .pi {
-  font-size: 0.7rem;
 }
 .nav-line {
   margin: 0;

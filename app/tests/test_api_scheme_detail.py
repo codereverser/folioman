@@ -18,7 +18,7 @@ def test_scheme_detail_reports_metrics_history_and_ledger(
 ):
     inv = make_investor()
     mf = make_security(security_type=SecurityType.MF.value, name="Acme Flexi Cap")
-    folio = make_folio(investor=inv, broker="Groww")
+    folio = make_folio(investor=inv)
     make_transaction(
         investor=inv,
         security=mf,
@@ -46,7 +46,6 @@ def test_scheme_detail_reports_metrics_history_and_ledger(
     assert len(body["transactions"]) == 1
     assert body["xirr"] is not None
     assert body["xirr_status"] == "valid"  # bought >= 1 year before as_of
-    assert body["brokers"] == ["Groww"]  # mapped from the folio
 
 
 def test_scheme_detail_snapshot_only_has_no_transactions(

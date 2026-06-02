@@ -40,14 +40,13 @@ def _cas(
     fund_type: FundType = FundType.EQUITY,
     open_units: str = "0",
     close_units: str = "40",
-    advisor: str = "",
 ) -> CASData:
     val = SchemeValuation(
         date=date(2025, 3, 31), nav=Decimal("25"), cost=Decimal("400"), value=Decimal("1000")
     )
     scheme = Scheme(
         scheme="Test Equity Fund",
-        advisor=advisor,
+        advisor="",
         rta_code="X",
         rta="CAMS",
         type=fund_type,
@@ -195,24 +194,6 @@ def test_transactions_from_statement_are_valid_ledger_rows():
     assert [t.type for t in txns] == [TransactionType.BUY, TransactionType.SELL]
     assert txns[1].units == Decimal("60")
     assert txns[0].folio_number == "12345/67"
-
-
-def test_broker_label_maps_known_arn_else_passes_through():
-    assert parser.broker_label("ARN-111686") == "Groww"
-    assert parser.broker_label("arn-115299") == "Zerodha Coin"  # case-insensitive
-    assert parser.broker_label("DIRECT") == "Direct"
-    assert parser.broker_label("ARN-999999") == "ARN-999999"  # unknown → raw code
-    assert parser.broker_label("N/A") == ""
-    assert parser.broker_label(None) == ""
-
-
-def test_map_cas_sets_folio_broker_from_scheme_advisor():
-    cas = _cas(
-        [_txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000")],
-        close_units="100",
-        advisor="ARN-111686",
-    )
-    assert parser.map_cas_data(cas).schemes[0].folio.broker == "Groww"
 
 
 def test_scheme_has_full_history_when_open_zero_and_reconciles():

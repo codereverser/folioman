@@ -284,7 +284,6 @@ class SchemeDetailOut(Schema):
     latest_nav: Decimal | None
     latest_nav_date: date | None
     has_transactions: bool  # false → snapshot-only (show the no-history banner)
-    brokers: list[str] = Field(default_factory=list)  # platform labels across folios
     integrity: list[IntegrityStatusOut]  # one per folio the security is held in
     nav_history: list[NavPoint]
     transactions: list[TransactionOut]

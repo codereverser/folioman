@@ -135,30 +135,8 @@ def _map_security(scheme: object, amc: str | None) -> Security:
     )
 
 
-# Best-effort: a CAMS/KFin CAS prints the seller's distributor ARN (or "DIRECT"
-# for direct plans) in each scheme's Advisor field. Map the well-known platforms
-# whose ARN is established to a friendly label; fall back to the raw code (a real
-# ARN beats a wrong brand) and treat direct plans as "Direct". Extend as ARNs are
-# confirmed — adding a row is a one-liner.
-_BROKER_BY_ARN = {
-    "ARN-111686": "Groww",
-    "ARN-115299": "Zerodha Coin",
-    "ARN-119031": "Kuvera",
-}
-
-
-def broker_label(advisor: str | None) -> str:
-    """A human broker/platform label for a scheme's Advisor (ARN) code, or ``""``."""
-    code = (advisor or "").strip()
-    if not code or code.upper() in {"N/A", "NA"}:
-        return ""
-    if code.upper() == "DIRECT":
-        return "Direct"
-    return _BROKER_BY_ARN.get(code.upper(), code)
-
-
-def _map_folio(folio: object, broker: str = "") -> Folio:
-    return Folio(folio_type=FolioType.MF, number=str(folio.folio), broker=broker)
+def _map_folio(folio: object) -> Folio:
+    return Folio(folio_type=FolioType.MF, number=str(folio.folio))
 
 
 def _collect_per_index_charges(scheme_txns) -> tuple[dict, dict]:
@@ -223,10 +201,7 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
     """
     blocks: list[MfCasSchemeBlock] = []
     for folio_pos, folio in enumerate(cas.folios, start=1):
-        # The Advisor (ARN) sits per-scheme, but is the same distributor across a
-        # folio's schemes; take the first non-empty one as the folio's broker.
-        advisor = next((s.advisor for s in folio.schemes if s.advisor), None)
-        mapped_folio = _map_folio(folio, broker=broker_label(advisor))
+        mapped_folio = _map_folio(folio)
         for scheme_pos, scheme in enumerate(folio.schemes, start=1):
             try:
                 stt_for_idx, stamp_for_idx = _collect_per_index_charges(scheme.transactions)
