@@ -277,6 +277,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/holdings/{security_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scheme Detail
+         * @description One scheme's detail: identity, metrics, integrity, NAV history, ledger.
+         *     404 if the investor has never held or transacted this security.
+         */
+        get: operations["folioman_app_api_investors_scheme_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/imports": {
         parameters: {
             query?: never;
@@ -738,6 +759,16 @@ export interface components {
             /** Relation */
             relation?: string | null;
         };
+        /** NavPoint */
+        NavPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Nav */
+            nav: string;
+        };
         /** Schedule112ARequest */
         Schedule112ARequest: {
             /**
@@ -765,6 +796,67 @@ export interface components {
             rows: {
                 [key: string]: string;
             }[];
+        };
+        /**
+         * SchemeDetailOut
+         * @description Everything one scheme page needs in a single call: identity, current
+         *     metrics, integrity per folio, the NAV history series, and the ledger.
+         */
+        SchemeDetailOut: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Day Change Inr */
+            day_change_inr: string | null;
+            /** Day Change Pct */
+            day_change_pct: number | null;
+            /** Has Transactions */
+            has_transactions: boolean;
+            /** Integrity */
+            integrity: components["schemas"]["IntegrityStatusOut"][];
+            /** Invested Inr */
+            invested_inr: string | null;
+            /** Latest Nav */
+            latest_nav: string | null;
+            /** Latest Nav Date */
+            latest_nav_date: string | null;
+            /** Nav History */
+            nav_history: components["schemas"]["NavPoint"][];
+            /** Return Pct */
+            return_pct: number | null;
+            security: components["schemas"]["SchemeRef"];
+            /** Transactions */
+            transactions: components["schemas"]["TransactionOut"][];
+            /** Units */
+            units: string;
+            /** Value Inr */
+            value_inr: string | null;
+            /** Xirr */
+            xirr: number | null;
+        };
+        /**
+         * SchemeRef
+         * @description Security identity for the scheme-detail header band.
+         */
+        SchemeRef: {
+            /** Amc */
+            amc?: string | null;
+            /** Amfi Code */
+            amfi_code: string;
+            /** Category */
+            category?: string | null;
+            /** Id */
+            id: number;
+            /** Isin */
+            isin: string;
+            /** Name */
+            name: string;
+            /** Security Type */
+            security_type: string;
+            /** Symbol */
+            symbol: string;
         };
         /** SecurityRef */
         SecurityRef: {
@@ -1448,6 +1540,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FolioOut"][];
+                };
+            };
+        };
+    };
+    folioman_app_api_investors_scheme_detail: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+            };
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SchemeDetailOut"];
                 };
             };
         };
