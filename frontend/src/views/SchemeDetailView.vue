@@ -49,6 +49,13 @@ const returnPct = computed(() =>
 )
 const xirrPct = computed(() => (detail.value?.xirr == null ? null : detail.value.xirr * 100))
 
+// Surface *why* the XIRR is provisional, rather than a bare number.
+const XIRR_STATUS_NOTES: Record<string, string> = {
+  less_than_1_year: 'Held < 1 year — annualised, treat as indicative',
+  estimated: 'Estimated — needs full transaction history',
+}
+const xirrStatusNote = computed(() => XIRR_STATUS_NOTES[detail.value?.xirr_status ?? ''] ?? '')
+
 const TXN_TYPE_LABELS: Record<string, string> = {
   buy: 'Buy',
   sell: 'Sell',
@@ -84,6 +91,9 @@ function back(): void {
         <div class="chips">
           <span v-if="detail.security.amc" class="chip">{{ detail.security.amc }}</span>
           <span v-if="detail.security.category" class="chip">{{ detail.security.category }}</span>
+          <span v-for="b in detail.brokers" :key="b" class="chip broker">
+            <i class="pi pi-shopping-bag" aria-hidden="true" /> {{ b }}
+          </span>
           <span class="chip subtle">{{ idLine }}</span>
         </div>
         <p v-if="detail.latest_nav != null" class="nav-line">
@@ -112,7 +122,9 @@ function back(): void {
           :value="xirrPct"
           format="percent"
           :display="xirrPct == null ? '—' : undefined"
-        />
+        >
+          <small v-if="xirrStatusNote" class="metric-note">{{ xirrStatusNote }}</small>
+        </MetricCard>
       </div>
 
       <article class="card">
@@ -125,7 +137,8 @@ function back(): void {
         <h2>Transactions</h2>
         <Message v-if="!detail.has_transactions" severity="info" :closable="false">
           Snapshot only — this holding has no transaction history, so there's no cost basis or
-          capital-gains worksheet. Import a CAS with full history (or add transactions) to enable them.
+          capital-gains worksheet. Upload a <strong>since-inception (Detailed) CAS</strong> — or add
+          the transactions manually — and we'll build them.
         </Message>
         <DataTable
           v-else
@@ -217,6 +230,14 @@ function back(): void {
   color: var(--fm-text-muted);
   font-variant-numeric: tabular-nums;
 }
+.chip.broker {
+  color: var(--fm-verified);
+  border-color: var(--fm-verified-bg);
+  background: var(--fm-verified-bg);
+}
+.chip.broker .pi {
+  font-size: 0.7rem;
+}
 .nav-line {
   margin: 0;
   font-size: 0.9375rem;
@@ -229,6 +250,12 @@ function back(): void {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: var(--fm-space-4);
+}
+.metric-note {
+  display: block;
+  margin-top: var(--fm-space-1);
+  font-size: 0.6875rem;
+  color: var(--fm-text-muted);
 }
 
 .card {

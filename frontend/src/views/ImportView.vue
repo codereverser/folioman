@@ -269,8 +269,9 @@ function goToDashboard(): void {
         <div v-if="result.incomplete_history?.length" class="warn-block">
           <h2>Net worth only ({{ result.incomplete_history.length }})</h2>
           <p class="muted">
-            These schemes were saved for net worth only — re-download a since-inception
-            statement and we can build a capital-gains worksheet for them.
+            These schemes were saved for net worth only — re-download a
+            <strong>since-inception (Detailed) CAS</strong> and we can build a capital-gains
+            worksheet for them.
           </p>
           <ul class="incomplete">
             <li v-for="s in result.incomplete_history" :key="`${s.security}-${s.folio}`">

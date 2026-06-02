@@ -832,6 +832,8 @@ export interface components {
              * Format: date
              */
             as_of: string;
+            /** Brokers */
+            brokers?: string[];
             /** Day Change Inr */
             day_change_inr: string | null;
             /** Day Change Pct */
@@ -859,6 +861,8 @@ export interface components {
             value_inr: string | null;
             /** Xirr */
             xirr: number | null;
+            /** Xirr Status */
+            xirr_status: string;
         };
         /**
          * SchemeRef
