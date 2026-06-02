@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import SelectButton from 'primevue/selectbutton'
@@ -16,6 +16,7 @@ import { useUiStore } from '@/stores/ui'
 import { formatInr, formatUnits } from '@/utils/format'
 
 const route = useRoute()
+const router = useRouter()
 const roster = useRosterStore()
 const ui = useUiStore()
 
@@ -35,6 +36,10 @@ const ranges: { label: string; value: RangeKey }[] = [
   { label: '1Y', value: '1Y' },
   { label: 'All', value: 'All' },
 ]
+
+function openScheme(securityId: number): void {
+  void router.push({ name: 'scheme-detail', params: { investorId: investorId.value, securityId } })
+}
 </script>
 
 <template>
@@ -47,7 +52,15 @@ const ranges: { label: string; value: RangeKey }[] = [
     </header>
 
     <div class="bento">
-      <MetricCard class="span-6 hero-card" label="Net worth" :value="summary.netWorth" hero count-up>
+      <MetricCard
+        class="span-6 hero-card"
+        label="Net worth"
+        :value="summary.netWorth"
+        :delta-amount="summary.dayChangeAmount ?? undefined"
+        :delta-percent="summary.dayChangePercent ?? undefined"
+        hero
+        count-up
+      >
         <p class="hero-note">
           Invested {{ formatInr(summary.invested) }} ·
           <span class="total-return">
@@ -90,7 +103,13 @@ const ranges: { label: string; value: RangeKey }[] = [
 
       <article class="span-12 card">
         <h2>Top holdings</h2>
-        <DataTable :value="summary.topHoldings" data-key="securityId" class="holdings" size="small">
+        <DataTable
+          :value="summary.topHoldings"
+          data-key="securityId"
+          class="holdings clickable-rows"
+          size="small"
+          @row-click="(e) => openScheme(e.data.securityId)"
+        >
           <Column field="name" header="Holding">
             <template #body="{ data }">
               <div class="holding-name">
@@ -104,6 +123,12 @@ const ranges: { label: string; value: RangeKey }[] = [
           </Column>
           <Column header="Units" class="num">
             <template #body="{ data }">{{ formatUnits(data.units) }}</template>
+          </Column>
+          <Column header="Return" class="num">
+            <template #body="{ data }">
+              <DeltaChip v-if="data.returnPct !== null" :percent="data.returnPct" :value="data.returnPct" size="sm" />
+              <span v-else class="muted">—</span>
+            </template>
           </Column>
           <Column header="Integrity">
             <template #body="{ data }">
@@ -198,6 +223,14 @@ const ranges: { label: string; value: RangeKey }[] = [
 :deep(.holdings .num) {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* Top-holdings rows drill into the scheme detail. */
+:deep(.clickable-rows .p-datatable-tbody > tr) {
+  cursor: pointer;
+}
+.muted {
+  color: var(--fm-text-muted);
 }
 
 /* Re-flow to a single column on narrow viewports. */

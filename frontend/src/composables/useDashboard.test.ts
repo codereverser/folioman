@@ -16,11 +16,19 @@ const SUMMARY = {
   snapshot_count: 0,
   stale_count: 0,
   last_import_at: null,
+  day_change_inr: '75', // prior value 7425 → +1.0101%
   xirr: 0.1849,
   as_of: '2025-06-01',
   asset_mix: [{ security_type: 'mf', value_inr: '7500' }],
   top_holdings: [
-    { security_id: 1, name: 'Fund A', security_type: 'mf', units: '100', value_inr: '7500' },
+    {
+      security_id: 1,
+      name: 'Fund A',
+      security_type: 'mf',
+      units: '100',
+      value_inr: '7500',
+      return_pct: 0.65,
+    },
   ],
 }
 // A leading all-zero point (before the first holding) that must be trimmed.
@@ -71,6 +79,9 @@ describe('useDashboard', () => {
     // xirr fraction → percent for the card.
     expect(s.xirr).toBeCloseTo(18.49)
     expect(s.asOf).toContain('as of')
+    // day-change: absolute from the API, percent derived against the prior value.
+    expect(s.dayChangeAmount).toBe(75)
+    expect(s.dayChangePercent).toBeCloseTo((75 / 7425) * 100)
   })
 
   it('trims the leading all-zero stretch from the value series', async () => {
@@ -92,6 +103,7 @@ describe('useDashboard', () => {
     const top = summary.value.topHoldings[0]
     expect(top).toMatchObject({ securityId: 1, name: 'Fund A', assetClass: 'Mutual funds', units: 100 })
     expect(top.integrity).toBe('full_history')
+    expect(top.returnPct).toBeCloseTo(65) // 0.65 fraction → percent
   })
 
   it('shows null xirr (not 0) when the backend has no rate', async () => {

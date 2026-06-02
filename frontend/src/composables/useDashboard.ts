@@ -12,6 +12,7 @@ export interface HoldingRow {
   assetClass: string
   value: number
   units: number
+  returnPct: number | null // percent; null when cost basis is unknown
   integrity: IntegrityStatus
 }
 
@@ -20,6 +21,8 @@ export interface DashboardSummary {
   invested: number
   totalReturnAmount: number
   totalReturnPercent: number
+  dayChangeAmount: number | null // intraday INR change; null without 2 NAV points
+  dayChangePercent: number | null
   xirr: number | null
   asOf: string
   allocation: AllocationSlice[]
@@ -69,6 +72,8 @@ const EMPTY: DashboardSummary = {
   invested: 0,
   totalReturnAmount: 0,
   totalReturnPercent: 0,
+  dayChangeAmount: null,
+  dayChangePercent: null,
   xirr: null,
   asOf: '—',
   allocation: [],
@@ -152,11 +157,20 @@ export function useDashboard(investorId: Ref<number>) {
     const totalReturnAmount = netWorth - invested
     const totalReturnPercent = invested > 0 ? (totalReturnAmount / invested) * 100 : 0
 
+    // Portfolio day-change: the API gives the absolute INR move; derive the
+    // percent against the prior value (net worth minus today's move).
+    const dayChangeAmount = s.day_change_inr == null ? null : num(s.day_change_inr)
+    const priorValue = dayChangeAmount == null ? null : netWorth - dayChangeAmount
+    const dayChangePercent =
+      dayChangeAmount != null && priorValue ? (dayChangeAmount / priorValue) * 100 : null
+
     return {
       netWorth,
       invested,
       totalReturnAmount,
       totalReturnPercent,
+      dayChangeAmount,
+      dayChangePercent,
       xirr: s.xirr == null ? null : s.xirr * 100, // fraction → percent for the card
       asOf: `as of ${formatDate(s.as_of)}`,
       allocation: (s.asset_mix ?? []).map<AllocationSlice>((row) => ({
@@ -171,6 +185,7 @@ export function useDashboard(investorId: Ref<number>) {
         assetClass: assetLabel(h.security_type),
         value: num(h.value_inr),
         units: num(h.units),
+        returnPct: h.return_pct == null ? null : h.return_pct * 100,
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
     }
