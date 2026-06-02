@@ -952,6 +952,13 @@
             "title": "As Of",
             "type": "string"
           },
+          "brokers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Brokers",
+            "type": "array"
+          },
           "day_change_inr": {
             "anyOf": [
               {
@@ -1077,6 +1084,10 @@
               }
             ],
             "title": "Xirr"
+          },
+          "xirr_status": {
+            "title": "Xirr Status",
+            "type": "string"
           }
         },
         "required": [
@@ -1087,6 +1098,7 @@
           "invested_inr",
           "return_pct",
           "xirr",
+          "xirr_status",
           "day_change_inr",
           "day_change_pct",
           "latest_nav",

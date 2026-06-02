@@ -373,6 +373,25 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
         .select_related("folio")
         .order_by("date", "id")
     )
+    holdings = list(investor.holdings.filter(security=security).select_related("folio"))
+
+    # Why the XIRR reads the way it does — so the UI can flag a provisional number
+    # instead of presenting it as gospel.
+    xirr = ex.get("xirr")
+    if not txns:
+        xirr_status = "estimated"  # snapshot-only: no cashflows, value is observed
+    elif xirr is None:
+        xirr_status = "estimated"  # held but unpriced — can't value the terminal leg
+    elif (as_of - txns[0].date).days < 365:
+        xirr_status = "less_than_1_year"  # annualized over a short period — indicative
+    else:
+        xirr_status = "valid"
+
+    # Distinct platform labels across every folio this security sits in.
+    brokers = sorted(
+        {row.folio.broker for row in (*txns, *holdings) if row.folio and row.folio.broker}
+    )
+
     return {
         "security": {
             "id": security.id,
@@ -389,12 +408,14 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
         "value_inr": value,
         "invested_inr": invested,
         "return_pct": return_pct,
-        "xirr": ex.get("xirr"),
+        "xirr": xirr,
+        "xirr_status": xirr_status,
         "day_change_inr": ex.get("day_change_inr"),
         "day_change_pct": ex.get("day_change_pct"),
         "latest_nav": latest_nav,
         "latest_nav_date": latest_nav_date,
         "has_transactions": bool(txns),
+        "brokers": brokers,
         "integrity": list(
             investor.integrity_statuses.filter(security=security).select_related(
                 "security", "folio"

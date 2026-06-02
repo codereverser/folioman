@@ -18,7 +18,7 @@ def test_scheme_detail_reports_metrics_history_and_ledger(
 ):
     inv = make_investor()
     mf = make_security(security_type=SecurityType.MF.value, name="Acme Flexi Cap")
-    folio = make_folio(investor=inv)
+    folio = make_folio(investor=inv, broker="Groww")
     make_transaction(
         investor=inv,
         security=mf,
@@ -45,6 +45,8 @@ def test_scheme_detail_reports_metrics_history_and_ledger(
     assert len(body["nav_history"]) == 2
     assert len(body["transactions"]) == 1
     assert body["xirr"] is not None
+    assert body["xirr_status"] == "valid"  # bought >= 1 year before as_of
+    assert body["brokers"] == ["Groww"]  # mapped from the folio
 
 
 def test_scheme_detail_snapshot_only_has_no_transactions(
@@ -61,6 +63,29 @@ def test_scheme_detail_snapshot_only_has_no_transactions(
     assert body["transactions"] == []
     assert Decimal(str(body["value_inr"])) == Decimal("600")  # 50 * 12
     assert body["xirr"] is None  # no cashflows
+    assert body["xirr_status"] == "estimated"  # snapshot-only
+
+
+def test_scheme_detail_flags_short_holding_xirr(
+    client, make_investor, make_security, make_folio, make_transaction
+):
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    folio = make_folio(investor=inv)
+    # Bought ~3 months before as_of → XIRR is annualized over < 1 year.
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        date=dt.date(2025, 3, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("12"))
+
+    body = client.get(f"/api/investors/{inv.id}/holdings/{mf.id}", {"as_of": "2025-06-01"}).json()
+
+    assert body["xirr_status"] == "less_than_1_year"
 
 
 def test_scheme_detail_unheld_security_404s(client, make_investor, make_security):

@@ -275,11 +275,16 @@ class SchemeDetailOut(Schema):
     invested_inr: Decimal | None  # FIFO cost basis of units still held (>= 0)
     return_pct: float | None  # (value - invested) / invested, as a fraction
     xirr: float | None  # money-weighted annualized return of this fund alone
+    # Why the XIRR reads the way it does: "valid", "less_than_1_year" (annualized
+    # over a short period — indicative), or "estimated" (snapshot-only / unpriced,
+    # no real cashflow-based rate).
+    xirr_status: str
     day_change_inr: Decimal | None
     day_change_pct: float | None
     latest_nav: Decimal | None
     latest_nav_date: date | None
     has_transactions: bool  # false → snapshot-only (show the no-history banner)
+    brokers: list[str] = Field(default_factory=list)  # platform labels across folios
     integrity: list[IntegrityStatusOut]  # one per folio the security is held in
     nav_history: list[NavPoint]
     transactions: list[TransactionOut]
