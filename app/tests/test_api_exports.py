@@ -119,6 +119,12 @@ def test_export_via_api(client, make_investor):
     assert body["row_count"] == 1
     assert len(body["columns"]) == 15
     assert body["rows"][0]["Share/Unit acquired(1a)"] == "AE"  # after 31-Jan-2018
+    # Every worksheet response frames itself as a reviewable draft, not a filing.
+    assert body["is_draft"] is True
+    assert body["title"] == "Capital-gains worksheet (for review)"
+    disclaimer = body["disclaimer"].lower()
+    assert "tax advice" in disclaimer
+    assert "qualified ca" in disclaimer
 
 
 def test_export_empty_when_no_disposals(client, make_investor):

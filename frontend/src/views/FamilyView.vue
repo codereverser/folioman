@@ -50,8 +50,8 @@ function openInvestor(investorId: number): void {
     </header>
 
     <Message severity="info" :closable="false" class="tax-note">
-      Tax exports are per-investor — each PAN files its own ITR. Switch to a specific investor to
-      download their Schedule 112A.
+      Capital-gains worksheets are per-investor — each PAN files its own return. Switch to a
+      specific investor to download theirs.
     </Message>
 
     <div class="bento">

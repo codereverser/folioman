@@ -896,12 +896,22 @@
             "title": "Columns",
             "type": "array"
           },
+          "disclaimer": {
+            "default": "Heads up \u2014 this isn't tax advice. folioman builds a capital-gains worksheet from the transactions you import, so you and your CA have a starting point. It doesn't file anything, it's no substitute for a Chartered Accountant, and we can't promise the numbers are right or complete \u2014 a misparsed or incomplete statement can throw them off. Always check every figure with a qualified CA before you file. Provided as-is, no warranty; we're not liable for any filing, penalty, or loss that comes from using it.",
+            "title": "Disclaimer",
+            "type": "string"
+          },
           "fy": {
             "title": "Fy",
             "type": "string"
           },
           "include_unreconciled": {
             "title": "Include Unreconciled",
+            "type": "boolean"
+          },
+          "is_draft": {
+            "default": true,
+            "title": "Is Draft",
             "type": "boolean"
           },
           "row_count": {
@@ -917,6 +927,11 @@
             },
             "title": "Rows",
             "type": "array"
+          },
+          "title": {
+            "default": "Capital-gains worksheet (for review)",
+            "title": "Title",
+            "type": "string"
           }
         },
         "required": [
@@ -2240,6 +2255,7 @@
     },
     "/api/investors/{investor_id}/exports/schedule-112a": {
       "post": {
+        "description": "A capital-gains worksheet (Schedule 112A shape) to review with your CA \u2014\nfree, and only built from tax-ready folios.",
         "operationId": "folioman_app_api_exports_schedule_112a",
         "parameters": [
           {

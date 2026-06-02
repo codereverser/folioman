@@ -1,6 +1,6 @@
-"""Free-tier data exports: holdings CSV + full transactions CSV.
+"""Data exports: holdings CSV + full transactions CSV.
 
-Lets a user get their data out without the paid Tax Pack. The holdings export
+Your data's yours — get it out whenever you want. The holdings export
 reuses the reconciliation output (``SecurityIntegrityStatus``) for current units
 — transaction-derived where there's history, else the latest snapshot — so MF
 (CAS), equity, and eCAS-only positions all appear, with their trust status. The

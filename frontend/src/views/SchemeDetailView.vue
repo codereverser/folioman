@@ -124,8 +124,8 @@ function back(): void {
       <article class="card">
         <h2>Transactions</h2>
         <Message v-if="!detail.has_transactions" severity="info" :closable="false">
-          Snapshot only — this holding has no transaction history, so cost basis and the tax
-          export aren’t available. Import a CAS with full history (or add transactions) to enable them.
+          Snapshot only — this holding has no transaction history, so there's no cost basis or
+          capital-gains worksheet. Import a CAS with full history (or add transactions) to enable them.
         </Message>
         <DataTable
           v-else

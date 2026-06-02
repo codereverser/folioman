@@ -265,12 +265,12 @@ function goToDashboard(): void {
           <div v-if="result.holdings_removed"><dt>Holdings removed</dt><dd class="mono">{{ result.holdings_removed }}</dd></div>
         </dl>
 
-        <!-- Incomplete-history schemes: snapshotted, not tax-ready -->
+        <!-- Incomplete-history schemes: snapshotted, no cost-basis worksheet -->
         <div v-if="result.incomplete_history?.length" class="warn-block">
-          <h2>Not tax-ready ({{ result.incomplete_history.length }})</h2>
+          <h2>Net worth only ({{ result.incomplete_history.length }})</h2>
           <p class="muted">
             These schemes were saved for net worth only — re-download a since-inception
-            statement to make them tax-ready.
+            statement and we can build a capital-gains worksheet for them.
           </p>
           <ul class="incomplete">
             <li v-for="s in result.incomplete_history" :key="`${s.security}-${s.folio}`">

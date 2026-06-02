@@ -235,7 +235,8 @@ def process_cas(job: ImportJob, content: bytes, password: str, *, confirm: bool 
         summary["detected"] = "ecas"
         summary["notice"] = (
             "NSDL/CDSL eCAS detected — holdings were refreshed as a net-worth "
-            "snapshot. Demat positions aren't tax-ready without transaction history."
+            "snapshot. Demat positions need transaction history before we can build "
+            "a capital-gains worksheet for them."
         )
         return summary
     summary = persist_mf_statement(job.investor, parsed.mf, source_ref=job.source_ref)

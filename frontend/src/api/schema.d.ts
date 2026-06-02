@@ -232,7 +232,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Schedule 112A */
+        /**
+         * Schedule 112A
+         * @description A capital-gains worksheet (Schedule 112A shape) to review with your CA —
+         *     free, and only built from tax-ready folios.
+         */
         post: operations["folioman_app_api_exports_schedule_112a"];
         delete?: never;
         options?: never;
@@ -791,16 +795,31 @@ export interface components {
         Schedule112AResponse: {
             /** Columns */
             columns: string[];
+            /**
+             * Disclaimer
+             * @default Heads up — this isn't tax advice. folioman builds a capital-gains worksheet from the transactions you import, so you and your CA have a starting point. It doesn't file anything, it's no substitute for a Chartered Accountant, and we can't promise the numbers are right or complete — a misparsed or incomplete statement can throw them off. Always check every figure with a qualified CA before you file. Provided as-is, no warranty; we're not liable for any filing, penalty, or loss that comes from using it.
+             */
+            disclaimer: string;
             /** Fy */
             fy: string;
             /** Include Unreconciled */
             include_unreconciled: boolean;
+            /**
+             * Is Draft
+             * @default true
+             */
+            is_draft: boolean;
             /** Row Count */
             row_count: number;
             /** Rows */
             rows: {
                 [key: string]: string;
             }[];
+            /**
+             * Title
+             * @default Capital-gains worksheet (for review)
+             */
+            title: string;
         };
         /**
          * SchemeDetailOut
