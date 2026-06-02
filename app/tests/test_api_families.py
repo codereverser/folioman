@@ -47,11 +47,13 @@ def test_get_missing_family_404(client):
 
 
 def test_family_aggregate_sums_in_inr(
-    client, make_family, make_investor, make_security, make_holding
+    client, make_family, make_investor, make_security, make_holding, make_folio
 ):
     fam = make_family()
     inv1 = make_investor(family=fam)
     inv2 = make_investor(family=fam)
+    make_folio(investor=inv1)
+    make_folio(investor=inv2)
     mf = make_security(security_type=SecurityType.MF.value)
     eq = make_security(
         security_type=SecurityType.EQUITY.value, isin="INE002A01018", symbol="RELIANCE"
@@ -65,6 +67,7 @@ def test_family_aggregate_sums_in_inr(
     # 100*75 + 10*2850 = 36,000
     assert Decimal(str(body["total_inr"])) == Decimal("36000")
     assert body["investor_count"] == 2
+    assert body["folio_count"] == 2
     assert body["stale_count"] == 0
     mix = {row["security_type"]: Decimal(str(row["value_inr"])) for row in body["asset_mix"]}
     assert mix["mf"] == Decimal("7500")

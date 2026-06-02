@@ -23,7 +23,7 @@ from folioman_core.valuation import value_holdings
 from folioman_core.xirr import cashflows_from_transactions, compute_xirr
 
 from folioman_app.mappers import to_core_security, to_core_transaction
-from folioman_app.models import Family, Investor, NAVHistory
+from folioman_app.models import Family, Folio, Investor, NAVHistory
 from folioman_app.models.jobs import ImportJobStatus
 
 _ZERO = Decimal("0")
@@ -277,6 +277,7 @@ def build_family_aggregate(family: Family, as_of: date) -> dict:
         "family_id": family.id,
         "as_of": as_of,
         "investor_count": len(investors),
+        "folio_count": Folio.objects.filter(investor__in=investors).count() if investors else 0,
         "total_inr": rollup["total_inr"],
         "asset_mix": rollup["asset_mix"],
         "top_holdings": rollup["top_holdings"],

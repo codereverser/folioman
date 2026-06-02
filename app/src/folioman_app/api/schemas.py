@@ -92,6 +92,7 @@ class FamilyAggregateOut(Schema):
     family_id: int
     as_of: date
     investor_count: int
+    folio_count: int = 0  # distinct folios across the family's investors
     total_inr: Decimal
     asset_mix: list[AssetMixRow]
     top_holdings: list[HoldingValueRow]

@@ -114,6 +114,11 @@
             "title": "Family Id",
             "type": "integer"
           },
+          "folio_count": {
+            "default": 0,
+            "title": "Folio Count",
+            "type": "integer"
+          },
           "investor_count": {
             "title": "Investor Count",
             "type": "integer"
