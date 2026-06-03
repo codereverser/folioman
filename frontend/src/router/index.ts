@@ -61,6 +61,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/IntegrityView.vue'),
   },
   {
+    path: '/investors/:investorId/tax',
+    name: 'tax-export',
+    component: () => import('@/views/TaxExportView.vue'),
+  },
+  {
     // Single CAS import — advisor-level: the statement identifies its own
     // investor by PAN (the server auto-detects MF CAS vs NSDL/CDSL eCAS and
     // resolves or creates the investor). Not scoped to a pre-selected investor.
