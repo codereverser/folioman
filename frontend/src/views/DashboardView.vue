@@ -55,7 +55,10 @@ const investorName = computed(() => roster.investorName(investorId.value) ?? 'In
 
 // Live summary + net-worth series; the range toggle re-fetches the series.
 const { summary, rollup, range, setRange, valuationReady } = useDashboard(investorId)
-const integrityTo = { name: 'import' }
+const integrityTo = computed(() => ({
+  name: 'integrity',
+  params: { investorId: investorId.value },
+}))
 
 const ranges: { label: string; value: RangeKey }[] = [
   { label: '6M', value: '6M' },

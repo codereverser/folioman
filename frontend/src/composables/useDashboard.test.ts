@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 // Route api.GET by path so both useDashboard (summary + value-series) and the
-// integrity composable it wraps resolve against fixtures.
+// integrity store it reads resolve against fixtures.
 const { get } = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/api/client', () => ({ api: { GET: get } }))
-// The composable toasts via the ui store; stub it (no Pinia in this unit test).
+// The composable toasts via the ui store; stub it.
 vi.mock('@/stores/ui', () => ({ useUiStore: () => ({ notify: vi.fn() }) }))
 
 import { useDashboard } from './useDashboard'
@@ -63,6 +64,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0))
 
 describe('useDashboard', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     get.mockReset()
     get.mockImplementation((path: string) => routeGet(path))
   })

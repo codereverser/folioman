@@ -36,6 +36,11 @@ const navLinks = computed<NavLink[]>(() => {
       icon: 'pi pi-chart-line',
       to: { name: 'dashboard', params: { investorId } },
     })
+    links.push({
+      label: 'Integrity',
+      icon: 'pi pi-verified',
+      to: { name: 'integrity', params: { investorId } },
+    })
   }
   if (ui.selectedFamilyId !== null) {
     links.push({

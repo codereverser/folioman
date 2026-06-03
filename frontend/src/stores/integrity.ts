@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { api } from '@/api/client'
+import { api, type Schemas } from '@/api/client'
 import {
   rollupIntegrity,
   toIntegrityStatus,
@@ -10,8 +10,11 @@ import {
 
 export interface IntegrityRow {
   securityId: number
+  folioId: number
   name: string
   isin: string
+  folioNumber: string
+  broker: string
   status: IntegrityStatus
   taxSafe: boolean
   unitsFromHoldings: string | null
@@ -19,12 +22,32 @@ export interface IntegrityRow {
   lastReconciledAt: string | null
 }
 
+function toRow(r: Schemas['IntegrityStatusOut']): IntegrityRow {
+  return {
+    securityId: r.security.id,
+    folioId: r.folio.id,
+    name: r.security.name ?? r.security.isin,
+    isin: r.security.isin,
+    folioNumber: r.folio.number,
+    broker: r.folio.broker,
+    status: toIntegrityStatus(r.status),
+    taxSafe: r.tax_safe,
+    unitsFromHoldings: r.units_from_holdings,
+    unitsFromTransactions: r.units_from_transactions,
+    lastReconciledAt: r.last_reconciled_at,
+  }
+}
+
 /**
- * Per-investor integrity statuses, cached by investor id. This is the seed of
- * the reconciliation store: it loads `/investors/{id}/integrity` and rolls the
- * statuses up for the dashboard health card. Acknowledge / refresh mutations
- * and the standalone Integrity page hang off this store later — the cache shape
- * is in place so those can land without a rewrite.
+ * Per-investor integrity statuses, cached by investor id. One row per
+ * (security, folio) — the reconciliation grain the backend reports. Loads
+ * `/investors/{id}/integrity`, rolls the statuses up for the dashboard health
+ * card, and owns the two mutations the Integrity page needs:
+ *  - `acknowledge` — accept a known mismatch (it stays out of the tax worksheet);
+ *  - `recompute` — force a full server-side re-reconcile.
+ *
+ * Both mutations update the cache in place so the dashboard rollup and the
+ * Integrity page react without a manual refetch.
  *
  * Fails soft: on error (e.g. no backend in dev) the investor's entry stays
  * undefined so callers fall back to placeholder data.
@@ -32,6 +55,7 @@ export interface IntegrityRow {
 export const useIntegrityStore = defineStore('integrity', () => {
   const byInvestor = ref<Record<number, IntegrityRow[]>>({})
   const loading = ref(false)
+  const acknowledging = ref(false)
   const error = ref<string | null>(null)
 
   function rowsFor(investorId: number): IntegrityRow[] {
@@ -51,16 +75,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
         params: { path: { investor_id: investorId } },
       })
       if (apiError || !data) throw new Error('integrity request failed')
-      byInvestor.value[investorId] = data.map((r) => ({
-        securityId: r.security.id,
-        name: r.security.name ?? r.security.isin,
-        isin: r.security.isin,
-        status: toIntegrityStatus(r.status),
-        taxSafe: r.tax_safe,
-        unitsFromHoldings: r.units_from_holdings,
-        unitsFromTransactions: r.units_from_transactions,
-        lastReconciledAt: r.last_reconciled_at,
-      }))
+      byInvestor.value[investorId] = data.map(toRow)
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'unknown error'
     } finally {
@@ -68,9 +83,74 @@ export const useIntegrityStore = defineStore('integrity', () => {
     }
   }
 
+  /** Force a full server-side re-reconcile and replace the cached rows. */
+  async function recompute(investorId: number): Promise<void> {
+    loading.value = true
+    error.value = null
+    try {
+      const { data, error: apiError } = await api.POST(
+        '/api/investors/{investor_id}/integrity/recompute',
+        { params: { path: { investor_id: investorId } } },
+      )
+      if (apiError || !data) throw new Error('integrity recompute failed')
+      byInvestor.value[investorId] = data.map(toRow)
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'unknown error'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Accept a known mismatch: the user marks the gap as reviewed. The security
+   * stays tax-unsafe (out of the worksheet) — this dismisses the red flag, it
+   * does not fix the units. Updates the matching cached row in place.
+   */
+  async function acknowledge(
+    investorId: number,
+    securityId: number,
+    folioId: number,
+  ): Promise<boolean> {
+    acknowledging.value = true
+    error.value = null
+    try {
+      const { data, error: apiError } = await api.POST(
+        '/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/acknowledge',
+        {
+          params: {
+            path: { investor_id: investorId, security_id: securityId, folio_id: folioId },
+          },
+        },
+      )
+      if (apiError || !data) throw new Error('acknowledge failed')
+      const rows = byInvestor.value[investorId]
+      if (rows) {
+        const i = rows.findIndex((r) => r.securityId === securityId && r.folioId === folioId)
+        if (i !== -1) rows[i] = toRow(data)
+      }
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'unknown error'
+      return false
+    } finally {
+      acknowledging.value = false
+    }
+  }
+
   function clear(): void {
     byInvestor.value = {}
   }
 
-  return { byInvestor, loading, error, rowsFor, rollupFor, load, clear }
+  return {
+    byInvestor,
+    loading,
+    acknowledging,
+    error,
+    rowsFor,
+    rollupFor,
+    load,
+    recompute,
+    acknowledge,
+    clear,
+  }
 })

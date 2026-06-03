@@ -56,6 +56,11 @@ const routes: RouteRecordRaw[] = [
     component: SchemeDetailView,
   },
   {
+    path: '/investors/:investorId/integrity',
+    name: 'integrity',
+    component: () => import('@/views/IntegrityView.vue'),
+  },
+  {
     // Single CAS import — advisor-level: the statement identifies its own
     // investor by PAN (the server auto-detects MF CAS vs NSDL/CDSL eCAS and
     // resolves or creates the investor). Not scoped to a pre-selected investor.

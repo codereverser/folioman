@@ -2,8 +2,8 @@ import { computed, getCurrentScope, onScopeDispose, ref, watch, type Ref } from 
 import { api, type Schemas } from '@/api/client'
 import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import type { ValuePoint } from '@/components/charts/PortfolioValueChart.vue'
-import { useIntegrity } from '@/composables/useIntegrity'
 import { toIntegrityStatus, type IntegrityStatus } from '@/integrity/status'
+import { useIntegrityStore } from '@/stores/integrity'
 import { useUiStore } from '@/stores/ui'
 import { formatDate } from '@/utils/format'
 
@@ -70,12 +70,15 @@ export function useDashboard(investorId: Ref<number>) {
   const ui = useUiStore()
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
-  const integrity = useIntegrity(investorId)
+  // Per-holding integrity is read from the shared integrity store, so an
+  // acknowledge on the Integrity page reflects here without a refetch.
+  const integrityStore = useIntegrityStore()
   const integrityBySecurity = computed(() => {
     const map = new Map<number, IntegrityStatus>()
-    for (const row of integrity.rows.value) map.set(row.securityId, row.status)
+    for (const row of integrityStore.rowsFor(investorId.value)) map.set(row.securityId, row.status)
     return map
   })
+  const rollup = computed(() => integrityStore.rollupFor(investorId.value))
 
   async function loadSummary(): Promise<void> {
     const { data } = await api.GET('/api/investors/{investor_id}/summary', {
@@ -131,7 +134,12 @@ export function useDashboard(investorId: Ref<number>) {
     loading.value = true
     stopPolling()
     try {
-      await Promise.all([loadSummary(), loadSeries(), loadStatus()])
+      await Promise.all([
+        loadSummary(),
+        loadSeries(),
+        loadStatus(),
+        integrityStore.load(investorId.value),
+      ])
     } finally {
       loading.value = false
     }
@@ -204,7 +212,7 @@ export function useDashboard(investorId: Ref<number>) {
 
   return {
     summary,
-    rollup: integrity.rollup,
+    rollup,
     loading,
     range,
     setRange,
