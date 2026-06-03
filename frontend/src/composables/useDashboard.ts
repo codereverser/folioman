@@ -1,10 +1,14 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { api, type Schemas } from '@/api/client'
 import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import type { ValuePoint } from '@/components/charts/PortfolioValueChart.vue'
 import { useIntegrity } from '@/composables/useIntegrity'
 import { toIntegrityStatus, type IntegrityStatus } from '@/integrity/status'
+import { useUiStore } from '@/stores/ui'
 import { formatDate } from '@/utils/format'
+
+const POLL_MS = 5000
+const POLL_MAX_TICKS = 120 // ~10 min cap
 import { ASSET_META, RANGES, assetLabel, num, type RangeKey } from '@/utils/portfolio'
 
 export type { RangeKey }
@@ -59,6 +63,12 @@ export function useDashboard(investorId: Ref<number>) {
   const series = ref<Schemas['ValueSeriesPoint'][]>([])
   const range = ref<RangeKey>('1Y')
   const loading = ref(false)
+  // Day-wise valuation readiness — gates the net-worth chart (the headline numbers
+  // stay ungated, backed by the provisional value until the worker finishes).
+  const valuationStatus = ref<string>('ready')
+  const valuationReady = computed(() => valuationStatus.value === 'ready')
+  const ui = useUiStore()
+  let pollTimer: ReturnType<typeof setInterval> | null = null
 
   const integrity = useIntegrity(investorId)
   const integrityBySecurity = computed(() => {
@@ -85,13 +95,47 @@ export function useDashboard(investorId: Ref<number>) {
     series.value = data?.points ?? []
   }
 
+  async function loadStatus(): Promise<void> {
+    const { data } = await api.GET('/api/investors/{investor_id}/valuation-status', {
+      params: { path: { investor_id: investorId.value } },
+    })
+    valuationStatus.value = data?.status ?? 'ready'
+  }
+
+  function stopPolling(): void {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  // While valuation is computing, poll the status; when it flips to ready, reload
+  // the (now precise) series + headline and toast the user.
+  function startPolling(): void {
+    stopPolling()
+    let ticks = 0
+    pollTimer = setInterval(async () => {
+      ticks += 1
+      await loadStatus()
+      if (valuationReady.value) {
+        stopPolling()
+        await Promise.all([loadSummary(), loadSeries()])
+        ui.notify({ severity: 'success', summary: 'Portfolio valuation ready' })
+      } else if (ticks >= POLL_MAX_TICKS) {
+        stopPolling()
+      }
+    }, POLL_MS)
+  }
+
   async function loadAll(): Promise<void> {
     loading.value = true
+    stopPolling()
     try {
-      await Promise.all([loadSummary(), loadSeries()])
+      await Promise.all([loadSummary(), loadSeries(), loadStatus()])
     } finally {
       loading.value = false
     }
+    if (!valuationReady.value) startPolling()
   }
 
   function setRange(next: RangeKey): void {
@@ -101,6 +145,7 @@ export function useDashboard(investorId: Ref<number>) {
   }
 
   watch(investorId, () => void loadAll(), { immediate: true })
+  onScopeDispose(stopPolling)
 
   // The net-worth line; trim the leading all-zero stretch before the first holding.
   const valueSeries = computed<ValuePoint[]>(() => {
@@ -157,5 +202,14 @@ export function useDashboard(investorId: Ref<number>) {
     }
   })
 
-  return { summary, rollup: integrity.rollup, loading, range, setRange, reload: loadAll }
+  return {
+    summary,
+    rollup: integrity.rollup,
+    loading,
+    range,
+    setRange,
+    reload: loadAll,
+    valuationReady,
+    valuationStatus,
+  }
 }

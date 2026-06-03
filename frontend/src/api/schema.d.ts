@@ -98,6 +98,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/families/{family_id}/valuation-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Family Valuation Status
+         * @description Combined readiness — ready only when every member's day-wise valuation is.
+         */
+        get: operations["folioman_app_api_families_family_valuation_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/families/{family_id}/value-series": {
         parameters: {
             query?: never;
@@ -443,6 +463,27 @@ export interface paths {
          *     ``FOLIOMAN_MANUAL_TXNS=1`` to enable; the logic below is unchanged.
          */
         post: operations["folioman_app_api_investors_create_transaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/valuation-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Investor Valuation Status
+         * @description Whether the day-wise valuation is ready (chart gate) or still computing —
+         *     the dashboard polls this and shows a placeholder + provisional value meanwhile.
+         */
+        get: operations["folioman_app_api_investors_investor_valuation_status"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1036,6 +1077,29 @@ export interface components {
             units: string;
         };
         /**
+         * ValuationStatusOut
+         * @description Day-wise valuation readiness for an investor or family. The dashboard gates
+         *     the net-worth chart on ``status == 'ready'`` and polls while it isn't; the
+         *     headline numbers stay ungated (backed by the provisional value meanwhile).
+         */
+        ValuationStatusOut: {
+            /** Computed Through */
+            computed_through?: string | null;
+            /** Family Id */
+            family_id?: number | null;
+            /** Investor Id */
+            investor_id?: number | null;
+            /**
+             * Is Provisional
+             * @default false
+             */
+            is_provisional: boolean;
+            /** Recompute From */
+            recompute_from?: string | null;
+            /** Status */
+            status: string;
+        };
+        /**
          * ValueSeriesOut
          * @description Reconstructed net-worth-over-time series for an investor or family.
          */
@@ -1265,6 +1329,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FamilyAggregateOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_families_family_valuation_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                family_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValuationStatusOut"];
                 };
             };
         };
@@ -1811,6 +1897,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TransactionOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_investors_investor_valuation_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValuationStatusOut"];
                 };
             };
         };

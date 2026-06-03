@@ -1,8 +1,12 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { api, type Schemas } from '@/api/client'
 import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import type { ValuePoint } from '@/components/charts/PortfolioValueChart.vue'
 import { useRosterStore } from '@/stores/roster'
+import { useUiStore } from '@/stores/ui'
+
+const POLL_MS = 5000
+const POLL_MAX_TICKS = 120 // ~10 min cap
 import { formatDate } from '@/utils/format'
 import { ASSET_META, RANGES, assetLabel, num, type RangeKey } from '@/utils/portfolio'
 
@@ -61,7 +65,11 @@ export function useFamilyDashboard(familyId: Ref<number>) {
   const members = ref<FamilyMember[]>([])
   const range = ref<RangeKey>('1Y')
   const loading = ref(false)
+  const valuationStatus = ref<string>('ready')
+  const valuationReady = computed(() => valuationStatus.value === 'ready')
   const roster = useRosterStore()
+  const ui = useUiStore()
+  let pollTimer: ReturnType<typeof setInterval> | null = null
 
   async function loadAggregate(): Promise<void> {
     const { data } = await api.GET('/api/families/{family_id}/aggregate', {
@@ -95,13 +103,45 @@ export function useFamilyDashboard(familyId: Ref<number>) {
     )
   }
 
+  async function loadStatus(): Promise<void> {
+    const { data } = await api.GET('/api/families/{family_id}/valuation-status', {
+      params: { path: { family_id: familyId.value } },
+    })
+    valuationStatus.value = data?.status ?? 'ready'
+  }
+
+  function stopPolling(): void {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  function startPolling(): void {
+    stopPolling()
+    let ticks = 0
+    pollTimer = setInterval(async () => {
+      ticks += 1
+      await loadStatus()
+      if (valuationReady.value) {
+        stopPolling()
+        await Promise.all([loadAggregate(), loadSeries()])
+        ui.notify({ severity: 'success', summary: 'Portfolio valuation ready' })
+      } else if (ticks >= POLL_MAX_TICKS) {
+        stopPolling()
+      }
+    }, POLL_MS)
+  }
+
   async function loadAll(): Promise<void> {
     loading.value = true
+    stopPolling()
     try {
-      await Promise.all([loadAggregate(), loadSeries(), loadMembers()])
+      await Promise.all([loadAggregate(), loadSeries(), loadMembers(), loadStatus()])
     } finally {
       loading.value = false
     }
+    if (!valuationReady.value) startPolling()
   }
 
   function setRange(next: RangeKey): void {
@@ -111,6 +151,7 @@ export function useFamilyDashboard(familyId: Ref<number>) {
   }
 
   watch(familyId, () => void loadAll(), { immediate: true })
+  onScopeDispose(stopPolling)
 
   const valueSeries = computed<ValuePoint[]>(() => {
     const points = series.value.map((p) => ({
@@ -157,5 +198,14 @@ export function useFamilyDashboard(familyId: Ref<number>) {
     }
   })
 
-  return { summary, members, loading, range, setRange, reload: loadAll }
+  return {
+    summary,
+    members,
+    loading,
+    range,
+    setRange,
+    reload: loadAll,
+    valuationReady,
+    valuationStatus,
+  }
 }

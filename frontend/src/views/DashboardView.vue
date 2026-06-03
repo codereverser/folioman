@@ -1,24 +1,50 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
-import SelectButton from 'primevue/selectbutton'
 import MetricCard from '@/components/MetricCard.vue'
 import IntegrityHealthCard from '@/components/IntegrityHealthCard.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
-import AllocationDonut from '@/components/charts/AllocationDonut.vue'
-import PortfolioValueChart from '@/components/charts/PortfolioValueChart.vue'
 import { useDashboard, type RangeKey } from '@/composables/useDashboard'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { formatInr, formatUnits } from '@/utils/format'
 
+const AllocationDonut = defineAsyncComponent(() => import('@/components/charts/AllocationDonut.vue'))
+const PortfolioValueChart = defineAsyncComponent(() => import('@/components/charts/PortfolioValueChart.vue'))
+const DataTable = defineAsyncComponent(() => import('primevue/datatable'))
+const Column = defineAsyncComponent(() => import('primevue/column'))
+const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
+
 const route = useRoute()
 const router = useRouter()
 const roster = useRosterStore()
 const ui = useUiStore()
+const loadCharts = ref(false)
+const chartRegion = ref<HTMLElement | null>(null)
+let stopChartObserver: () => void = () => {}
+
+onMounted(() => {
+  const target = chartRegion.value
+  if (!target || typeof IntersectionObserver === 'undefined') {
+    loadCharts.value = true
+    return
+  }
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      loadCharts.value = true
+      observer.disconnect()
+      stopChartObserver = () => {}
+    },
+    { threshold: 0.2 },
+  )
+  observer.observe(target)
+  stopChartObserver = () => observer.disconnect()
+})
+onBeforeUnmount(() => {
+  stopChartObserver()
+})
 
 const investorId = computed(() => {
   const raw = route.params.investorId
@@ -28,7 +54,7 @@ const investorId = computed(() => {
 const investorName = computed(() => roster.investorName(investorId.value) ?? 'Investor')
 
 // Live summary + net-worth series; the range toggle re-fetches the series.
-const { summary, rollup, range, setRange } = useDashboard(investorId)
+const { summary, rollup, range, setRange, valuationReady } = useDashboard(investorId)
 const integrityTo = { name: 'import' }
 
 const ranges: { label: string; value: RangeKey }[] = [
@@ -80,15 +106,21 @@ function openScheme(securityId: number): void {
 
       <IntegrityHealthCard class="span-3" :rollup="rollup" :review-to="integrityTo" />
 
-      <article class="span-4 card chart-card">
+      <article ref="chartRegion" class="span-4 card chart-card">
         <h2>Allocation</h2>
-        <AllocationDonut :data="summary.allocation" :center-label="formatInr(summary.netWorth)" />
+        <AllocationDonut
+          v-if="loadCharts"
+          :data="summary.allocation"
+          :center-label="formatInr(summary.netWorth)"
+        />
+        <div v-else class="chart-placeholder donut-placeholder" aria-hidden="true" />
       </article>
 
       <article class="span-8 card chart-card">
         <div class="chart-head">
           <h2>Portfolio value</h2>
           <SelectButton
+            v-if="valuationReady && loadCharts"
             :model-value="range"
             :options="ranges"
             option-label="label"
@@ -97,13 +129,23 @@ function openScheme(securityId: number): void {
             size="small"
             @update:model-value="(v: RangeKey | null) => v && setRange(v)"
           />
+          <span v-else class="range-placeholder" aria-hidden="true" />
         </div>
-        <PortfolioValueChart :data="summary.valueSeries" />
+        <template v-if="!valuationReady">
+          <div class="chart-placeholder value-placeholder" aria-hidden="true" />
+          <p class="chart-progress">
+            Portfolio valuation in progress — refresh in a bit. Showing values as of
+            your latest statement meanwhile.
+          </p>
+        </template>
+        <PortfolioValueChart v-else-if="loadCharts" :data="summary.valueSeries" />
+        <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
       </article>
 
       <article class="span-12 card">
         <h2>Top holdings</h2>
         <DataTable
+          v-if="loadCharts"
           :value="summary.topHoldings"
           data-key="securityId"
           class="holdings clickable-rows"
@@ -136,6 +178,7 @@ function openScheme(securityId: number): void {
             </template>
           </Column>
         </DataTable>
+        <div v-else class="table-placeholder" aria-hidden="true" />
       </article>
     </div>
   </section>
@@ -164,7 +207,9 @@ function openScheme(securityId: number): void {
 
 .bento {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  /* minmax(0, …) so a track can shrink past its content's intrinsic width;
+     the default `1fr` is `minmax(auto, 1fr)` and would force sideways scroll. */
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: var(--fm-space-5);
 }
 
@@ -173,6 +218,11 @@ function openScheme(securityId: number): void {
 .span-6 { grid-column: span 6; }
 .span-8 { grid-column: span 8; }
 .span-12 { grid-column: span 12; }
+
+/* Every grid item must also opt out of the auto min-width floor. */
+.bento > * {
+  min-width: 0;
+}
 
 .card {
   padding: var(--fm-space-5);
@@ -196,6 +246,38 @@ function openScheme(securityId: number): void {
 }
 .chart-head h2 {
   margin: 0;
+}
+.range-placeholder {
+  display: block;
+  width: 8.5rem;
+  height: 2rem;
+  border-radius: var(--fm-radius-sm);
+  background: var(--fm-surface-raised);
+}
+.chart-placeholder {
+  width: 100%;
+  border-radius: var(--fm-radius-sm);
+  background:
+    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    var(--fm-surface-raised);
+}
+.donut-placeholder {
+  height: 260px;
+}
+.value-placeholder {
+  height: 280px;
+}
+.chart-progress {
+  margin: var(--fm-space-2) 0 0;
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.table-placeholder {
+  height: 12rem;
+  border-radius: var(--fm-radius-sm);
+  background:
+    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    var(--fm-surface-raised);
 }
 
 .hero-card .hero-note {
@@ -224,6 +306,11 @@ function openScheme(securityId: number): void {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* On a narrow screen the table scrolls within its card rather than widening
+   the page. */
+:deep(.holdings .p-datatable-table-container) {
+  overflow-x: auto;
+}
 
 /* Top-holdings rows drill into the scheme detail. */
 :deep(.clickable-rows .p-datatable-tbody > tr) {
@@ -239,5 +326,11 @@ function openScheme(securityId: number): void {
 }
 @media (max-width: 768px) {
   .span-3, .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
+}
+/* Phone: trim the chrome so content keeps the width. */
+@media (max-width: 640px) {
+  .dashboard { padding: var(--fm-space-4); }
+  .bento { gap: var(--fm-space-4); }
+  .card { padding: var(--fm-space-4); }
 }
 </style>

@@ -5,6 +5,8 @@ import { ref } from 'vue'
 // integrity composable it wraps resolve against fixtures.
 const { get } = vi.hoisted(() => ({ get: vi.fn() }))
 vi.mock('@/api/client', () => ({ api: { GET: get } }))
+// The composable toasts via the ui store; stub it (no Pinia in this unit test).
+vi.mock('@/stores/ui', () => ({ useUiStore: () => ({ notify: vi.fn() }) }))
 
 import { useDashboard } from './useDashboard'
 
