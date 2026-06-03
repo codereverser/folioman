@@ -99,4 +99,38 @@ describe('family / investor CRUD invalidates the roster cache', () => {
 
     expect(reload).toHaveBeenCalledOnce()
   })
+
+  it('a second ensureLoaded awaits the in-flight load (deep-link cold-start race)', async () => {
+    // Two consumers (e.g. the scope switcher + a deep-linked family page on a PWA
+    // cold start) call ensureLoaded near-simultaneously. The second must await the
+    // SAME load, not return early while the roster is still empty.
+    let openGate!: () => void
+    const gate = new Promise<void>((r) => (openGate = r))
+    mockGet.mockImplementation(
+      (path: string) =>
+        gate.then(() =>
+          path === '/api/families/'
+            ? { data: [{ id: 1, name: 'Sharma Family' }] }
+            : { data: [{ id: 10, name: 'Rajesh', family_id: 1 }] },
+        ) as never,
+    )
+
+    const roster = useRosterStore()
+    const first = roster.ensureLoaded()
+    let secondResolved = false
+    const second = roster.ensureLoaded().then(() => {
+      secondResolved = true
+    })
+    await new Promise((r) => setTimeout(r, 0)) // flush microtasks; load still gated
+
+    // Pre-fix bug: the second call returned immediately (load in flight) and a
+    // consumer would read an empty roster. It must instead still be waiting.
+    expect(secondResolved).toBe(false)
+    expect(roster.investors).toHaveLength(0)
+
+    openGate()
+    await Promise.all([first, second])
+    expect(roster.investors).toHaveLength(1) // both callers see the populated roster
+    expect(roster.investors[0].familyId).toBe(1)
+  })
 })

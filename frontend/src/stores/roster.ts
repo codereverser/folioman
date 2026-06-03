@@ -47,6 +47,11 @@ export const useRosterStore = defineStore('roster', () => {
   const loaded = ref(false)
   const error = ref<string | null>(null)
   const usingSeed = ref(false)
+  // The single in-flight load, so concurrent ensureLoaded() callers await the
+  // *same* fetch instead of one returning early while the other is still loading
+  // (which left deep-linked consumers — e.g. the family page on a PWA cold start —
+  // reading an empty roster).
+  let inflight: Promise<void> | null = null
 
   async function load(): Promise<void> {
     loading.value = true
@@ -72,10 +77,11 @@ export const useRosterStore = defineStore('roster', () => {
     }
   }
 
-  /** Load once; subsequent calls are no-ops while a load is in flight or done. */
+  /** Load once; concurrent callers share and await the same in-flight load. */
   async function ensureLoaded(): Promise<void> {
-    if (loaded.value || loading.value) return
-    await load()
+    if (loaded.value) return
+    if (!inflight) inflight = load().finally(() => (inflight = null))
+    await inflight
   }
 
   /** Force a refetch — called after any investor/family CRUD. */
