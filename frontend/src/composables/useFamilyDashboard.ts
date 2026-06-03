@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
+import { computed, getCurrentScope, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { api, type Schemas } from '@/api/client'
 import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import type { ValuePoint } from '@/components/charts/PortfolioValueChart.vue'
@@ -151,7 +151,7 @@ export function useFamilyDashboard(familyId: Ref<number>) {
   }
 
   watch(familyId, () => void loadAll(), { immediate: true })
-  onScopeDispose(stopPolling)
+  if (getCurrentScope()) onScopeDispose(stopPolling)
 
   const valueSeries = computed<ValuePoint[]>(() => {
     const points = series.value.map((p) => ({
