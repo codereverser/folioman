@@ -44,6 +44,15 @@ TRANSACTION_SOURCE_CHOICES = _choices(TransactionSource)
 HOLDING_SOURCE_CHOICES = _choices(HoldingSource)
 
 
+class ValuationStatus(models.TextChoices):
+    """Lifecycle of an investor's day-wise valuation computation."""
+
+    PENDING = "pending", "Pending"  # queued; not started
+    COMPUTING = "computing", "Computing"  # NAVs fetching / day-wise running
+    READY = "ready", "Ready"  # series computed through today
+    ERROR = "error", "Error"  # last attempt failed; awaiting retry
+
+
 class Family(TimeStampedModel):
     """A group of investors for combined / aggregate views."""
 
@@ -86,6 +95,20 @@ class Investor(TimeStampedModel):
     # PAN at rest: ciphertext + lookup hash.
     pan_encrypted = models.BinaryField(null=True, blank=True)
     pan_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
+    # Day-wise valuation status (driven by the background scheduler). The Investor
+    # row is itself the durable work-list: the scheduler picks up rows that are
+    # pending/computing (or error past next_attempt_at) and recomputes InvestorValue
+    # from recompute_from. ``ready`` (the default) means the chart can render; a new
+    # empty investor has nothing to compute and is ready.
+    valuation_status = models.CharField(
+        max_length=10, choices=ValuationStatus.choices, default=ValuationStatus.READY
+    )
+    valuation_recompute_from = models.DateField(null=True, blank=True)
+    valuation_computed_through = models.DateField(null=True, blank=True)
+    valuation_attempts = models.PositiveSmallIntegerField(default=0)
+    valuation_next_attempt_at = models.DateTimeField(null=True, blank=True)
+    valuation_error = models.TextField(blank=True, default="")
 
     class Meta:
         ordering = ["name"]
@@ -237,3 +260,32 @@ class Holding(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.units} units @ {self.as_of_date}"
+
+
+class InvestorValue(TimeStampedModel):
+    """One day's net-worth point for an investor — the persisted day-wise series.
+
+    Computed by the background scheduler (``recompute_investor_valuation``) from the
+    ledger + ``NAVHistory``; mirrors v1's ``PortfolioValue``. ``is_provisional`` marks
+    the single point seeded synchronously at import from the statement's own reported
+    value (as of its date), shown until the precise live-NAV series supersedes it.
+    Family series = sum of members' rows by date.
+    """
+
+    investor = models.ForeignKey(Investor, on_delete=models.CASCADE, related_name="daily_values")
+    date = models.DateField()
+    invested_inr = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0"))
+    value_inr = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0"))
+    is_provisional = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["investor", "date"]
+        constraints = [
+            models.UniqueConstraint(fields=["investor", "date"], name="uniq_investor_value_date"),
+        ]
+        indexes = [
+            models.Index(fields=["investor", "date"], name="idx_investor_value_date"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.value_inr} @ {self.date}"

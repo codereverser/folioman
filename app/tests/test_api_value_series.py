@@ -1,8 +1,9 @@
-"""Value-series (net worth over time) + XIRR wiring.
+"""Value-series endpoint (reads the persisted day-wise ``InvestorValue``) + the
+summary XIRR / day-change / per-fund wiring.
 
-The series is reconstructed on demand from the ledger + NAVHistory — no snapshot
-tables. Covers: units changing across a sell date, the final point matching the
-point-in-time summary, stale flagging for an unpriced holding, and XIRR.
+The series endpoint reads what the scheduler computed (``InvestorValue``); compute
+correctness is covered in ``test_valuation_jobs.py``. Here: read-in-range, the
+weekly/monthly downsample, family = sum of members, and XIRR on the summary.
 """
 
 from __future__ import annotations
@@ -11,8 +12,8 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from folioman_app.models import NAVHistory
-from folioman_core.models import SecurityType, TransactionType
+from folioman_app.models import InvestorValue, NAVHistory
+from folioman_core.models import SecurityType
 
 pytestmark = pytest.mark.django_db
 
@@ -21,125 +22,59 @@ def _points_by_date(body) -> dict[str, dict]:
     return {p["date"]: p for p in body["points"]}
 
 
-def test_value_series_reconstructs_units_across_a_sell(
-    client, make_investor, make_security, make_folio, make_transaction
-):
-    inv = make_investor()
-    mf = make_security(security_type=SecurityType.MF.value)
-    folio = make_folio(investor=inv)
-    make_transaction(
-        investor=inv,
-        security=mf,
-        folio=folio,
-        date=dt.date(2025, 1, 15),
-        units=Decimal("100"),
-        nav_or_price=Decimal("10"),
+def _seed_values(investor, rows: list[tuple[dt.date, str, str]]) -> None:
+    """Seed daily InvestorValue rows: [(date, value, invested), …]."""
+    InvestorValue.objects.bulk_create(
+        [
+            InvestorValue(investor=investor, date=d, value_inr=Decimal(v), invested_inr=Decimal(i))
+            for d, v, i in rows
+        ]
     )
-    make_transaction(
-        investor=inv,
-        security=mf,
-        folio=folio,
-        date=dt.date(2025, 4, 15),
-        transaction_type=TransactionType.SELL.value,
-        units=Decimal("40"),
-        nav_or_price=Decimal("20"),
-    )
-    for d, nav in [((1, 31), 12), ((3, 31), 15), ((6, 30), 20)]:
-        NAVHistory.objects.create(security=mf, date=dt.date(2025, *d), nav=Decimal(str(nav)))
 
+
+def test_value_series_returns_persisted_rows_in_range(client, make_investor):
+    inv = make_investor()
+    _seed_values(
+        inv,
+        [
+            (dt.date(2025, 1, 1), "1000", "1000"),
+            (dt.date(2025, 1, 2), "1100", "1000"),
+            (dt.date(2025, 1, 3), "1200", "1000"),
+        ],
+    )
     body = client.get(
         f"/api/investors/{inv.id}/value-series",
-        {"from": "2025-01-01", "to": "2025-06-30", "granularity": "monthly"},
+        {"from": "2025-01-01", "to": "2025-01-02", "granularity": "daily"},
     ).json()
     pts = _points_by_date(body)
-
-    # Before the first buy: nothing held.
-    assert Decimal(str(pts["2025-01-01"]["value_inr"])) == Decimal("0")
-    assert Decimal(str(pts["2025-01-01"]["invested_inr"])) == Decimal("0")
-    # Feb: 100 units priced at the latest NAV on/before (Jan 31 → 12).
-    assert Decimal(str(pts["2025-02-01"]["value_inr"])) == Decimal("1200")
-    assert Decimal(str(pts["2025-02-01"]["invested_inr"])) == Decimal("1000")
-    # May, after the Apr 15 sell: 60 units; NAV on/before is Mar 31 → 15.
-    assert Decimal(str(pts["2025-05-01"]["value_inr"])) == Decimal("900")
-    # invested = FIFO cost basis of the 60 units still held = 60 * 10 (not net cash).
-    assert Decimal(str(pts["2025-05-01"]["invested_inr"])) == Decimal("600")
-    # Final point lands exactly on `to` (Jun 30): 60 * 20.
-    assert Decimal(str(pts["2025-06-30"]["value_inr"])) == Decimal("1200")
+    assert set(pts) == {"2025-01-01", "2025-01-02"}  # 01-03 is out of range
+    assert Decimal(str(pts["2025-01-02"]["value_inr"])) == Decimal("1100")
 
 
-def test_invested_is_fifo_cost_basis_never_net_cash(
-    client, make_investor, make_security, make_folio, make_transaction
-):
-    # A profitable partial sell must NOT push the "Invested" line negative while
-    # units are still held: invested tracks cost basis of remaining units, not
-    # cumulative net cash (which would be 1000 - 60*30 = -800 here).
+def test_value_series_downsamples_to_one_point_per_month(client, make_investor):
     inv = make_investor()
-    mf = make_security(security_type=SecurityType.MF.value)
-    folio = make_folio(investor=inv)
-    make_transaction(
-        investor=inv,
-        security=mf,
-        folio=folio,
-        date=dt.date(2025, 1, 1),
-        units=Decimal("100"),
-        nav_or_price=Decimal("10"),
+    _seed_values(
+        inv,
+        [
+            (dt.date(2025, 1, 10), "100", "100"),
+            (dt.date(2025, 1, 31), "150", "100"),  # last in Jan → kept
+            (dt.date(2025, 2, 15), "200", "100"),  # last in Feb → kept
+        ],
     )
-    make_transaction(
-        investor=inv,
-        security=mf,
-        folio=folio,
-        date=dt.date(2025, 2, 1),
-        transaction_type=TransactionType.SELL.value,
-        units=Decimal("60"),
-        nav_or_price=Decimal("30"),
-    )
-
     body = client.get(
-        f"/api/investors/{inv.id}/value-series", {"from": "2025-03-01", "to": "2025-03-01"}
+        f"/api/investors/{inv.id}/value-series",
+        {"from": "2025-01-01", "to": "2025-02-28", "granularity": "monthly"},
     ).json()
+    pts = _points_by_date(body)
+    assert set(pts) == {"2025-01-31", "2025-02-15"}  # last of each month
+    assert Decimal(str(pts["2025-01-31"]["value_inr"])) == Decimal("150")
 
-    # 40 units still held at ₹10 cost basis → ₹400, not -₹800.
-    assert Decimal(str(body["points"][-1]["invested_inr"])) == Decimal("400")
 
-
-def test_value_series_final_point_equals_summary(
-    client, make_investor, make_security, make_folio, make_transaction
-):
+def test_value_series_empty_when_not_yet_computed(client, make_investor):
+    # No InvestorValue rows (scheduler hasn't run) → empty series, no error.
     inv = make_investor()
-    mf = make_security(security_type=SecurityType.MF.value)
-    folio = make_folio(investor=inv)
-    make_transaction(
-        investor=inv,
-        security=mf,
-        folio=folio,
-        date=dt.date(2025, 1, 1),
-        units=Decimal("100"),
-        nav_or_price=Decimal("10"),
-    )
-    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("75"))
-
-    series = client.get(f"/api/investors/{inv.id}/value-series", {"to": "2025-06-01"}).json()
-    summary = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-01"}).json()
-
-    assert series["points"][-1]["date"] == "2025-06-01"
-    assert Decimal(str(series["points"][-1]["value_inr"])) == Decimal(str(summary["total_inr"]))
-
-
-def test_value_series_flags_unpriced_holding_as_stale(
-    client, make_investor, make_security, make_holding
-):
-    inv = make_investor()
-    equity = make_security(security_type=SecurityType.EQUITY.value)  # no NAVHistory
-    make_holding(investor=inv, security=equity, units=Decimal("50"), as_of_date=dt.date(2025, 1, 1))
-
-    body = client.get(
-        f"/api/investors/{inv.id}/value-series", {"from": "2025-02-01", "to": "2025-04-01"}
-    ).json()
-
-    # Held but unpriced: points are flagged stale, not dropped, and contribute ₹0.
-    held = [p for p in body["points"] if p["date"] >= "2025-02-01"]
-    assert held and all(p["stale"] for p in held)
-    assert all(Decimal(str(p["value_inr"])) == Decimal("0") for p in held)
+    body = client.get(f"/api/investors/{inv.id}/value-series", {"to": "2025-06-01"}).json()
+    assert body["points"] == []
 
 
 def test_xirr_appears_on_summary_for_a_ledger(
@@ -278,26 +213,21 @@ def test_per_fund_xirr_null_for_snapshot_only_holding(
     assert body["top_holdings"][0]["xirr"] is None
 
 
-def test_family_value_series_aggregates_investors(
-    client, make_family, make_investor, make_security, make_folio, make_transaction
-):
+def test_family_value_series_sums_members_by_date(client, make_family, make_investor):
+    # Family series = sum of members' persisted InvestorValue rows on each date.
     fam = make_family()
     a = make_investor(family=fam)
     b = make_investor(family=fam)
-    mf = make_security(security_type=SecurityType.MF.value)
-    for inv in (a, b):
-        make_transaction(
-            investor=inv,
-            security=mf,
-            folio=make_folio(investor=inv),
-            date=dt.date(2025, 1, 1),
-            units=Decimal("100"),
-            nav_or_price=Decimal("10"),
-        )
-    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("50"))
+    _seed_values(a, [(dt.date(2025, 6, 1), "1000", "800"), (dt.date(2025, 6, 2), "1100", "800")])
+    _seed_values(b, [(dt.date(2025, 6, 1), "500", "400"), (dt.date(2025, 6, 2), "550", "400")])
 
-    body = client.get(f"/api/families/{fam.id}/value-series", {"to": "2025-06-01"}).json()
+    body = client.get(
+        f"/api/families/{fam.id}/value-series",
+        {"from": "2025-06-01", "to": "2025-06-02", "granularity": "daily"},
+    ).json()
+    pts = _points_by_date(body)
 
     assert body["family_id"] == fam.id
-    # 200 units across the two investors * 50.
-    assert Decimal(str(body["points"][-1]["value_inr"])) == Decimal("10000")
+    assert Decimal(str(pts["2025-06-01"]["value_inr"])) == Decimal("1500")  # 1000 + 500
+    assert Decimal(str(pts["2025-06-02"]["value_inr"])) == Decimal("1650")  # 1100 + 550
+    assert Decimal(str(pts["2025-06-02"]["invested_inr"])) == Decimal("1200")  # 800 + 400

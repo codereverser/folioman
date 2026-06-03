@@ -22,11 +22,13 @@ from folioman_app.api.schemas import (
     FamilyIn,
     FamilyOut,
     InvestorOut,
+    ValuationStatusOut,
     ValueSeriesOut,
 )
 from folioman_app.models import Family
 from folioman_app.services.valuation import (
     build_family_aggregate,
+    build_family_valuation_status,
     default_series_start,
     family_value_series,
 )
@@ -103,3 +105,10 @@ def family_value_series_endpoint(
         "granularity": granularity,
         "points": points,
     }
+
+
+@router.get("/{family_id}/valuation-status", response=ValuationStatusOut)
+def family_valuation_status(request, family_id: int):
+    """Combined readiness — ready only when every member's day-wise valuation is."""
+    family = get_owned_family(request, family_id)
+    return build_family_valuation_status(family)

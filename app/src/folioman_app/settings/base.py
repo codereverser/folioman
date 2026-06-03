@@ -64,6 +64,12 @@ FOLIOMAN_API_AUTH = "local"
 # (FOLIOMAN_MANUAL_TXNS=1) to re-enable, no code change needed.
 MANUAL_TRANSACTIONS_ENABLED = os.environ.get("FOLIOMAN_MANUAL_TXNS", "0") == "1"
 
+# Day-wise valuation scheduler. Off by default (base/server) — the server runs one
+# dedicated `manage.py run_scheduler` process, never one per gunicorn worker. The
+# desktop settings flip it on so the single PyWebView process runs it in a thread.
+# Env override (FOLIOMAN_RUN_SCHEDULER=1) for a dev runserver that wants it inline.
+FOLIOMAN_RUN_SCHEDULER = os.environ.get("FOLIOMAN_RUN_SCHEDULER", "0") == "1"
+
 ROOT_URLCONF = "folioman_app.urls"
 
 TEMPLATES = [

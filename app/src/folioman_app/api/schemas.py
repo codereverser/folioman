@@ -132,6 +132,19 @@ class ValueSeriesPoint(Schema):
     stale: bool  # at least one held security had no price on/before the date
 
 
+class ValuationStatusOut(Schema):
+    """Day-wise valuation readiness for an investor or family. The dashboard gates
+    the net-worth chart on ``status == 'ready'`` and polls while it isn't; the
+    headline numbers stay ungated (backed by the provisional value meanwhile)."""
+
+    investor_id: int | None = None
+    family_id: int | None = None
+    status: str  # pending | computing | ready | error
+    computed_through: date | None = None
+    recompute_from: date | None = None
+    is_provisional: bool = False  # latest value is the statement's, not yet recomputed
+
+
 class ValueSeriesOut(Schema):
     """Reconstructed net-worth-over-time series for an investor or family."""
 

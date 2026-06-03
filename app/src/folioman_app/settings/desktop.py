@@ -33,6 +33,11 @@ DEBUG = False
 # pinned here so the run mode is explicit and never accidentally JWT.
 FOLIOMAN_API_AUTH = "local"
 
+# The single PyWebView process runs the valuation scheduler in-process (a daemon
+# thread) — no separate worker to supervise. SQLite WAL (below) lets the scheduler
+# and the request thread share the DB.
+FOLIOMAN_RUN_SCHEDULER = True
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",

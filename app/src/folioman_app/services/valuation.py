@@ -23,7 +23,14 @@ from folioman_core.valuation import value_holdings
 from folioman_core.xirr import cashflows_from_transactions, compute_xirr
 
 from folioman_app.mappers import to_core_security, to_core_transaction
-from folioman_app.models import Family, Folio, Investor, NAVHistory
+from folioman_app.models import (
+    Family,
+    Folio,
+    Investor,
+    InvestorValue,
+    NAVHistory,
+    ValuationStatus,
+)
 from folioman_app.models.jobs import ImportJobStatus
 
 _ZERO = Decimal("0")
@@ -599,18 +606,100 @@ def default_series_start(to: date) -> date:
         return to.replace(year=to.year - 1, day=28)
 
 
+def _downsample(points: list[dict], granularity: str) -> list[dict]:
+    """Reduce a daily series to one point per week/month (the last of each period,
+    so the final point is always kept). ``daily`` returns the rows unchanged."""
+    if granularity == "daily" or not points:
+        return points
+
+    def period_key(d: date):
+        if granularity == "weekly":
+            iso = d.isocalendar()
+            return (iso[0], iso[1])
+        return (d.year, d.month)
+
+    last_per_period: dict = {}
+    for point in points:  # points are date-ascending → last write per period wins
+        last_per_period[period_key(point["date"])] = point
+    return sorted(last_per_period.values(), key=lambda p: p["date"])
+
+
+def _series_from_stored(
+    investor_ids: list[int], from_: date, to: date, granularity: str
+) -> list[dict]:
+    """Read the persisted daily ``InvestorValue`` rows in range and sum across the
+    given investors per date (family = sum of members), then downsample."""
+    rows = (
+        InvestorValue.objects.filter(investor_id__in=investor_ids, date__gte=from_, date__lte=to)
+        .order_by("date")
+        .values_list("date", "value_inr", "invested_inr")
+    )
+    by_date: dict[date, list] = {}
+    for d, value, invested in rows:
+        slot = by_date.setdefault(d, [_ZERO, _ZERO])
+        slot[0] += value
+        slot[1] += invested
+    points = [
+        {"date": d, "value_inr": v, "invested_inr": inv, "stale": False}
+        for d, (v, inv) in sorted(by_date.items())
+    ]
+    return _downsample(points, granularity)
+
+
+def build_valuation_status(investor: Investor) -> dict:
+    """Per-investor day-wise valuation readiness — drives the chart gate + polling."""
+    return {
+        "investor_id": investor.id,
+        "status": investor.valuation_status,
+        "computed_through": investor.valuation_computed_through,
+        "recompute_from": investor.valuation_recompute_from,
+        "is_provisional": InvestorValue.objects.filter(
+            investor=investor, is_provisional=True
+        ).exists(),
+    }
+
+
+def build_family_valuation_status(family: Family) -> dict:
+    """Family readiness: ready only when every member is ready; computing/error if
+    any member is still working/failed. ``computed_through`` is the earliest member's
+    (the combined series is only complete that far)."""
+    statuses = list(family.investors.values_list("valuation_status", "valuation_computed_through"))
+    states = {s for s, _ in statuses}
+    if not states:
+        status = ValuationStatus.READY
+    elif states & {ValuationStatus.PENDING, ValuationStatus.COMPUTING}:
+        status = ValuationStatus.COMPUTING
+    elif ValuationStatus.ERROR in states:
+        status = ValuationStatus.ERROR
+    else:
+        status = ValuationStatus.READY
+    throughs = [t for _, t in statuses if t is not None]
+    return {
+        "family_id": family.id,
+        "status": status,
+        "computed_through": min(throughs) if throughs else None,
+        "recompute_from": None,
+        "is_provisional": InvestorValue.objects.filter(
+            investor__family=family, is_provisional=True
+        ).exists(),
+    }
+
+
 def value_series(
     investor: Investor, *, from_: date, to: date, granularity: str = "monthly"
 ) -> list[dict]:
-    """Per-investor net-worth time series: ``[{date, value_inr, invested_inr, stale}]``."""
-    return _value_series([investor], from_, to, granularity)
+    """Per-investor net-worth time series from the persisted day-wise valuation:
+    ``[{date, value_inr, invested_inr, stale}]`` (computed by the scheduler)."""
+    return _series_from_stored([investor.id], from_, to, granularity)
 
 
 def family_value_series(
     family: Family, *, from_: date, to: date, granularity: str = "monthly"
 ) -> list[dict]:
-    """Family-wide net-worth time series, aggregated across the family's investors."""
-    return _value_series(list(family.investors.all()), from_, to, granularity)
+    """Family-wide net-worth time series — sum of the members' persisted day-wise
+    values by date."""
+    member_ids = list(family.investors.values_list("id", flat=True))
+    return _series_from_stored(member_ids, from_, to, granularity)
 
 
 def compute_portfolio_xirr(investors: list[Investor], as_of: date) -> float | None:

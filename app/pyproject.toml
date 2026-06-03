@@ -11,6 +11,9 @@ dependencies = [
     # Serves the built SPA (hashed assets) from one origin alongside the API, in
     # both desktop and server modes. Pure Python, so it bundles fine under Nuitka.
     "whitenoise>=6.6",
+    # In-process background scheduler for day-wise valuation (no broker). Pure
+    # Python (thread-based BackgroundScheduler), so it bundles fine under Nuitka.
+    "apscheduler>=3.10,<4",
 ]
 
 # Server-mode-only runtime deps. The desktop Nuitka build excludes these:

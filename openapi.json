@@ -1506,6 +1506,71 @@
         "title": "TransactionOut",
         "type": "object"
       },
+      "ValuationStatusOut": {
+        "description": "Day-wise valuation readiness for an investor or family. The dashboard gates\nthe net-worth chart on ``status == 'ready'`` and polls while it isn't; the\nheadline numbers stay ungated (backed by the provisional value meanwhile).",
+        "properties": {
+          "computed_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed Through"
+          },
+          "family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Id"
+          },
+          "investor_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investor Id"
+          },
+          "is_provisional": {
+            "default": false,
+            "title": "Is Provisional",
+            "type": "boolean"
+          },
+          "recompute_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recompute From"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ValuationStatusOut",
+        "type": "object"
+      },
       "ValueSeriesOut": {
         "description": "Reconstructed net-worth-over-time series for an investor or family.",
         "properties": {
@@ -1864,6 +1929,39 @@
           }
         },
         "summary": "Family Aggregate",
+        "tags": [
+          "families"
+        ]
+      }
+    },
+    "/api/families/{family_id}/valuation-status": {
+      "get": {
+        "description": "Combined readiness \u2014 ready only when every member's day-wise valuation is.",
+        "operationId": "folioman_app_api_families_family_valuation_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "family_id",
+            "required": true,
+            "schema": {
+              "title": "Family Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValuationStatusOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Family Valuation Status",
         "tags": [
           "families"
         ]
@@ -2796,6 +2894,39 @@
           }
         },
         "summary": "Create Transaction",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/valuation-status": {
+      "get": {
+        "description": "Whether the day-wise valuation is ready (chart gate) or still computing \u2014\nthe dashboard polls this and shows a placeholder + provisional value meanwhile.",
+        "operationId": "folioman_app_api_investors_investor_valuation_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValuationStatusOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Investor Valuation Status",
         "tags": [
           "investors"
         ]

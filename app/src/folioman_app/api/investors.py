@@ -26,12 +26,14 @@ from folioman_app.api.schemas import (
     SchemeDetailOut,
     TransactionIn,
     TransactionOut,
+    ValuationStatusOut,
     ValueSeriesOut,
 )
 from folioman_app.models import Investor, Security
 from folioman_app.services.valuation import (
     build_investor_summary,
     build_scheme_detail,
+    build_valuation_status,
     default_series_start,
     value_series,
 )
@@ -117,6 +119,14 @@ def investor_value_series(
         "granularity": granularity,
         "points": points,
     }
+
+
+@router.get("/{investor_id}/valuation-status", response=ValuationStatusOut)
+def investor_valuation_status(request, investor_id: int):
+    """Whether the day-wise valuation is ready (chart gate) or still computing —
+    the dashboard polls this and shows a placeholder + provisional value meanwhile."""
+    investor = get_owned_investor(request, investor_id)
+    return build_valuation_status(investor)
 
 
 @router.get("/{investor_id}/holdings/{security_id}", response=SchemeDetailOut)
