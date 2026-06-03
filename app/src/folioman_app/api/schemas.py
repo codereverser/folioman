@@ -109,6 +109,10 @@ class InvestorSummaryOut(Schema):
     investor_id: int
     as_of: date
     total_inr: Decimal
+    # True when total_inr is the last *known* value (statement close or last
+    # computed day) rather than a live-NAV valuation at as_of — e.g. NAVs not
+    # fetched yet. The UI labels it and `as_of` is that value's own date.
+    is_provisional: bool = False
     holdings_count: int  # securities currently held (units > 0)
     tax_ready_count: int  # of those, integrity-verified for the tax export
     needs_attention_count: int  # mismatches awaiting resolution

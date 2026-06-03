@@ -32,6 +32,9 @@ export interface DashboardSummary {
   dayChangePercent: number | null
   xirr: number | null
   asOf: string
+  // total_inr is a last-known value (statement close / last computed day), not a
+  // live valuation at as_of — e.g. NAVs not fetched yet. as_of is that value's date.
+  isProvisional: boolean
   allocation: AllocationSlice[]
   valueSeries: ValuePoint[]
   topHoldings: HoldingRow[]
@@ -46,6 +49,7 @@ const EMPTY: DashboardSummary = {
   dayChangePercent: null,
   xirr: null,
   asOf: '—',
+  isProvisional: false,
   allocation: [],
   valueSeries: [],
   topHoldings: [],
@@ -191,7 +195,8 @@ export function useDashboard(investorId: Ref<number>) {
       dayChangeAmount,
       dayChangePercent,
       xirr: s.xirr == null ? null : s.xirr * 100, // fraction → percent for the card
-      asOf: `as of ${formatDate(s.as_of)}`,
+      asOf: `as of ${formatDate(s.as_of)}${s.is_provisional ? ' · provisional' : ''}`,
+      isProvisional: s.is_provisional,
       allocation: (s.asset_mix ?? []).map<AllocationSlice>((row) => ({
         name: assetLabel(row.security_type),
         value: num(row.value_inr),

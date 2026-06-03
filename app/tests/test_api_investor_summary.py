@@ -6,7 +6,7 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from folioman_app.models import NAVHistory, SecurityIntegrityStatus
+from folioman_app.models import InvestorValue, NAVHistory, SecurityIntegrityStatus
 from folioman_app.models.jobs import ImportJob, ImportJobStatus, ImportKind
 from folioman_core.models import SecurityType
 from folioman_core.reconciliation import IntegrityStatus
@@ -89,6 +89,55 @@ def test_summary_reports_last_successful_import(client, make_investor):
     body = client.get(f"/api/investors/{inv.id}/summary").json()
 
     assert body["last_import_at"] is not None
+
+
+def test_summary_falls_back_to_last_known_value_when_unpriced(
+    client, make_investor, make_security, make_holding
+):
+    # A holding exists but there's no NAV yet (fresh import, NAVs not fetched), so
+    # the live valuation is ₹0. The headline must fall back to the most recent
+    # persisted InvestorValue — reported as of *its* date and flagged provisional —
+    # instead of a misleading "₹0 as of today".
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    make_holding(investor=inv, security=mf, units=Decimal("100"), as_of_date=dt.date(2025, 5, 31))
+    # No NAVHistory → nothing priced.
+    InvestorValue.objects.create(
+        investor=inv,
+        date=dt.date(2025, 5, 31),
+        value_inr=Decimal("32082650.98"),
+        invested_inr=Decimal("21565739.16"),
+        is_provisional=True,
+    )
+
+    body = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-04"}).json()
+
+    assert Decimal(str(body["total_inr"])) == Decimal("32082650.98")
+    assert body["is_provisional"] is True
+    assert body["as_of"] == "2025-05-31"  # the value's own date, not the query date
+
+
+def test_summary_priced_value_is_not_flagged_provisional(
+    client, make_investor, make_security, make_holding
+):
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    make_holding(investor=inv, security=mf, units=Decimal("100"), as_of_date=dt.date(2025, 6, 1))
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("75"))
+
+    body = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-01"}).json()
+
+    assert Decimal(str(body["total_inr"])) == Decimal("7500")
+    assert body["is_provisional"] is False
+    assert body["as_of"] == "2025-06-01"
+
+
+def test_summary_empty_portfolio_stays_zero_not_provisional(client, make_investor):
+    # No holdings → genuinely ₹0; must not fabricate a provisional value.
+    inv = make_investor()
+    body = client.get(f"/api/investors/{inv.id}/summary").json()
+    assert Decimal(str(body["total_inr"])) == Decimal("0")
+    assert body["is_provisional"] is False
 
 
 def test_summary_unknown_investor_404(client):

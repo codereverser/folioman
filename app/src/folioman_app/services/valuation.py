@@ -322,10 +322,32 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
     )
     last_import_at = (last_job.finished_at or last_job.created_at) if last_job else None
 
+    # Headline value + its as-of. Normally the live-NAV total at `as_of`. But when
+    # the investor holds securities that aren't priced yet (a fresh import before
+    # NAVs are fetched, or a feed outage) the live total is 0 — a misleading "₹0
+    # as of today". Fall back to the most recent persisted InvestorValue (the
+    # statement's provisional close, or the last computed day) and report *its*
+    # date, so the headline reads "₹X as of <that day>" instead of zero. We only do
+    # this when there are held securities (an empty portfolio is genuinely ₹0).
+    total_inr = rollup["total_inr"]
+    summary_as_of = as_of
+    is_provisional = False
+    if total_inr == _ZERO and rollup["holdings_count"] > 0:
+        last_known = (
+            InvestorValue.objects.filter(investor=investor, date__lte=as_of)
+            .order_by("-date")
+            .first()
+        )
+        if last_known is not None:
+            total_inr = last_known.value_inr
+            summary_as_of = last_known.date
+            is_provisional = True
+
     return {
         "investor_id": investor.id,
-        "as_of": as_of,
-        "total_inr": rollup["total_inr"],
+        "as_of": summary_as_of,
+        "total_inr": total_inr,
+        "is_provisional": is_provisional,
         "holdings_count": rollup["holdings_count"],
         "tax_ready_count": tax_ready_count,
         "needs_attention_count": needs_attention_count,

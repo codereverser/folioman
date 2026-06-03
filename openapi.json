@@ -709,6 +709,11 @@
             "title": "Investor Id",
             "type": "integer"
           },
+          "is_provisional": {
+            "default": false,
+            "title": "Is Provisional",
+            "type": "boolean"
+          },
           "last_import_at": {
             "anyOf": [
               {

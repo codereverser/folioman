@@ -780,6 +780,11 @@ export interface components {
             holdings_count: number;
             /** Investor Id */
             investor_id: number;
+            /**
+             * Is Provisional
+             * @default false
+             */
+            is_provisional: boolean;
             /** Last Import At */
             last_import_at: string | null;
             /** Needs Attention Count */
