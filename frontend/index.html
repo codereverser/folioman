@@ -8,9 +8,197 @@
     <meta name="theme-color" content="#4f46e5" />
     <meta name="description" content="Mutual-fund portfolio tracking for advisors and families." />
     <title>Folioman</title>
+    <style>
+      .boot-shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 16rem 1fr;
+        background: #f6f8fb;
+        color: #0f172a;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .boot-nav {
+        min-width: 0;
+        padding: 1rem;
+        border-right: 1px solid #e2e8f0;
+        background: #fff;
+      }
+      .boot-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 700;
+        font-size: 1.1rem;
+        margin-bottom: 1rem;
+      }
+      .boot-brand img {
+        width: 28px;
+        height: 28px;
+      }
+      .boot-line,
+      .boot-pill,
+      .boot-card {
+        display: block;
+        border-radius: 6px;
+        background: #f1f5f9;
+      }
+      .boot-line {
+        height: 2.5rem;
+        margin-bottom: 1rem;
+      }
+      .boot-pills {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+      .boot-pill {
+        height: 2.75rem;
+      }
+      .boot-main {
+        min-width: 0;
+        background: #f6f8fb;
+      }
+      .boot-context {
+        height: 3.2rem;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f6f8fb;
+      }
+      .boot-content {
+        width: 100%;
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 1.5rem;
+      }
+      .boot-title {
+        width: 10rem;
+        height: 1.8rem;
+        margin-bottom: 0.5rem;
+      }
+      .boot-subtitle {
+        width: 13rem;
+        height: 1rem;
+        margin-bottom: 1.25rem;
+      }
+      .boot-grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 1.25rem;
+      }
+      .boot-card {
+        min-height: 9rem;
+        border: 1px solid #e2e8f0;
+        background: #fff;
+      }
+      .boot-card.hero {
+        grid-column: span 6;
+        min-height: 10.5rem;
+      }
+      .boot-card.small {
+        grid-column: span 3;
+      }
+      .boot-card.chart-small {
+        grid-column: span 4;
+        min-height: 20.5rem;
+      }
+      .boot-card.chart-wide {
+        grid-column: span 8;
+        min-height: 20.5rem;
+      }
+      .boot-roster {
+        display: none;
+      }
+      .boot-roster-card {
+        display: block;
+        min-height: 6rem;
+        margin-bottom: 1rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #fff;
+      }
+      html[data-boot-route="roster"] .boot-portfolio {
+        display: none;
+      }
+      html[data-boot-route="roster"] .boot-roster {
+        display: block;
+      }
+      html[data-boot-route="roster"] .boot-shell {
+        display: none;
+      }
+      @media (max-width: 767px) {
+        .boot-shell {
+          grid-template-columns: 1fr;
+        }
+        .boot-nav {
+          min-height: 11.25rem;
+          border-right: 0;
+          border-bottom: 1px solid #e2e8f0;
+        }
+        html[data-boot-route="roster"] .boot-nav {
+          min-height: 22.5rem;
+        }
+        .boot-pills {
+          flex-direction: row;
+          overflow: hidden;
+          gap: 0.5rem;
+        }
+        .boot-pill {
+          width: 7rem;
+          min-width: 7rem;
+        }
+        .boot-content {
+          padding: 1rem;
+        }
+        .boot-card.hero,
+        .boot-card.small,
+        .boot-card.chart-small,
+        .boot-card.chart-wide {
+          grid-column: span 12;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <script>
+      document.documentElement.dataset.bootRoute =
+        location.pathname === '/investors' || location.pathname === '/' ? 'roster' : 'portfolio'
+    </script>
+    <div id="app">
+      <div class="boot-shell" aria-hidden="true">
+        <aside class="boot-nav">
+          <div class="boot-brand">
+            <img src="/logo.svg" alt="" width="28" height="28" />
+            <span>Folioman</span>
+          </div>
+          <span class="boot-line"></span>
+          <div class="boot-pills">
+            <span class="boot-pill"></span>
+            <span class="boot-pill"></span>
+            <span class="boot-pill"></span>
+          </div>
+        </aside>
+        <main class="boot-main">
+          <div class="boot-context"></div>
+          <section class="boot-content boot-portfolio">
+            <span class="boot-line boot-title"></span>
+            <span class="boot-line boot-subtitle"></span>
+            <div class="boot-grid">
+              <span class="boot-card hero"></span>
+              <span class="boot-card small"></span>
+              <span class="boot-card small"></span>
+              <span class="boot-card chart-small"></span>
+              <span class="boot-card chart-wide"></span>
+            </div>
+          </section>
+          <section class="boot-content boot-roster">
+            <span class="boot-line boot-title"></span>
+            <span class="boot-line boot-subtitle"></span>
+            <span class="boot-roster-card"></span>
+            <span class="boot-roster-card"></span>
+            <span class="boot-roster-card"></span>
+          </section>
+        </main>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

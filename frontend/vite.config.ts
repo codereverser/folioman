@@ -1,12 +1,30 @@
 import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import { compression } from 'vite-plugin-compression2'
+
+// @fontsource ships `font-display: swap`, which would let the bundled IBM Plex
+// swap in over the system fallback after the app mounts — reflowing text (CLS).
+// `optional` instead keeps whatever font is ready at first paint for the page's
+// lifetime: IBM Plex once cached, the system fallback on a cold first load — never
+// a mid-page swap. Rewritten at build time so we don't hand-author every subset.
+const fontDisplayOptional: Plugin = {
+  name: 'font-display-optional',
+  enforce: 'pre',
+  transform(code, id) {
+    if (id.includes('@fontsource') && id.endsWith('.css') && code.includes('font-display')) {
+      return { code: code.replace(/font-display:\s*swap/g, 'font-display:optional'), map: null }
+    }
+    return null
+  },
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    fontDisplayOptional,
     vue(),
     VitePWA({
       // Auto-apply new service workers; the app is view-only on mobile so a
@@ -53,6 +71,12 @@ export default defineConfig({
         enabled: false,
       },
     }),
+    // Emit .br + .gz beside each asset so WhiteNoise (which only *serves*
+    // precompressed files, it doesn't compress on the fly) ships the bundle
+    // compressed — the single biggest Lighthouse win (~1 MB → ~250 KB). Runs
+    // after VitePWA, and .br/.gz fall outside the SW globPatterns so they aren't
+    // double-precached. threshold skips files too small to be worth compressing.
+    compression({ algorithms: ['gzip', 'brotliCompress'], threshold: 1024 }),
   ],
   resolve: {
     alias: {

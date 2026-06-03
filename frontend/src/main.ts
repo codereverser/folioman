@@ -4,7 +4,11 @@ import PrimeVue from 'primevue/config'
 import ToastService from 'primevue/toastservice'
 import ConfirmationService from 'primevue/confirmationservice'
 
-// Bundled fonts (privacy: no CDN — assets ship with the desktop build).
+// Bundled fonts (privacy: no CDN — assets ship with the desktop build). Loaded
+// with `font-display: optional` (see the Vite transform in vite.config.ts) so the
+// face never swaps in mid-page: IBM Plex is used when it's ready (the norm once
+// cached) and the system fallback is kept for a cold first paint — either way no
+// layout shift. The boot skeleton renders in system-ui until the app mounts.
 import '@fontsource/ibm-plex-sans/300.css'
 import '@fontsource/ibm-plex-sans/400.css'
 import '@fontsource/ibm-plex-sans/500.css'

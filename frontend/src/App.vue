@@ -105,7 +105,41 @@ onBeforeUnmount(() => {
         </span>
         <ThemeToggle />
       </header>
-      <RouterView />
+      <div class="route-frame">
+        <RouterView v-slot="{ Component }">
+          <Suspense v-if="Component">
+            <component :is="Component" />
+            <template #fallback>
+              <section class="route-skeleton" aria-hidden="true">
+                <div class="skeleton-head">
+                  <span />
+                  <span />
+                </div>
+                <div class="skeleton-grid">
+                  <span class="skeleton-card span-6 hero" />
+                  <span class="skeleton-card span-3" />
+                  <span class="skeleton-card span-3" />
+                  <span class="skeleton-card span-4 chart" />
+                  <span class="skeleton-card span-8 chart" />
+                </div>
+              </section>
+            </template>
+          </Suspense>
+          <section v-else class="route-skeleton" aria-hidden="true">
+            <div class="skeleton-head">
+              <span />
+              <span />
+            </div>
+            <div class="skeleton-grid">
+              <span class="skeleton-card span-6 hero" />
+              <span class="skeleton-card span-3" />
+              <span class="skeleton-card span-3" />
+              <span class="skeleton-card span-4 chart" />
+              <span class="skeleton-card span-8 chart" />
+            </div>
+          </section>
+        </RouterView>
+      </div>
       <footer class="app-footer">
         <PwaInstallPrompt />
       </footer>
@@ -130,6 +164,16 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  /* Don't let the scope switcher's min-content set a floor on the grid column —
+     without this the single-column mobile shell can't shrink to the viewport and
+     the page scrolls sideways. */
+  min-width: 0;
+}
+
+/* Flex child holding the Select — must also opt out of the auto min-width floor
+   so the control can shrink and ellipsize its label. */
+.switcher {
+  min-width: 0;
 }
 
 .brand {
@@ -172,6 +216,10 @@ nav {
   display: flex;
   flex-direction: column;
   background: var(--fm-ground);
+  /* Let the 1fr grid track shrink below the content's min-content width — without
+     this the charts/tables inside set a floor and the whole page scrolls sideways
+     on a phone. The rest of the min-width:0 chain lives in each view. */
+  min-width: 0;
 }
 
 .context-bar {
@@ -196,35 +244,129 @@ nav {
   height: 3px;
 }
 
+.route-frame {
+  flex: 1 0 auto;
+  min-width: 0;
+}
+
+.route-skeleton {
+  padding: var(--fm-space-6);
+  max-width: var(--fm-content-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+.skeleton-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-2);
+  margin-bottom: var(--fm-space-5);
+}
+
+.skeleton-head span,
+.skeleton-card {
+  display: block;
+  border-radius: var(--fm-radius-sm);
+  background:
+    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    var(--fm-surface-raised);
+}
+
+.skeleton-head span:first-child {
+  width: 10rem;
+  height: 1.8rem;
+}
+
+.skeleton-head span:last-child {
+  width: 13rem;
+  height: 1rem;
+}
+
+.skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--fm-space-5);
+}
+
+.skeleton-card {
+  min-height: 9rem;
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-xl);
+}
+
+.skeleton-card.hero {
+  min-height: 10.5rem;
+}
+
+.skeleton-card.chart {
+  min-height: 20.5rem;
+}
+
+.skeleton-card.span-3 {
+  grid-column: span 3;
+}
+
+.skeleton-card.span-4 {
+  grid-column: span 4;
+}
+
+.skeleton-card.span-6 {
+  grid-column: span 6;
+}
+
+.skeleton-card.span-8 {
+  grid-column: span 8;
+}
+
 .app-footer {
   margin-top: auto;
   padding: 1rem;
 }
 
-/* Mobile: nav collapses to a horizontal top bar above the content. */
-.app-shell.is-mobile {
-  grid-template-columns: 1fr;
-}
+/* Mobile: nav collapses to a horizontal top bar above the content. Use a media
+   query so the first paint has the mobile geometry before the JS viewport store
+   starts tracking resize events. */
+@media (max-width: 767px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
 
-.app-shell.is-mobile .app-nav {
-  border-right: none;
-  border-bottom: 1px solid var(--fm-border-subtle);
-}
+  .app-nav {
+    border-right: none;
+    border-bottom: 1px solid var(--fm-border-subtle);
+    min-height: 11.25rem;
+  }
 
-.app-shell.is-mobile nav {
-  flex-direction: row;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: var(--fm-space-2);
-}
+  nav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: var(--fm-space-2);
+  }
 
-/* Comfortable touch targets on phones (≥44px per iOS HIG). */
-.app-shell.is-mobile .nav-link {
-  min-height: 44px;
-  white-space: nowrap;
-}
+  /* Comfortable touch targets on phones (≥44px per iOS HIG). */
+  .nav-link {
+    min-height: 44px;
+    white-space: nowrap;
+  }
 
-.app-shell.is-mobile .switcher :deep(.scope-switcher) {
-  width: 100%;
+  .switcher :deep(.scope-switcher) {
+    width: 100%;
+  }
+
+  .route-skeleton {
+    padding: var(--fm-space-4);
+  }
+
+  .skeleton-grid {
+    gap: var(--fm-space-4);
+  }
+
+  .skeleton-card.span-3,
+  .skeleton-card.span-4,
+  .skeleton-card.span-6,
+  .skeleton-card.span-8 {
+    grid-column: span 12;
+  }
 }
 </style>

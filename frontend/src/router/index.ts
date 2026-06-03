@@ -1,6 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteMeta, RouteRecordRaw } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
+import DashboardView from '@/views/DashboardView.vue'
+import FamilyView from '@/views/FamilyView.vue'
+import SchemeDetailView from '@/views/SchemeDetailView.vue'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -45,12 +48,12 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/investors/:investorId/dashboard',
     name: 'dashboard',
-    component: () => import('@/views/DashboardView.vue'),
+    component: DashboardView,
   },
   {
     path: '/investors/:investorId/schemes/:securityId',
     name: 'scheme-detail',
-    component: () => import('@/views/SchemeDetailView.vue'),
+    component: SchemeDetailView,
   },
   {
     // Single CAS import — advisor-level: the statement identifies its own
@@ -64,7 +67,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/families/:familyId',
     name: 'family',
-    component: () => import('@/views/FamilyView.vue'),
+    component: FamilyView,
   },
   {
     path: '/settings',

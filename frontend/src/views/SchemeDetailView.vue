@@ -1,19 +1,45 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import DataTable from 'primevue/datatable'
-import Column from 'primevue/column'
 import Message from 'primevue/message'
 import MetricCard from '@/components/MetricCard.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
-import NavHistoryChart from '@/components/charts/NavHistoryChart.vue'
 import { useScheme } from '@/composables/useScheme'
 import { useUiStore } from '@/stores/ui'
 import { formatInr, formatInrPaise, formatUnits, formatDate } from '@/utils/format'
 
+const NavHistoryChart = defineAsyncComponent(() => import('@/components/charts/NavHistoryChart.vue'))
+const DataTable = defineAsyncComponent(() => import('primevue/datatable'))
+const Column = defineAsyncComponent(() => import('primevue/column'))
+
 const route = useRoute()
 const router = useRouter()
 const ui = useUiStore()
+const loadCharts = ref(false)
+const chartRegion = ref<HTMLElement | null>(null)
+let stopChartObserver: () => void = () => {}
+
+onMounted(() => {
+  const target = chartRegion.value
+  if (!target || typeof IntersectionObserver === 'undefined') {
+    loadCharts.value = true
+    return
+  }
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      loadCharts.value = true
+      observer.disconnect()
+      stopChartObserver = () => {}
+    },
+    { threshold: 0.2 },
+  )
+  observer.observe(target)
+  stopChartObserver = () => observer.disconnect()
+})
+onBeforeUnmount(() => {
+  stopChartObserver()
+})
 
 const investorId = computed(() => {
   const raw = route.params.investorId
@@ -124,9 +150,10 @@ function back(): void {
         </MetricCard>
       </div>
 
-      <article class="card">
+      <article ref="chartRegion" class="card">
         <h2>NAV history</h2>
-        <NavHistoryChart v-if="navSeries.length" :data="navSeries" />
+        <NavHistoryChart v-if="loadCharts && navSeries.length" :data="navSeries" />
+        <div v-else-if="navSeries.length" class="chart-placeholder nav-placeholder" aria-hidden="true" />
         <p v-else class="muted empty">No NAV history on file for this scheme yet.</p>
       </article>
 
@@ -138,7 +165,7 @@ function back(): void {
           the transactions manually — and we'll build them.
         </Message>
         <DataTable
-          v-else
+          v-else-if="loadCharts"
           :value="detail.transactions"
           data-key="id"
           size="small"
@@ -163,6 +190,7 @@ function back(): void {
             <template #body="{ data }">{{ data.amount == null ? '—' : formatInr(data.amount) }}</template>
           </Column>
         </DataTable>
+        <div v-else class="table-placeholder" aria-hidden="true" />
       </article>
     </template>
   </section>
@@ -237,7 +265,7 @@ function back(): void {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--fm-space-4);
 }
 .metric-note {
@@ -259,6 +287,23 @@ function back(): void {
   font-size: 1rem;
   font-weight: 600;
 }
+.chart-placeholder {
+  width: 100%;
+  border-radius: var(--fm-radius-sm);
+  background:
+    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    var(--fm-surface-raised);
+}
+.nav-placeholder {
+  height: 260px;
+}
+.table-placeholder {
+  height: 12rem;
+  border-radius: var(--fm-radius-sm);
+  background:
+    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    var(--fm-surface-raised);
+}
 .empty {
   padding: var(--fm-space-6) 0;
   text-align: center;
@@ -268,10 +313,26 @@ function back(): void {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+/* On a narrow screen the ledger scrolls within its card rather than widening
+   the page. */
+:deep(.ledger .p-datatable-table-container) {
+  overflow-x: auto;
+}
 
 @media (max-width: 768px) {
   .metrics {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+/* Phone: the four metric tiles stack to a single column. */
+@media (max-width: 480px) {
+  .metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Phone: trim the chrome so content keeps the width. */
+@media (max-width: 640px) {
+  .scheme { padding: var(--fm-space-4); }
+  .card { padding: var(--fm-space-4); }
 }
 </style>
