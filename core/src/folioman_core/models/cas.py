@@ -72,6 +72,13 @@ class MfCasSchemeBlock(DomainModel):
     transactions: list[MfCasLineItem] = Field(default_factory=list)
     opening_units: OptionalDecimalField = None
     closing_units: OptionalDecimalField = None
+    # The statement's own reported valuation as of ``statement_to`` (casparser's
+    # ``Scheme.valuation``): NAV + market value + cost. Lets the import show a real
+    # value immediately ("provisional"), before live NAVs are fetched.
+    closing_nav: OptionalDecimalField = None
+    closing_value: OptionalDecimalField = None
+    closing_cost: OptionalDecimalField = None
+    closing_value_date: date | None = None
 
 
 class MfCasStatement(DomainModel):

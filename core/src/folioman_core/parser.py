@@ -119,6 +119,30 @@ def _map_line(
     )
 
 
+def _to_decimal(value: object) -> Decimal | None:
+    """casparser amounts arrive as Decimal or float; normalise to Decimal."""
+    if value is None:
+        return None
+    return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
+def _scheme_valuation(
+    scheme: object,
+) -> tuple[Decimal | None, Decimal | None, Decimal | None, object]:
+    """The scheme's reported (nav, value, cost, date) from casparser's
+    ``Scheme.valuation`` — the statement's own market value as of the statement
+    date — or all-None when absent."""
+    val = getattr(scheme, "valuation", None)
+    if val is None:
+        return None, None, None, None
+    return (
+        _to_decimal(getattr(val, "nav", None)),
+        _to_decimal(getattr(val, "value", None)),
+        _to_decimal(getattr(val, "cost", None)),
+        _to_date(getattr(val, "date", None)),
+    )
+
+
 def _map_security(scheme: object, amc: str | None) -> Security:
     # casparser stores Scheme.type as its enum *value* (a str); normalise either form.
     fund_type = getattr(scheme.type, "value", scheme.type) or "UNKNOWN"
@@ -213,12 +237,17 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
                     )
                     if li is not None
                 ]
+                val_nav, val_value, val_cost, val_date = _scheme_valuation(scheme)
                 block = MfCasSchemeBlock(
                     folio=mapped_folio,
                     security=_map_security(scheme, folio.amc),
                     transactions=lines,
                     opening_units=scheme.open,
                     closing_units=scheme.close,
+                    closing_nav=val_nav,
+                    closing_value=val_value,
+                    closing_cost=val_cost,
+                    closing_value_date=val_date,
                 )
             except CASParseError:
                 raise  # already a clean, intentional CAS error (e.g. unsupported txn)

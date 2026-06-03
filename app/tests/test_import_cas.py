@@ -18,6 +18,7 @@ from folioman_app.models import (
     Folio,
     Holding,
     Investor,
+    InvestorValue,
     Security,
     SecurityIntegrityStatus,
     Transaction,
@@ -636,3 +637,39 @@ def test_import_via_api_end_to_end(client, patch_cas, make_parsed_cas):
     assert inv.has_pan  # PAN captured (encrypted), not returned
     assert Transaction.objects.filter(investor=inv).count() == 2
     assert SecurityIntegrityStatus.objects.filter(investor=inv).count() == 1
+
+
+def test_import_seeds_provisional_value_and_queues_recompute(make_investor):
+    # The import seeds a provisional InvestorValue from the statement's reported
+    # value (as of its close) and queues the day-wise recompute from statement_from.
+    inv = make_investor()
+    block = MfCasSchemeBlock(
+        folio=CoreFolio(folio_type="mf", number="111/1", amc_code="X"),
+        security=CoreSecurity(type=SecurityType.MF, name="Some Fund", amfi_code="999999"),
+        opening_units="0",
+        closing_units="100",
+        transactions=[
+            MfCasLineItem(
+                date=dt.date(2024, 4, 1),
+                transaction_type=TransactionType.BUY,
+                units="100",
+                nav="10",
+                amount="1000",
+            )
+        ],
+        closing_value="1500",
+        closing_cost="1000",
+        closing_value_date=dt.date(2025, 3, 31),
+    )
+    stmt = MfCasStatement(
+        statement_from=dt.date(2024, 4, 1), statement_to=dt.date(2025, 3, 31), schemes=[block]
+    )
+    persist_mf_statement(inv, stmt, source_ref="prov")
+
+    inv.refresh_from_db()
+    assert inv.valuation_status == "computing"
+    assert inv.valuation_recompute_from == dt.date(2024, 4, 1)
+    prov = InvestorValue.objects.get(investor=inv, date=dt.date(2025, 3, 31))
+    assert prov.is_provisional
+    assert prov.value_inr == Decimal("1500")
+    assert prov.invested_inr == Decimal("1000")

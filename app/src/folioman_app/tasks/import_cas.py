@@ -213,6 +213,27 @@ def persist_mf_statement(investor, statement: MfCasStatement, *, source_ref: str
     errors = reconcile_after_import(investor, securities_by_id.values())
     if errors:
         summary["reconcile_errors"] = errors
+
+    # Queue the day-wise valuation recompute (from this statement's start) and seed
+    # a provisional value from the statement's own reported figures (as of its
+    # close), so the dashboard shows a real number before the worker fetches NAVs.
+    from folioman_app.tasks.valuation_jobs import queue_recompute
+
+    recompute_from = statement.statement_from or statement.statement_to
+    if recompute_from is not None:
+        prov_value = sum(
+            (b.closing_value for b in statement.schemes if b.closing_value is not None), _ZERO
+        )
+        prov_invested = sum(
+            (b.closing_cost for b in statement.schemes if b.closing_cost is not None), _ZERO
+        )
+        queue_recompute(
+            investor,
+            recompute_from,
+            provisional_value=prov_value,
+            provisional_invested=prov_invested,
+            as_of=statement.statement_to,
+        )
     return summary
 
 

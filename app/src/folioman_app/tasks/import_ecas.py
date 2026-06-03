@@ -17,6 +17,8 @@ status is cleared). The routing/upload is handled by ``import_cas.process_cas``.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.db import transaction as db_transaction
 from django.db.models import Max
 from folioman_core.models import HoldingSource
@@ -89,6 +91,8 @@ def persist_ecas_statement(
         "securities": 0,
     }
     removed_security_ids = {h.security_id for h in removed}
+    prov_value = Decimal("0")
+    prov_invested = Decimal("0")
 
     with db_transaction.atomic():
         # The statement is authoritative: drop this depository's prior holdings,
@@ -98,6 +102,10 @@ def persist_ecas_statement(
         for account in statement.accounts:
             summary["accounts"] += 1
             for line in account.holdings:
+                if line.value_observed is not None:
+                    prov_value += line.value_observed
+                if line.avg_cost_observed is not None:
+                    prov_invested += line.avg_cost_observed * line.units
                 # MF lines carry their own RTA folio (so they reconcile with the MF
                 # CAS ledger); equities/bonds use the demat account folio.
                 folio = upsert_folio(investor, line.folio or account.folio)
@@ -136,4 +144,16 @@ def persist_ecas_statement(
     errors = reconcile_after_import(investor, affected)
     if errors:
         summary["reconcile_errors"] = errors
+
+    # Queue the day-wise recompute from the snapshot date, seeding a provisional
+    # value from the statement's reported holding values (as of statement_date).
+    from folioman_app.tasks.valuation_jobs import queue_recompute
+
+    queue_recompute(
+        investor,
+        statement.statement_date,
+        provisional_value=prov_value,
+        provisional_invested=prov_invested,
+        as_of=statement.statement_date,
+    )
     return summary
