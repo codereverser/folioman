@@ -11,6 +11,8 @@ export interface FamilyAggregate {
 export interface InvestorSummary {
   totalInr: string
   holdingsCount: number
+  /** (security, folio) reconciliation units — the tax-ready fraction's denominator. */
+  integrityUnitCount: number
   taxReadyCount: number
   needsAttentionCount: number
   snapshotCount: number
@@ -67,6 +69,7 @@ export function useRosterMetrics() {
           [investorId]: {
             totalInr: data.total_inr,
             holdingsCount: data.holdings_count,
+            integrityUnitCount: data.integrity_unit_count,
             taxReadyCount: data.tax_ready_count,
             needsAttentionCount: data.needs_attention_count,
             snapshotCount: data.snapshot_count,

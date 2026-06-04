@@ -114,7 +114,10 @@ class InvestorSummaryOut(Schema):
     # fetched yet. The UI labels it and `as_of` is that value's own date.
     is_provisional: bool = False
     holdings_count: int  # securities currently held (units > 0)
-    tax_ready_count: int  # of those, integrity-verified for the tax export
+    # (security, folio) reconciliation units — the per-folio integrity unit and the
+    # denominator for the tax-ready fraction (a fund in two folios = two units).
+    integrity_unit_count: int
+    tax_ready_count: int  # of the integrity units, verified for the tax export
     needs_attention_count: int  # mismatches awaiting resolution
     snapshot_count: int  # snapshot-only (no transaction history)
     stale_count: int  # held but unpriced (no NAV on/before as_of)

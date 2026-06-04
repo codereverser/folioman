@@ -19,7 +19,9 @@ export interface RosterGroup {
   investors: RosterInvestor[]
 }
 
-const UNAFFILIATED_LABEL = 'Unaffiliated'
+// Investors not assigned to any family. Framed as a valid default category
+// ("Individual investors"), not a deficiency — a solo investor is the norm.
+const UNAFFILIATED_LABEL = 'Individual investors'
 
 // Dev/offline fallback so the shell stays demoable without a backend — mirrors
 // the seeded useDashboard / useIntegrity composables.

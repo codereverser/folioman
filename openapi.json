@@ -815,6 +815,10 @@
             "title": "Holdings Count",
             "type": "integer"
           },
+          "integrity_unit_count": {
+            "title": "Integrity Unit Count",
+            "type": "integer"
+          },
           "investor_id": {
             "title": "Investor Id",
             "type": "integer"
@@ -881,6 +885,7 @@
           "as_of",
           "total_inr",
           "holdings_count",
+          "integrity_unit_count",
           "tax_ready_count",
           "needs_attention_count",
           "snapshot_count",

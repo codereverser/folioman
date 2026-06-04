@@ -79,6 +79,38 @@ def test_summary_counts_tax_ready_and_attention(client, make_investor, make_secu
     assert body["needs_attention_count"] == 1
 
 
+def test_summary_tax_ready_is_counted_per_security_folio(
+    client, make_investor, make_security, make_folio
+):
+    # The SAME fund held in two folios reconciles separately (per-(security, folio)
+    # FIFO), so tax-readiness is per folio: one folio full-history (tax-ready), the
+    # other snapshot-only (not). The fraction must read "1 of 2", not "1 of 1" — the
+    # integrity-unit count is the denominator, not the per-security holdings count.
+    inv = make_investor()
+    fund = make_security(security_type=SecurityType.MF.value)
+    folio_a = make_folio(investor=inv)
+    folio_b = make_folio(investor=inv)
+    SecurityIntegrityStatus.objects.create(
+        investor=inv,
+        security=fund,
+        folio=folio_a,
+        status=IntegrityStatus.FULL_HISTORY.value,
+        tax_safe=True,
+    )
+    SecurityIntegrityStatus.objects.create(
+        investor=inv,
+        security=fund,
+        folio=folio_b,
+        status=IntegrityStatus.SNAPSHOT_ONLY.value,
+        tax_safe=False,
+    )
+
+    body = client.get(f"/api/investors/{inv.id}/summary").json()
+
+    assert body["integrity_unit_count"] == 2  # two (security, folio) units
+    assert body["tax_ready_count"] == 1  # only the full-history folio
+
+
 def test_summary_reports_last_successful_import(client, make_investor):
     inv = make_investor()
     ImportJob.objects.create(investor=inv, kind=ImportKind.CSV.value, status=ImportJobStatus.FAILED)

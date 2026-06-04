@@ -304,6 +304,12 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
     rollup = _rollup(valuation, meta_by_security, extras)
 
     statuses = list(investor.integrity_statuses.values_list("status", "tax_safe"))
+    # Integrity is tracked per (security, folio) — the FIFO / cost-basis unit (the
+    # same fund in two folios reconciles separately; see fifo.build_sell_disposals).
+    # So the tax-ready *fraction* must use this per-(security, folio) count as its
+    # denominator, NOT holdings_count (which collapses a fund's folios into one
+    # priced row). This is what keeps "N of M tax-ready" coherent.
+    integrity_unit_count = len(statuses)
     tax_ready_count = sum(1 for _status, tax_safe in statuses if tax_safe)
     needs_attention_count = sum(
         1 for status, _ in statuses if status == IntegrityStatus.MISMATCH.value
@@ -349,6 +355,7 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
         "total_inr": total_inr,
         "is_provisional": is_provisional,
         "holdings_count": rollup["holdings_count"],
+        "integrity_unit_count": integrity_unit_count,
         "tax_ready_count": tax_ready_count,
         "needs_attention_count": needs_attention_count,
         "snapshot_count": snapshot_count,

@@ -14,7 +14,7 @@ import { useFamilyStore } from '@/stores/family'
 import { useInvestorStore } from '@/stores/investor'
 import { useUiStore } from '@/stores/ui'
 import { useRosterMetrics } from '@/composables/useRosterMetrics'
-import { formatInr, formatDate } from '@/utils/format'
+import { formatInr, formatDate, toNumber } from '@/utils/format'
 
 const router = useRouter()
 const roster = useRosterStore()
@@ -190,6 +190,20 @@ async function moveInvestor(inv: RosterInvestor, familyId: number | null): Promi
   if (familyId === inv.familyId) return
   await investorStore.setFamily(inv.id, familyId)
 }
+
+// Honest value state: a held investor whose value computes to 0 isn't worth ₹0 —
+// it's not priced yet (valuation running, or snapshot-only holdings with no live
+// price). Show that instead of a misleading zero. A genuinely empty roster entry
+// (no holdings) keeps the dash.
+function isValuePending(inv: RosterInvestor): boolean {
+  const s = metrics.investorSummaries.value[inv.id]
+  return !!s && s.holdingsCount > 0 && toNumber(s.totalInr) <= 0
+}
+function investorValue(inv: RosterInvestor): string {
+  const s = metrics.investorSummaries.value[inv.id]
+  if (!s) return '—'
+  return isValuePending(inv) ? 'Valuation pending' : formatInr(s.totalInr)
+}
 </script>
 
 <template>
@@ -245,10 +259,10 @@ async function moveInvestor(inv: RosterInvestor, familyId: number | null): Promi
         <ul class="investors">
           <li v-for="inv in group.investors" :key="inv.id" class="investor-row">
             <button type="button" class="inv-name is-link" @click="openInvestor(inv.id)">{{ inv.name }}</button>
-            <span class="metric value">{{ metrics.investorSummaries.value[inv.id] ? formatInr(metrics.investorSummaries.value[inv.id].totalInr) : '—' }}</span>
+            <span class="metric value" :class="{ pending: isValuePending(inv) }">{{ investorValue(inv) }}</span>
             <span class="metric tax-ready" :class="{ attention: (metrics.investorSummaries.value[inv.id]?.needsAttentionCount ?? 0) > 0 }">
               <template v-if="metrics.investorSummaries.value[inv.id]">
-                {{ metrics.investorSummaries.value[inv.id].taxReadyCount }}/{{ metrics.investorSummaries.value[inv.id].holdingsCount }} tax-ready
+                {{ metrics.investorSummaries.value[inv.id].taxReadyCount }}/{{ metrics.investorSummaries.value[inv.id].integrityUnitCount }} tax-ready
               </template>
               <template v-else>—</template>
             </span>
@@ -428,6 +442,12 @@ async function moveInvestor(inv: RosterInvestor, familyId: number | null): Promi
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+/* "Valuation pending" — not a real number, so de-emphasise it (never a hard ₹0). */
+.value.pending {
+  color: var(--fm-text-muted);
+  font-weight: 500;
+  font-size: 0.8125rem;
 }
 .tax-ready {
   min-width: 8rem;

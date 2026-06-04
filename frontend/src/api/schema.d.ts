@@ -850,6 +850,8 @@ export interface components {
             day_change_inr?: string | null;
             /** Holdings Count */
             holdings_count: number;
+            /** Integrity Unit Count */
+            integrity_unit_count: number;
             /** Investor Id */
             investor_id: number;
             /**

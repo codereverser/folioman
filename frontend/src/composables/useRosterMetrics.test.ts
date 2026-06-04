@@ -35,6 +35,7 @@ describe('useRosterMetrics', () => {
         as_of: '2026-05-31',
         total_inr: '7500',
         holdings_count: 3,
+        integrity_unit_count: 4,
         tax_ready_count: 1,
         needs_attention_count: 1,
         snapshot_count: 1,
@@ -49,6 +50,7 @@ describe('useRosterMetrics', () => {
     expect(m.investorSummaries.value[10]).toEqual({
       totalInr: '7500',
       holdingsCount: 3,
+      integrityUnitCount: 4,
       taxReadyCount: 1,
       needsAttentionCount: 1,
       snapshotCount: 1,
