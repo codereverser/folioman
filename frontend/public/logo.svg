@@ -1,7 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Folioman">
-  <rect width="512" height="512" rx="96" fill="#4f46e5"/>
-  <!-- Stylised "F" with an upward trend bar, evoking portfolio growth. -->
-  <path d="M168 128h176v52H224v60h104v52H224v92h-56z" fill="#ffffff"/>
-  <rect x="300" y="300" width="32" height="84" rx="8" fill="#a5b4fc"/>
-  <rect x="344" y="252" width="32" height="132" rx="8" fill="#c7d2fe"/>
+  <defs>
+    <linearGradient id="fm-ground" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B1120"/>
+      <stop offset="1" stop-color="#16263B"/>
+    </linearGradient>
+    <linearGradient id="fm-bars" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#5EEAD4"/>
+      <stop offset="1" stop-color="#0D9488"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#fm-ground)"/>
+  <!-- F: rounded stem + sheared top arm + sheared middle arm -->
+  <g fill="#ffffff">
+    <rect x="148" y="118" width="66" height="276" rx="20"/>
+    <path d="M150 118 L410 118 L350 182 L150 182 Z"/>
+    <path d="M150 214 L320 214 L286 266 L150 266 Z"/>
+  </g>
+  <!-- Two bars whose angled inner tops drop to a shared valley: a hidden "M" / growth chart -->
+  <path d="M230 392 L230 286 L296 346 L296 392 Z" fill="url(#fm-bars)"/>
+  <path d="M300 392 L300 346 L366 286 L366 392 Z" fill="url(#fm-bars)"/>
 </svg>

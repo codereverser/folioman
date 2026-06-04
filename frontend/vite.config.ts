@@ -38,7 +38,7 @@ export default defineConfig({
         name: 'Folioman',
         short_name: 'Folioman',
         description: 'Mutual-fund portfolio tracking for advisors and families.',
-        theme_color: '#4f46e5',
+        theme_color: '#0B1120',
         background_color: '#ffffff',
         display: 'standalone',
         start_url: '/',

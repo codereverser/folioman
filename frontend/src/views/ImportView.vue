@@ -144,7 +144,7 @@ function goToDashboard(): void {
     <header class="page-head">
       <h1>Import CAS</h1>
       <p class="muted">
-        Upload a CAMS/KFin <strong>MF CAS</strong> or an NSDL/CDSL <strong>eCAS</strong> — the
+        Upload a CAMS/KFintech <strong>Mutual Fund CAS</strong> or an NSDL/CDSL <strong>eCAS</strong> — the
         type is auto-detected. An MF CAS builds a full transaction ledger; an eCAS refreshes
         demat holdings as a net-worth snapshot only.
       </p>
