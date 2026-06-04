@@ -40,6 +40,9 @@ class InvestorOut(Schema):
     relation: str
     family_id: int | None
     has_pan: bool
+    # True once statements are imported under this investor — the PAN is then the
+    # join key for those imports and is locked (changing it would strand the data).
+    pan_locked: bool
     created_at: datetime
     updated_at: datetime
 

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import datetime as dt
+from decimal import Decimal
+
 import pytest
 
 pytestmark = pytest.mark.django_db
@@ -74,6 +77,48 @@ def test_patch_moves_investor_into_and_out_of_family(client, make_family, make_i
     # explicit null clears the family (move to solo)
     resp = _patch(client, f"/api/investors/{inv.id}", {"family_id": None})
     assert resp.json()["family_id"] is None
+
+
+def test_pan_backfill_allowed_before_any_import(client, make_investor):
+    inv = make_investor()
+    assert client.get(f"/api/investors/{inv.id}").json()["pan_locked"] is False
+    resp = _patch(client, f"/api/investors/{inv.id}", {"pan": "ABCDE1234F"})
+    assert resp.status_code == 200
+    assert resp.json()["has_pan"] is True
+
+
+def test_pan_locks_once_data_imported_and_change_is_refused(
+    client, make_investor, make_security, make_folio, make_transaction
+):
+    # PAN is the join key statements attach to: once data is imported under this
+    # investor, changing it would strand that data, so it's locked.
+    inv = make_investor()
+    _patch(client, f"/api/investors/{inv.id}", {"pan": "ABCDE1234F"})
+    folio = make_folio(investor=inv)
+    make_transaction(
+        investor=inv,
+        security=make_security(),
+        folio=folio,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("10"),
+        nav_or_price=Decimal("10"),
+    )
+
+    assert client.get(f"/api/investors/{inv.id}").json()["pan_locked"] is True
+
+    # A different PAN is rejected; resending the same PAN is a harmless no-op.
+    assert _patch(client, f"/api/investors/{inv.id}", {"pan": "ZYXWV9876Z"}).status_code == 409
+    assert _patch(client, f"/api/investors/{inv.id}", {"pan": "ABCDE1234F"}).status_code == 200
+    # Non-PAN edits still work while locked.
+    assert _patch(client, f"/api/investors/{inv.id}", {"name": "Renamed"}).status_code == 200
+
+
+def test_duplicate_pan_is_rejected_cleanly(client, make_investor):
+    a = make_investor()
+    b = make_investor()
+    _patch(client, f"/api/investors/{a.id}", {"pan": "ABCDE1234F"})
+    resp = _patch(client, f"/api/investors/{b.id}", {"pan": "ABCDE1234F"})
+    assert resp.status_code == 409
 
 
 def test_patch_can_set_pan(client, make_investor):

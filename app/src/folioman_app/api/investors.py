@@ -11,6 +11,7 @@ from datetime import date
 from typing import Literal
 
 from django.conf import settings
+from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
 from ninja import Query, Router, Status
 from ninja.errors import HttpError
@@ -36,6 +37,7 @@ from folioman_app.api.schemas import (
     ValueSeriesOut,
 )
 from folioman_app.models import Investor, Security
+from folioman_app.security.pan import pan_hash
 from folioman_app.services.valuation import (
     build_investor_summary,
     build_roster_summary,
@@ -67,7 +69,10 @@ def create_investor(request, payload: InvestorIn):
         investor.family = get_owned_family(request, payload.family_id)
     if payload.pan:
         investor.set_pan(payload.pan)
-    investor.save()
+    try:
+        investor.save()
+    except IntegrityError as exc:
+        raise HttpError(409, "Another investor already has this PAN.") from exc
     return Status(201, investor)
 
 
@@ -90,13 +95,26 @@ def update_investor(request, investor_id: int, payload: InvestorUpdate):
     investor = get_owned_investor(request, investor_id)
     data = payload.model_dump(exclude_unset=True)
     if "pan" in data:
-        investor.set_pan(data.pop("pan"))
+        new_pan = data.pop("pan")
+        # The PAN is the join key statements attach to. Once data is imported,
+        # changing or clearing it would strand that data (a later statement with the
+        # old PAN forks a fresh investor), so refuse — only a no-op resend is allowed.
+        if investor.pan_locked and pan_hash(new_pan or "") != investor.pan_hash:
+            raise HttpError(
+                409,
+                "This investor already has imported statements, so its PAN is locked — "
+                "changing it would split their holdings across two records.",
+            )
+        investor.set_pan(new_pan)
     if "family_id" in data:
         family_id = data.pop("family_id")
         investor.family = get_owned_family(request, family_id) if family_id is not None else None
     for field, value in data.items():
         setattr(investor, field, value)
-    investor.save()
+    try:
+        investor.save()
+    except IntegrityError as exc:
+        raise HttpError(409, "Another investor already has this PAN.") from exc
     return investor
 
 

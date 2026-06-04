@@ -130,6 +130,13 @@ class Investor(TimeStampedModel):
     def has_pan(self) -> bool:
         return bool(self.pan_hash)
 
+    @property
+    def pan_locked(self) -> bool:
+        """The PAN is the join key statements attach to. Once any data is imported
+        under this investor, changing/clearing the PAN would strand it (a later
+        statement carrying the old PAN forks a fresh investor), so freeze it then."""
+        return self.has_pan and (self.transactions.exists() or self.holdings.exists())
+
     def set_pan(self, pan: str | None) -> None:
         """Encrypt + hash a PAN onto this instance (does not save). '' / None clears it."""
         from folioman_app.security.pan import encrypt_pan, pan_hash

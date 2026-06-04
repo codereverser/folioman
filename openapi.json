@@ -775,6 +775,10 @@
             "title": "Name",
             "type": "string"
           },
+          "pan_locked": {
+            "title": "Pan Locked",
+            "type": "boolean"
+          },
           "relation": {
             "title": "Relation",
             "type": "string"
@@ -793,6 +797,7 @@
           "relation",
           "family_id",
           "has_pan",
+          "pan_locked",
           "created_at",
           "updated_at"
         ],

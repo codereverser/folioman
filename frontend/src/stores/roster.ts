@@ -8,6 +8,8 @@ export interface RosterInvestor {
   familyId: number | null
   /** Whether a PAN is on file (the value is never exposed) — gates tax export. */
   hasPan: boolean
+  /** PAN is the import join key and is frozen once data is imported under it. */
+  panLocked: boolean
 }
 
 export interface RosterFamily {
@@ -32,10 +34,10 @@ const SEED_FAMILIES: RosterFamily[] = [
   { id: 2, name: 'Iyer Family' },
 ]
 const SEED_INVESTORS: RosterInvestor[] = [
-  { id: 10, name: 'Rajesh Sharma', familyId: 1, hasPan: true },
-  { id: 11, name: 'Priya Sharma', familyId: 1, hasPan: true },
-  { id: 12, name: 'Meena Iyer', familyId: 2, hasPan: false },
-  { id: 20, name: 'Anil Kumar', familyId: null, hasPan: true },
+  { id: 10, name: 'Rajesh Sharma', familyId: 1, hasPan: true, panLocked: true },
+  { id: 11, name: 'Priya Sharma', familyId: 1, hasPan: true, panLocked: false },
+  { id: 12, name: 'Meena Iyer', familyId: 2, hasPan: false, panLocked: false },
+  { id: 20, name: 'Anil Kumar', familyId: null, hasPan: true, panLocked: true },
 ]
 
 /**
@@ -71,6 +73,7 @@ export const useRosterStore = defineStore('roster', () => {
         name: i.name,
         familyId: i.family_id,
         hasPan: i.has_pan,
+        panLocked: i.pan_locked,
       }))
       usingSeed.value = false
       loaded.value = true

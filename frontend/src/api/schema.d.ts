@@ -862,6 +862,8 @@ export interface components {
             is_huf: boolean;
             /** Name */
             name: string;
+            /** Pan Locked */
+            pan_locked: boolean;
             /** Relation */
             relation: string;
             /**

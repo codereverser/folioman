@@ -57,6 +57,7 @@ interface Row {
   id: number
   name: string
   hasPan: boolean
+  panLocked: boolean
   familyId: number | null
   familyName: string
   valueNum: number
@@ -69,6 +70,7 @@ const rows = computed<Row[]>(() => {
       id: inv.id,
       name: inv.name,
       hasPan: inv.hasPan,
+      panLocked: inv.panLocked,
       familyId: inv.familyId,
       familyName: inv.familyId != null ? (roster.familyName(inv.familyId) ?? 'Family') : SOLO_GROUP,
       valueNum: summary ? toNumber(summary.totalInr) : -1,
@@ -87,7 +89,13 @@ const filters = computed(() => ({
 }))
 
 function rosterInvestor(row: Row): RosterInvestor {
-  return { id: row.id, name: row.name, familyId: row.familyId, hasPan: row.hasPan }
+  return {
+    id: row.id,
+    name: row.name,
+    familyId: row.familyId,
+    hasPan: row.hasPan,
+    panLocked: row.panLocked,
+  }
 }
 
 // --- navigation -------------------------------------------------------------
@@ -220,7 +228,8 @@ const investorForm = reactive<{
   name: string
   familyId: number | null
   pan: string
-}>({ visible: false, mode: 'create', id: null, name: '', familyId: null, pan: '' })
+  panLocked: boolean
+}>({ visible: false, mode: 'create', id: null, name: '', familyId: null, pan: '', panLocked: false })
 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const panError = computed(() => {
@@ -228,7 +237,15 @@ const panError = computed(() => {
   return value && !PAN_PATTERN.test(value) ? 'PAN must look like ABCDE1234F' : ''
 })
 function openCreateInvestor(familyId: number | null = null): void {
-  Object.assign(investorForm, { visible: true, mode: 'create', id: null, name: '', familyId, pan: '' })
+  Object.assign(investorForm, {
+    visible: true,
+    mode: 'create',
+    id: null,
+    name: '',
+    familyId,
+    pan: '',
+    panLocked: false,
+  })
 }
 function openEditInvestor(inv: RosterInvestor): void {
   Object.assign(investorForm, {
@@ -238,6 +255,7 @@ function openEditInvestor(inv: RosterInvestor): void {
     name: inv.name,
     familyId: inv.familyId,
     pan: '',
+    panLocked: inv.panLocked,
   })
 }
 async function saveInvestor(): Promise<void> {
@@ -453,21 +471,33 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
         <InputText id="inv-name" v-model="investorForm.name" autofocus />
       </div>
       <div class="field">
-        <label for="inv-pan">PAN <span class="optional">(optional)</span></label>
-        <InputText
-          id="inv-pan"
-          v-model="investorForm.pan"
-          :invalid="!!panError"
-          maxlength="10"
-          placeholder="ABCDE1234F"
-          style="text-transform: uppercase"
-          @input="investorForm.pan = investorForm.pan.toUpperCase()"
-        />
-        <small v-if="panError" class="field-error">{{ panError }}</small>
-        <small v-else class="field-hint">
-          {{ investorForm.mode === 'edit' ? 'Leave blank to keep the existing PAN. ' : '' }}Needed
-          for the per-PAN capital-gains (Schedule 112A) export.
-        </small>
+        <label for="inv-pan">PAN <span v-if="!investorForm.panLocked" class="optional">(optional)</span></label>
+        <template v-if="investorForm.panLocked">
+          <div class="pan-locked">
+            <i class="pi pi-lock" />
+            <span>On file — locked</span>
+          </div>
+          <small class="field-hint">
+            Statements are already imported under this PAN, so it's the key they attach
+            to. Changing it would split this investor's holdings across two records.
+          </small>
+        </template>
+        <template v-else>
+          <InputText
+            id="inv-pan"
+            v-model="investorForm.pan"
+            :invalid="!!panError"
+            maxlength="10"
+            placeholder="ABCDE1234F"
+            style="text-transform: uppercase"
+            @input="investorForm.pan = investorForm.pan.toUpperCase()"
+          />
+          <small v-if="panError" class="field-error">{{ panError }}</small>
+          <small v-else class="field-hint">
+            {{ investorForm.mode === 'edit' ? 'Leave blank to keep the existing PAN. ' : '' }}Needed
+            for the per-PAN capital-gains (Schedule 112A) export.
+          </small>
+        </template>
       </div>
       <div class="field">
         <label for="inv-family">Family</label>
@@ -736,6 +766,18 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
 .field .optional {
   font-weight: 400;
   color: var(--fm-text-subtle, var(--fm-text-muted));
+}
+.pan-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fm-space-2);
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius-sm);
+  background: var(--fm-surface-raised);
+  color: var(--fm-text-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 .field-hint {
   font-size: 0.75rem;
