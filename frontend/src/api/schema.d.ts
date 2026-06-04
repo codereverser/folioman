@@ -819,6 +819,37 @@ export interface components {
             /** Units From Transactions */
             units_from_transactions: string | null;
         };
+        /** InvestorDetailOut */
+        InvestorDetailOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Email */
+            email: string;
+            /** Family Id */
+            family_id: number | null;
+            /** Has Pan */
+            has_pan: boolean;
+            /** Id */
+            id: number;
+            /** Is Huf */
+            is_huf: boolean;
+            /** Name */
+            name: string;
+            /** Pan Locked */
+            pan_locked: boolean;
+            /** Pan Masked */
+            pan_masked: string;
+            /** Relation */
+            relation: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** InvestorIn */
         InvestorIn: {
             /**
@@ -1686,7 +1717,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["InvestorOut"];
+                    "application/json": components["schemas"]["InvestorDetailOut"];
                 };
             };
         };

@@ -25,6 +25,7 @@ from folioman_app.api.auth import (
 )
 from folioman_app.api.schemas import (
     FolioOut,
+    InvestorDetailOut,
     InvestorIn,
     InvestorOut,
     InvestorSummaryOut,
@@ -85,7 +86,7 @@ def roster_aggregate(request, as_of: date | None = None):
     return build_roster_summary(investors, family_count, as_of or date.today())
 
 
-@router.get("/{investor_id}", response=InvestorOut)
+@router.get("/{investor_id}", response=InvestorDetailOut)
 def get_investor(request, investor_id: int):
     return get_owned_investor(request, investor_id)
 

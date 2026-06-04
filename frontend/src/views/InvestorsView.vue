@@ -18,6 +18,7 @@ import { useFamilyStore } from '@/stores/family'
 import { useInvestorStore } from '@/stores/investor'
 import { useUiStore } from '@/stores/ui'
 import { useRosterMetrics, type InvestorSummary } from '@/composables/useRosterMetrics'
+import { api } from '@/api/client'
 import { formatInr, formatDate, toNumber } from '@/utils/format'
 
 const router = useRouter()
@@ -228,8 +229,20 @@ const investorForm = reactive<{
   name: string
   familyId: number | null
   pan: string
+  hasPan: boolean
   panLocked: boolean
-}>({ visible: false, mode: 'create', id: null, name: '', familyId: null, pan: '', panLocked: false })
+  panMasked: string
+}>({
+  visible: false,
+  mode: 'create',
+  id: null,
+  name: '',
+  familyId: null,
+  pan: '',
+  hasPan: false,
+  panLocked: false,
+  panMasked: '',
+})
 
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const panError = computed(() => {
@@ -244,10 +257,12 @@ function openCreateInvestor(familyId: number | null = null): void {
     name: '',
     familyId,
     pan: '',
+    hasPan: false,
     panLocked: false,
+    panMasked: '',
   })
 }
-function openEditInvestor(inv: RosterInvestor): void {
+async function openEditInvestor(inv: RosterInvestor): Promise<void> {
   Object.assign(investorForm, {
     visible: true,
     mode: 'edit',
@@ -255,8 +270,20 @@ function openEditInvestor(inv: RosterInvestor): void {
     name: inv.name,
     familyId: inv.familyId,
     pan: '',
+    hasPan: inv.hasPan,
     panLocked: inv.panLocked,
+    panMasked: '',
   })
+  // Fetch the masked PAN (single-investor read; the full value is never returned)
+  // so the dialog can disambiguate similar names and confirm what's on file.
+  const { data } = await api.GET('/api/investors/{investor_id}', {
+    params: { path: { investor_id: inv.id } },
+  })
+  if (data && investorForm.id === inv.id) {
+    investorForm.hasPan = data.has_pan
+    investorForm.panLocked = data.pan_locked
+    investorForm.panMasked = data.pan_masked
+  }
 }
 async function saveInvestor(): Promise<void> {
   const name = investorForm.name.trim()
@@ -394,13 +421,17 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
               <button type="button" class="inv-name is-link" @click.stop="openInvestor((data as Row).id)">
                 {{ (data as Row).name }}
               </button>
-              <span v-if="(data as Row).hasPan" class="pan-flag" title="PAN on file — required for the capital-gains export">PAN</span>
+              <span
+                v-if="!(data as Row).hasPan"
+                class="no-pan"
+                title="No PAN on file — add one to enable the capital-gains export (optional)"
+              >no PAN</span>
               <span v-if="!grouped && (data as Row).familyId != null" class="row-family">{{ (data as Row).familyName }}</span>
             </div>
           </template>
         </Column>
 
-        <Column field="valueNum" header="Value" :sortable="!grouped" class="col-num">
+        <Column field="valueNum" header="Value" :sortable="!grouped" class="col-num" header-class="col-num">
           <template #body="{ data }">
             <span class="value" :class="{ pending: isPending((data as Row).summary) }">
               {{ valueText((data as Row).summary) }}
@@ -413,7 +444,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
           </template>
         </Column>
 
-        <Column header="Tax-ready" class="col-num">
+        <Column header="Verified" class="col-num" header-class="col-num">
           <template #body="{ data }">
             <span class="tax-ready" :title="integrityTitle((data as Row).summary)">
               <template v-if="(data as Row).summary">
@@ -425,7 +456,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
           </template>
         </Column>
 
-        <Column header="Imported" class="col-num">
+        <Column header="Imported" class="col-num" header-class="col-num">
           <template #body="{ data }">
             <span class="muted">{{ formatDate((data as Row).summary?.lastImportAt) }}</span>
           </template>
@@ -471,11 +502,11 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
         <InputText id="inv-name" v-model="investorForm.name" autofocus />
       </div>
       <div class="field">
-        <label for="inv-pan">PAN <span v-if="!investorForm.panLocked" class="optional">(optional)</span></label>
+        <label for="inv-pan">PAN <span v-if="!investorForm.hasPan" class="optional">(optional)</span></label>
         <template v-if="investorForm.panLocked">
           <div class="pan-locked">
             <i class="pi pi-lock" />
-            <span>On file — locked</span>
+            <span>{{ investorForm.panMasked || 'On file' }}</span>
           </div>
           <small class="field-hint">
             Statements are already imported under this PAN, so it's the key they attach
@@ -493,9 +524,11 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
             @input="investorForm.pan = investorForm.pan.toUpperCase()"
           />
           <small v-if="panError" class="field-error">{{ panError }}</small>
+          <small v-else-if="investorForm.hasPan" class="field-hint">
+            Current: {{ investorForm.panMasked }} · leave blank to keep, or type a new PAN to replace it.
+          </small>
           <small v-else class="field-hint">
-            {{ investorForm.mode === 'edit' ? 'Leave blank to keep the existing PAN. ' : '' }}Needed
-            for the per-PAN capital-gains (Schedule 112A) export.
+            Needed for the per-PAN capital-gains (Schedule 112A) export.
           </small>
         </template>
       </div>
@@ -670,14 +703,16 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-.pan-flag {
+/* PAN is the norm, so we don't badge it. Flag only its absence — quietly, since a
+   user may deliberately have no PAN (no warning colour, no nag). */
+.no-pan {
   font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  color: var(--fm-verified);
-  background: var(--fm-verified-bg);
+  letter-spacing: 0.02em;
+  color: var(--fm-text-subtle);
+  border: 1px dashed var(--fm-border);
   border-radius: var(--fm-radius-sm);
-  padding: 0.05rem 0.3rem;
+  padding: 0.02rem 0.3rem;
+  cursor: help;
 }
 .value {
   font-variant-numeric: tabular-nums;
@@ -705,6 +740,11 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
 }
 :deep(.col-num) {
   text-align: right;
+}
+/* PrimeVue wraps the header label in a flex row, so text-align can't move it —
+   right-align the header content to sit over the right-aligned cell data. */
+:deep(th.col-num .p-datatable-column-header-content) {
+  justify-content: flex-end;
 }
 :deep(.col-actions) {
   width: 3rem;

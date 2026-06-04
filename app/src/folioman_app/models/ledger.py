@@ -137,6 +137,16 @@ class Investor(TimeStampedModel):
         statement carrying the old PAN forks a fresh investor), so freeze it then."""
         return self.has_pan and (self.transactions.exists() or self.holdings.exists())
 
+    @property
+    def pan_masked(self) -> str:
+        """Display-only masked PAN (last 4 kept, e.g. ``XXXXXX234F``) for telling
+        similar-named investors apart — never the full value. '' when none on file.
+        Decrypts, so expose it only on the single-investor read, not the roster list."""
+        from folioman_app.security.pan import mask_pan
+
+        pan = self.get_pan()
+        return mask_pan(pan) if pan else ""
+
     def set_pan(self, pan: str | None) -> None:
         """Encrypt + hash a PAN onto this instance (does not save). '' / None clears it."""
         from folioman_app.security.pan import encrypt_pan, pan_hash

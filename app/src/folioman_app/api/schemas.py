@@ -47,6 +47,12 @@ class InvestorOut(Schema):
     updated_at: datetime
 
 
+class InvestorDetailOut(InvestorOut):
+    # Single-investor read only: a masked PAN (last 4) to disambiguate similar names.
+    # Kept off the roster list so we don't decrypt every investor on each load.
+    pan_masked: str
+
+
 class FolioOut(Schema):
     id: int
     folio_type: str

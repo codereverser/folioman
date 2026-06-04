@@ -113,6 +113,14 @@ def test_pan_locks_once_data_imported_and_change_is_refused(
     assert _patch(client, f"/api/investors/{inv.id}", {"name": "Renamed"}).status_code == 200
 
 
+def test_get_returns_masked_pan_for_disambiguation(client, make_investor):
+    inv = make_investor()
+    _patch(client, f"/api/investors/{inv.id}", {"pan": "ABCDE1234F"})
+    body = client.get(f"/api/investors/{inv.id}").json()
+    assert body["pan_masked"] == "XXXXXX234F"  # last 4 kept, rest masked
+    assert "pan" not in body and "pan_hash" not in body  # full value never exposed
+
+
 def test_duplicate_pan_is_rejected_cleanly(client, make_investor):
     a = make_investor()
     b = make_investor()

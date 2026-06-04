@@ -687,6 +687,78 @@
         "title": "IntegrityStatusOut",
         "type": "object"
       },
+      "InvestorDetailOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "family_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Family Id"
+          },
+          "has_pan": {
+            "title": "Has Pan",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_huf": {
+            "title": "Is Huf",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pan_locked": {
+            "title": "Pan Locked",
+            "type": "boolean"
+          },
+          "pan_masked": {
+            "title": "Pan Masked",
+            "type": "string"
+          },
+          "relation": {
+            "title": "Relation",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "is_huf",
+          "relation",
+          "family_id",
+          "has_pan",
+          "pan_locked",
+          "created_at",
+          "updated_at",
+          "pan_masked"
+        ],
+        "title": "InvestorDetailOut",
+        "type": "object"
+      },
       "InvestorIn": {
         "properties": {
           "email": {
@@ -2514,7 +2586,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvestorOut"
+                  "$ref": "#/components/schemas/InvestorDetailOut"
                 }
               }
             },
