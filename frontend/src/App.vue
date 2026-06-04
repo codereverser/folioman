@@ -10,16 +10,31 @@ import ThemeToggle from '@/components/ThemeToggle.vue'
 import PwaInstallPrompt from '@/components/PwaInstallPrompt.vue'
 import { useUiStore } from '@/stores/ui'
 import { useRosterStore } from '@/stores/roster'
+import { useIntegrityStore } from '@/stores/integrity'
 
 interface NavLink {
   label: string
   icon: string
   to: RouteLocationRaw
+  badge?: number
 }
 
 const ui = useUiStore()
 const roster = useRosterStore()
+const integrity = useIntegrityStore()
 const toast = useToast()
+
+// Selected investor's items-needing-attention (mismatches) — drives the nav badge.
+const attentionCount = computed(() =>
+  ui.selectedInvestorId !== null ? integrity.rollupFor(ui.selectedInvestorId).needsAttention : 0,
+)
+watch(
+  () => ui.selectedInvestorId,
+  (id) => {
+    if (id !== null) void integrity.load(id)
+  },
+  { immediate: true },
+)
 
 // Nav matches the page list; scoped links appear once a scope is selected.
 const navLinks = computed<NavLink[]>(() => {
@@ -40,6 +55,7 @@ const navLinks = computed<NavLink[]>(() => {
       label: 'Integrity',
       icon: 'pi pi-verified',
       to: { name: 'integrity', params: { investorId } },
+      badge: attentionCount.value || undefined,
     })
     links.push({
       label: 'Capital Gains',
@@ -57,6 +73,11 @@ const navLinks = computed<NavLink[]>(() => {
   links.push({ label: 'Settings', icon: 'pi pi-cog', to: { name: 'settings' } })
   return links
 })
+
+// Mobile bottom tab bar: primary destinations only. Import is desktop-only; any
+// other link (e.g. nothing extra today) is reachable via the scope switcher.
+const MOBILE_TABS = new Set(['Investors', 'Dashboard', 'Integrity', 'Capital Gains', 'Family', 'Settings'])
+const mobileTabs = computed<NavLink[]>(() => navLinks.value.filter((l) => MOBILE_TABS.has(l.label)))
 
 // Drain the ui store's toast queue into PrimeVue's Toast service.
 watch(
@@ -92,7 +113,7 @@ onBeforeUnmount(() => {
       <div class="switcher">
         <ScopeSwitcher />
       </div>
-      <nav>
+      <nav class="side-nav">
         <RouterLink
           v-for="link in navLinks"
           :key="link.label"
@@ -101,7 +122,8 @@ onBeforeUnmount(() => {
           active-class="is-active"
         >
           <i :class="link.icon" />
-          <span>{{ link.label }}</span>
+          <span class="nav-label">{{ link.label }}</span>
+          <span v-if="link.badge" class="nav-badge" :title="`${link.badge} need attention`">{{ link.badge }}</span>
         </RouterLink>
       </nav>
     </aside>
@@ -154,6 +176,23 @@ onBeforeUnmount(() => {
         <PwaInstallPrompt />
       </footer>
     </main>
+
+    <!-- Mobile primary navigation: a fixed bottom tab bar (hidden on desktop). -->
+    <nav class="bottom-tabs" aria-label="Primary">
+      <RouterLink
+        v-for="tab in mobileTabs"
+        :key="tab.label"
+        :to="tab.to"
+        class="tab"
+        active-class="is-active"
+      >
+        <span class="tab-icon">
+          <i :class="tab.icon" />
+          <span v-if="tab.badge" class="tab-badge" :aria-label="`${tab.badge} need attention`">{{ tab.badge }}</span>
+        </span>
+        <span class="tab-label">{{ tab.label }}</span>
+      </RouterLink>
+    </nav>
 
     <Toast />
     <ConfirmDialog />
@@ -219,6 +258,26 @@ nav {
   background: var(--p-highlight-background);
   color: var(--p-primary-color);
   font-weight: 600;
+}
+.nav-label {
+  flex: 1;
+}
+/* Items-needing-attention count on the Integrity nav item. */
+.nav-badge {
+  min-width: 1.1rem;
+  padding: 0 0.35rem;
+  border-radius: var(--fm-radius-pill);
+  background: var(--fm-critical);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.1rem;
+  text-align: center;
+}
+
+/* Bottom tab bar — mobile only (shown via the media query below). */
+.bottom-tabs {
+  display: none;
 }
 
 .app-main {
@@ -342,26 +401,83 @@ nav {
   }
 
   .app-nav {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--fm-space-3);
     border-right: none;
     border-bottom: 1px solid var(--fm-border-subtle);
-    min-height: 11.25rem;
+    padding: var(--fm-space-3) var(--fm-space-4);
   }
 
-  nav {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    gap: var(--fm-space-2);
+  /* The sidebar link list moves to the bottom tab bar on mobile. */
+  .side-nav {
+    display: none;
   }
 
-  /* Comfortable touch targets on phones (≥44px per iOS HIG). */
-  .nav-link {
-    min-height: 44px;
-    white-space: nowrap;
+  .switcher {
+    flex: 1;
   }
-
   .switcher :deep(.scope-switcher) {
     width: 100%;
+  }
+
+  /* Bottom tab bar: fixed primary navigation, comfortable touch targets. */
+  .bottom-tabs {
+    display: flex;
+    flex-direction: row; /* override the base `nav { flex-direction: column }` */
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 20;
+    background: var(--fm-surface);
+    border-top: 1px solid var(--fm-border-subtle);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem;
+    min-height: 48px;
+    padding: 0.4rem 0.25rem;
+    text-decoration: none;
+    color: var(--fm-text-muted);
+    font-size: 0.625rem;
+  }
+  .tab.is-active {
+    color: var(--p-primary-color);
+  }
+  .tab-icon {
+    position: relative;
+    font-size: 1.15rem;
+    line-height: 1;
+  }
+  .tab-label {
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tab-badge {
+    position: absolute;
+    top: -0.4rem;
+    left: 0.65rem;
+    min-width: 0.95rem;
+    height: 0.95rem;
+    padding: 0 0.2rem;
+    border-radius: var(--fm-radius-pill);
+    background: var(--fm-critical);
+    color: #fff;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    line-height: 0.95rem;
+    text-align: center;
+  }
+
+  /* Keep content clear of the fixed bottom bar. */
+  .app-main {
+    padding-bottom: 3.75rem;
   }
 
   .route-skeleton {
