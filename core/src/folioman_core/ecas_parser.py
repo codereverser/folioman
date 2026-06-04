@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 
 import casparser
+from casparser.enums import FundType
 from casparser.exceptions import IncorrectPasswordError, ParserException
 from casparser.types import NSDLCASData
 
@@ -53,17 +54,32 @@ def _map_equity_holding(eq: object) -> EcasHoldingLine:
 
 
 def _map_mf_holding(mf: object) -> EcasHoldingLine:
-    # Demat-held MF — equity-orientation unknown from eCAS; left unflagged (default
-    # is non-equity), so reconciliation against an MF CAS (which sets the flag from
-    # FundType) is what enables 112A treatment.
+    # casparser (v1) backfills the AMFI code + scheme type onto demat MF holdings
+    # from the ISIN database (eCAS PDFs themselves carry only the ISIN). Carry both
+    # so an eCAS-only fund (a) is priceable via the AMFI-code NAV feed without ever
+    # needing a CAS, and (b) lines up by amfi_code/isin with the same scheme from an
+    # RTA CAS. When the type is known we also flag 112A equity-orientation; left
+    # unflagged when the ISIN DB has no classification (default non-equity), as
+    # before — a later MF CAS still refines it.
     #
     # The eCAS prints the RTA folio per MF holding — the *same* identity as the MF
     # CAS ledger. Carry it (as an MF folio) so the holding reconciles against the
     # ledger instead of landing under the demat account number and double-counting.
     rta_folio = str(getattr(mf, "folio", "") or "").strip()
     folio = Folio(folio_type=FolioType.MF, number=rta_folio[:64]) if rta_folio else None
+    fund_type = (getattr(mf, "type", None) or "").strip()
+    metadata: dict[str, object] = {}
+    if fund_type:
+        metadata = {"equity_oriented": fund_type == FundType.EQUITY.value, "fund_type": fund_type}
     return EcasHoldingLine(
-        security=Security(type=SecurityType.MF, name=mf.name, isin=mf.isin or "", currency="INR"),
+        security=Security(
+            type=SecurityType.MF,
+            name=mf.name or "",
+            isin=mf.isin or "",
+            amfi_code=(getattr(mf, "amfi", None) or ""),
+            metadata=metadata,
+            currency="INR",
+        ),
         units=mf.balance,
         value_observed=mf.value,
         avg_cost_observed=mf.avg_cost,

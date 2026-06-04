@@ -64,7 +64,7 @@ wheels = [
 [[package]]
 name = "casparser"
 version = "1.0.0"
-source = { git = "https://github.com/codereverser/casparser?branch=feature%2Fv1.0#220edcfd7a16552acbd604fe5892051e73fb30cb" }
+source = { git = "https://github.com/codereverser/casparser?branch=feature%2Fv1.0#3446d745d9bb4df9b7f033e485667f14a7c3f24a" }
 dependencies = [
     { name = "casparser-isin" },
     { name = "click" },
