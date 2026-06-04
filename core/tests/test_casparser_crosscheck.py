@@ -262,11 +262,32 @@ def _stt(d: date, amount: str) -> TransactionData:
     return _txn(d, CTxn.STT_TAX, "0", "0", amount)
 
 
+def _casparser_total_112a_transfer_expense(cas: CASData, casparser_fy: str) -> Decimal:
+    """Sum casparser's col-12 (transfer expense). For these STT-only fixtures it is
+    purely the STT casparser deducts — folioman no longer does (s.48)."""
+    report = casparser.CapitalGainsReport(cas)
+    rows = list(csv.DictReader(io.StringIO(report.generate_112a_csv_data(casparser_fy))))
+    if not rows:
+        return Decimal("0")
+    exp_col = next(c for c in rows[0] if c.startswith("Expenditure"))
+    return sum((Decimal(r[exp_col]) for r in rows), Decimal("0"))
+
+
 def _assert_matches(cas: CASData, fy_label: str, casparser_fy: str | None = None) -> None:
     casparser_fy = casparser_fy or "FY" + fy_label
     folioman = _folioman_total_112a_balance(cas, fy_label)
     cp = _casparser_total_112a_balance(cas, casparser_fy)
-    assert folioman == cp, f"{fy_label}: folioman={folioman} casparser={cp} (Δ={folioman - cp})"
+    # folioman intentionally diverges from casparser on STT: casparser deducts the
+    # sell's STT as a col-12 transfer expense, but STT is NOT an allowable deduction
+    # (Income-tax Act s.48, second proviso) — CAMS/KFin statements don't net it
+    # either. So folioman's gain == casparser's gain + the STT casparser subtracted.
+    # (These fixtures carry STT but no buy stamp duty, so casparser's col-12 is pure
+    # STT; everything else — FIFO lots, FMV grandfathering, cost basis — still
+    # matches casparser byte-for-byte.)
+    stt = _casparser_total_112a_transfer_expense(cas, casparser_fy)
+    assert folioman == cp + stt, (
+        f"{fy_label}: folioman={folioman} casparser={cp}+STT{stt} (Δ={folioman - cp - stt})"
+    )
 
 
 def test_xc_pre2018_buy_post2024_sell_uses_fmv_grandfathering():

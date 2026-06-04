@@ -10,27 +10,20 @@ from folioman_core.models.transaction import Transaction
 from folioman_core.tax.models import Disposal, GainLine
 from folioman_core.tax.policy import FmvLookup, TaxPolicy
 
-_ZERO = Decimal("0")
-
 
 def disposal_from_lot(sell: SellDisposal, lot_index: int) -> Disposal:
     """Build one disposal row for a single consumed lot within a sell.
 
-    ``fees_allocated`` is the consumed slice's full transfer expense — the
-    per-lot stamp duty plus this lot's pro-rata share of the sell's STT
-    (matches casparser's col 12, which sums both).
+    ``fees_allocated`` is the consumed slice's deductible transfer expense — the
+    per-lot stamp duty only.
+
+    The sell's **STT is deliberately excluded**: securities-transaction tax is
+    not an allowable deduction when computing capital gains (Income-tax Act
+    s.48, second proviso), and CAMS / KFin capital-gains statements likewise
+    never net STT into the gain. (folioman used to add the pro-rata STT here to
+    mirror casparser's col 12, which understated the gain by exactly the STT.)
     """
     lot = sell.lots[lot_index]
-    total_units = sell.units
-    # Pro-rata STT, banker's-rounded to 2dp per disposal — matches casparser's
-    # ``round(x, 2)`` (Decimal-aware) byte-for-byte.
-    if total_units <= _ZERO or sell.fees == _ZERO:
-        stt_share = _ZERO
-    else:
-        stt_share = (sell.fees * lot.units / total_units).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_EVEN
-        )
-    fee_share = stt_share + lot.stamp_allocated
     return Disposal(
         security=sell.security,
         acquired_on=lot.acquired_on,
@@ -38,7 +31,7 @@ def disposal_from_lot(sell: SellDisposal, lot_index: int) -> Disposal:
         units=lot.units,
         sale_price_per_unit=sell.sale_price_per_unit,
         cost_per_unit=lot.cost_per_unit,
-        fees_allocated=fee_share,
+        fees_allocated=lot.stamp_allocated,
         currency=sell.security.currency,
     )
 

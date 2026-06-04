@@ -98,7 +98,10 @@ def test_compute_gain_lines_grandfathered():
     assert "grandfathering_unavailable" not in line.metadata
 
 
-def test_transfer_fee_deducted_exactly_once():
+def test_stt_on_sell_is_not_deducted():
+    # STT (the sell's `fees`) is NOT an allowable deduction for capital gains
+    # (Income-tax Act s.48, second proviso) — CAMS/KFin statements don't net it
+    # in either. The gain must be on the gross sale value.
     txns = [
         _buy("100", "10", on=date(2022, 1, 1)),  # cost 1000
         Transaction(
@@ -107,15 +110,38 @@ def test_transfer_fee_deducted_exactly_once():
             type=TransactionType.SELL,
             units="100",
             nav_or_price="12",
-            fees="50",
+            fees="50",  # STT — must not reduce the gain
             source=TransactionSource.MANUAL,
         ),
     ]
     line = compute_gain_lines(txns, get_policy("IN"))[0]
     assert line.term is Term.LONG
-    assert line.proceeds == Decimal("1150")  # 1200 gross - 50 transfer fee
-    assert line.adjusted_cost == Decimal("1000")  # acquisition cost only, no fee
-    assert line.gain == Decimal("150")  # not 100 (fee must not be double-counted)
+    assert line.proceeds == Decimal("1200")  # gross sale value; STT not deducted
+    assert line.adjusted_cost == Decimal("1000")
+    assert line.gain == Decimal("200")
+
+
+def test_buy_stamp_duty_deducted_exactly_once():
+    # Stamp duty paid on acquisition IS deductible (a transfer expense), and only
+    # once — from proceeds, never also from cost.
+    txns = [
+        Transaction(
+            security=_EQUITY,
+            date=date(2022, 1, 1),
+            type=TransactionType.BUY,
+            units="100",
+            nav_or_price="10",
+            amount="1000",
+            stamp_duty="0.50",
+            source=TransactionSource.MANUAL,
+        ),
+        _sell("100", "12", on=date(2024, 8, 1)),  # gross sale 1200, no STT
+    ]
+    line = compute_gain_lines(txns, get_policy("IN"))[0]
+    assert line.term is Term.LONG
+    assert line.proceeds == Decimal("1199.50")  # 1200 gross - 0.50 stamp duty
+    assert line.adjusted_cost == Decimal("1000")  # cost excludes stamp (not double-counted)
+    assert line.gain == Decimal("199.50")
 
 
 def test_grandfathering_unavailable_flagged_without_fmv():
