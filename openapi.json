@@ -229,12 +229,27 @@
             "title": "Folio Count",
             "type": "integer"
           },
+          "integrity_unit_count": {
+            "default": 0,
+            "title": "Integrity Unit Count",
+            "type": "integer"
+          },
           "investor_count": {
             "title": "Investor Count",
             "type": "integer"
           },
+          "needs_attention_count": {
+            "default": 0,
+            "title": "Needs Attention Count",
+            "type": "integer"
+          },
           "stale_count": {
             "title": "Stale Count",
+            "type": "integer"
+          },
+          "tax_ready_count": {
+            "default": 0,
+            "title": "Tax Ready Count",
             "type": "integer"
           },
           "top_holdings": {
@@ -990,6 +1005,57 @@
           "nav"
         ],
         "title": "NavPoint",
+        "type": "object"
+      },
+      "RosterAggregateOut": {
+        "description": "Advisor-wide roster header: net worth + counts + integrity roll-up.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "family_count": {
+            "title": "Family Count",
+            "type": "integer"
+          },
+          "integrity_unit_count": {
+            "title": "Integrity Unit Count",
+            "type": "integer"
+          },
+          "investor_count": {
+            "title": "Investor Count",
+            "type": "integer"
+          },
+          "needs_attention_count": {
+            "title": "Needs Attention Count",
+            "type": "integer"
+          },
+          "snapshot_count": {
+            "title": "Snapshot Count",
+            "type": "integer"
+          },
+          "tax_ready_count": {
+            "title": "Tax Ready Count",
+            "type": "integer"
+          },
+          "total_inr": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Inr",
+            "type": "string"
+          }
+        },
+        "required": [
+          "as_of",
+          "total_inr",
+          "investor_count",
+          "family_count",
+          "integrity_unit_count",
+          "tax_ready_count",
+          "needs_attention_count",
+          "snapshot_count"
+        ],
+        "title": "RosterAggregateOut",
         "type": "object"
       },
       "Schedule112ARequest": {
@@ -2355,6 +2421,47 @@
           }
         },
         "summary": "Create Investor",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
+    "/api/investors/aggregate": {
+      "get": {
+        "description": "Advisor-wide roster header. Declared before ``/{investor_id}`` so the literal\npath wins over the int param route.",
+        "operationId": "folioman_app_api_investors_roster_aggregate",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterAggregateOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Roster Aggregate",
         "tags": [
           "investors"
         ]

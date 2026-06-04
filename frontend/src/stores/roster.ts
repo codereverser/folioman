@@ -6,6 +6,8 @@ export interface RosterInvestor {
   id: number
   name: string
   familyId: number | null
+  /** Whether a PAN is on file (the value is never exposed) — gates tax export. */
+  hasPan: boolean
 }
 
 export interface RosterFamily {
@@ -30,10 +32,10 @@ const SEED_FAMILIES: RosterFamily[] = [
   { id: 2, name: 'Iyer Family' },
 ]
 const SEED_INVESTORS: RosterInvestor[] = [
-  { id: 10, name: 'Rajesh Sharma', familyId: 1 },
-  { id: 11, name: 'Priya Sharma', familyId: 1 },
-  { id: 12, name: 'Meena Iyer', familyId: 2 },
-  { id: 20, name: 'Anil Kumar', familyId: null },
+  { id: 10, name: 'Rajesh Sharma', familyId: 1, hasPan: true },
+  { id: 11, name: 'Priya Sharma', familyId: 1, hasPan: true },
+  { id: 12, name: 'Meena Iyer', familyId: 2, hasPan: false },
+  { id: 20, name: 'Anil Kumar', familyId: null, hasPan: true },
 ]
 
 /**
@@ -64,7 +66,12 @@ export const useRosterStore = defineStore('roster', () => {
         throw new Error('roster request failed')
       }
       families.value = fam.data.map((f) => ({ id: f.id, name: f.name }))
-      investors.value = inv.data.map((i) => ({ id: i.id, name: i.name, familyId: i.family_id }))
+      investors.value = inv.data.map((i) => ({
+        id: i.id,
+        name: i.name,
+        familyId: i.family_id,
+        hasPan: i.has_pan,
+      }))
       usingSeed.value = false
       loaded.value = true
     } catch (e) {

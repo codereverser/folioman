@@ -204,6 +204,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/aggregate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Roster Aggregate
+         * @description Advisor-wide roster header. Declared before ``/{investor_id}`` so the literal
+         *     path wins over the int param route.
+         */
+        get: operations["folioman_app_api_investors_roster_aggregate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}": {
         parameters: {
             query?: never;
@@ -639,10 +660,25 @@ export interface components {
              * @default 0
              */
             folio_count: number;
+            /**
+             * Integrity Unit Count
+             * @default 0
+             */
+            integrity_unit_count: number;
             /** Investor Count */
             investor_count: number;
+            /**
+             * Needs Attention Count
+             * @default 0
+             */
+            needs_attention_count: number;
             /** Stale Count */
             stale_count: number;
+            /**
+             * Tax Ready Count
+             * @default 0
+             */
+            tax_ready_count: number;
             /** Top Holdings */
             top_holdings: components["schemas"]["HoldingValueRow"][];
             /** Total Inr */
@@ -902,6 +938,31 @@ export interface components {
             date: string;
             /** Nav */
             nav: string;
+        };
+        /**
+         * RosterAggregateOut
+         * @description Advisor-wide roster header: net worth + counts + integrity roll-up.
+         */
+        RosterAggregateOut: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Family Count */
+            family_count: number;
+            /** Integrity Unit Count */
+            integrity_unit_count: number;
+            /** Investor Count */
+            investor_count: number;
+            /** Needs Attention Count */
+            needs_attention_count: number;
+            /** Snapshot Count */
+            snapshot_count: number;
+            /** Tax Ready Count */
+            tax_ready_count: number;
+            /** Total Inr */
+            total_inr: string;
         };
         /** Schedule112ARequest */
         Schedule112ARequest: {
@@ -1580,6 +1641,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvestorOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_investors_roster_aggregate: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RosterAggregateOut"];
                 };
             };
         };

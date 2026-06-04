@@ -16,13 +16,19 @@ from ninja import Query, Router, Status
 from ninja.errors import HttpError
 from pydantic import ValidationError
 
-from folioman_app.api.auth import get_owned_family, get_owned_investor, investors_for
+from folioman_app.api.auth import (
+    families_for,
+    get_owned_family,
+    get_owned_investor,
+    investors_for,
+)
 from folioman_app.api.schemas import (
     FolioOut,
     InvestorIn,
     InvestorOut,
     InvestorSummaryOut,
     InvestorUpdate,
+    RosterAggregateOut,
     SchemeDetailOut,
     TransactionIn,
     TransactionOut,
@@ -32,6 +38,7 @@ from folioman_app.api.schemas import (
 from folioman_app.models import Investor, Security
 from folioman_app.services.valuation import (
     build_investor_summary,
+    build_roster_summary,
     build_scheme_detail,
     build_valuation_status,
     default_series_start,
@@ -62,6 +69,15 @@ def create_investor(request, payload: InvestorIn):
         investor.set_pan(payload.pan)
     investor.save()
     return Status(201, investor)
+
+
+@router.get("/aggregate", response=RosterAggregateOut)
+def roster_aggregate(request, as_of: date | None = None):
+    """Advisor-wide roster header. Declared before ``/{investor_id}`` so the literal
+    path wins over the int param route."""
+    investors = list(investors_for(request))
+    family_count = families_for(request).count()
+    return build_roster_summary(investors, family_count, as_of or date.today())
 
 
 @router.get("/{investor_id}", response=InvestorOut)

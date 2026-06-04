@@ -5,6 +5,7 @@ export interface FamilyAggregate {
   totalInr: string
   staleCount: number
   investorCount: number
+  needsAttentionCount: number
   asOf: string
 }
 
@@ -28,10 +29,45 @@ export interface InvestorSummary {
  * on demand (panel expand) so the roster never N+1-fetches up front. Fails soft:
  * a failed call leaves the entry unset and the UI shows a dash.
  */
+export interface RosterAggregate {
+  totalInr: string
+  investorCount: number
+  familyCount: number
+  integrityUnitCount: number
+  taxReadyCount: number
+  needsAttentionCount: number
+  snapshotCount: number
+  asOf: string
+}
+
 export function useRosterMetrics() {
   const familyAggregates = ref<Record<number, FamilyAggregate>>({})
   const investorSummaries = ref<Record<number, InvestorSummary>>({})
+  const rosterAggregate = ref<RosterAggregate | null>(null)
   const pending = ref<Record<string, boolean>>({})
+
+  /** Advisor-wide header totals — one call on page load (no per-investor N+1). */
+  async function loadRosterAggregate(): Promise<void> {
+    if (rosterAggregate.value || pending.value['roster']) return
+    pending.value = { ...pending.value, roster: true }
+    try {
+      const { data, error } = await api.GET('/api/investors/aggregate')
+      if (!error && data) {
+        rosterAggregate.value = {
+          totalInr: data.total_inr,
+          investorCount: data.investor_count,
+          familyCount: data.family_count,
+          integrityUnitCount: data.integrity_unit_count,
+          taxReadyCount: data.tax_ready_count,
+          needsAttentionCount: data.needs_attention_count,
+          snapshotCount: data.snapshot_count,
+          asOf: data.as_of,
+        }
+      }
+    } finally {
+      pending.value = { ...pending.value, roster: false }
+    }
+  }
 
   async function loadFamilyAggregate(familyId: number): Promise<void> {
     const key = `f:${familyId}`
@@ -48,6 +84,7 @@ export function useRosterMetrics() {
             totalInr: data.total_inr,
             staleCount: data.stale_count,
             investorCount: data.investor_count,
+            needsAttentionCount: data.needs_attention_count,
             asOf: data.as_of,
           },
         }
@@ -85,5 +122,12 @@ export function useRosterMetrics() {
     }
   }
 
-  return { familyAggregates, investorSummaries, loadFamilyAggregate, loadInvestorSummary }
+  return {
+    familyAggregates,
+    investorSummaries,
+    rosterAggregate,
+    loadFamilyAggregate,
+    loadInvestorSummary,
+    loadRosterAggregate,
+  }
 }

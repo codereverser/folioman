@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import Panel from 'primevue/panel'
+import DataTable from 'primevue/datatable'
+import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
-import Checkbox from 'primevue/checkbox'
-import Tag from 'primevue/tag'
+import ToggleButton from 'primevue/togglebutton'
+import IconField from 'primevue/iconfield'
+import InputIcon from 'primevue/inputicon'
+import Menu from 'primevue/menu'
+import type { MenuItem } from 'primevue/menuitem'
 import { useConfirm } from 'primevue/useconfirm'
-import { useRosterStore, type RosterFamily, type RosterInvestor, type RosterGroup } from '@/stores/roster'
+import { useRosterStore, type RosterFamily, type RosterInvestor } from '@/stores/roster'
 import { useFamilyStore } from '@/stores/family'
 import { useInvestorStore } from '@/stores/investor'
 import { useUiStore } from '@/stores/ui'
-import { useRosterMetrics } from '@/composables/useRosterMetrics'
+import { useRosterMetrics, type InvestorSummary } from '@/composables/useRosterMetrics'
 import { formatInr, formatDate, toNumber } from '@/utils/format'
 
 const router = useRouter()
@@ -24,40 +28,153 @@ const ui = useUiStore()
 const confirm = useConfirm()
 const metrics = useRosterMetrics()
 
-const RELATIONS = ['Self', 'Spouse', 'Child', 'Parent', 'Sibling', 'HUF', 'Other']
+const SOLO_GROUP = roster.UNAFFILIATED_LABEL // "Individual investors"
 
-// "Move to family" options: every family plus an Unaffiliated (null) bucket.
 const familyOptions = computed(() => [
-  { label: roster.UNAFFILIATED_LABEL, value: null as number | null },
+  { label: SOLO_GROUP, value: null as number | null },
   ...roster.families.map((f) => ({ label: f.name, value: f.id as number | null })),
 ])
 
-onMounted(() => void roster.ensureLoaded())
+const agg = computed(() => metrics.rosterAggregate.value)
+const hasFamilies = computed(() => roster.families.length > 0)
+
+// Group by family by default when families exist; advisors can flatten to a pure
+// searchable/sortable list.
+const grouped = ref(false)
+const filterText = ref('')
+
+onMounted(async () => {
+  void metrics.loadRosterAggregate()
+  await roster.ensureLoaded()
+  grouped.value = hasFamilies.value
+  for (const f of roster.families) void metrics.loadFamilyAggregate(f.id)
+  // All rows are visible (no expand-to-reveal), so load every summary up front.
+  for (const inv of roster.investors) void metrics.loadInvestorSummary(inv.id)
+})
+
+// --- rows -------------------------------------------------------------------
+interface Row {
+  id: number
+  name: string
+  hasPan: boolean
+  familyId: number | null
+  familyName: string
+  valueNum: number
+  summary: InvestorSummary | undefined
+}
+const rows = computed<Row[]>(() => {
+  const list = roster.investors.map((inv): Row => {
+    const summary = metrics.investorSummaries.value[inv.id]
+    return {
+      id: inv.id,
+      name: inv.name,
+      hasPan: inv.hasPan,
+      familyId: inv.familyId,
+      familyName: inv.familyId != null ? (roster.familyName(inv.familyId) ?? 'Family') : SOLO_GROUP,
+      valueNum: summary ? toNumber(summary.totalInr) : -1,
+      summary,
+    }
+  })
+  // Sort by family (group field) then value desc; in grouped mode DataTable groups
+  // by familyName and the stable order keeps members value-sorted within a family.
+  return list.sort(
+    (a, b) => a.familyName.localeCompare(b.familyName) || b.valueNum - a.valueNum,
+  )
+})
+
+const filters = computed(() => ({
+  global: { value: filterText.value || null, matchMode: 'contains' },
+}))
+
+function rosterInvestor(row: Row): RosterInvestor {
+  return { id: row.id, name: row.name, familyId: row.familyId, hasPan: row.hasPan }
+}
 
 // --- navigation -------------------------------------------------------------
-function openInvestor(investorId: number): void {
-  ui.selectInvestor(investorId)
-  void router.push({ name: 'dashboard', params: { investorId } })
+function openInvestor(id: number): void {
+  ui.selectInvestor(id)
+  void router.push({ name: 'dashboard', params: { investorId: id } })
 }
 function openFamily(familyId: number): void {
   ui.selectFamily(familyId)
   void router.push({ name: 'family', params: { familyId } })
 }
 
-// Lazily load roll-ups when a group is expanded (panel toggled open).
-function onGroupToggle(group: RosterGroup, collapsed: boolean): void {
-  if (collapsed) return
-  if (group.family) void metrics.loadFamilyAggregate(group.family.id)
-  for (const inv of group.investors) void metrics.loadInvestorSummary(inv.id)
+// --- per-row metrics --------------------------------------------------------
+function isPending(s?: InvestorSummary): boolean {
+  return !!s && s.holdingsCount > 0 && toNumber(s.totalInr) <= 0
+}
+function valueText(s?: InvestorSummary): string {
+  if (!s) return '—'
+  return isPending(s) ? 'Valuation pending' : formatInr(s.totalInr)
+}
+function unpriced(s?: InvestorSummary): number {
+  return s?.unpricedFundCount ?? 0
+}
+function integrityTone(s?: InvestorSummary): 'attention' | 'ok' | 'snapshot' | 'none' {
+  if (!s || s.integrityUnitCount === 0) return 'none'
+  if (s.needsAttentionCount > 0) return 'attention'
+  if (s.taxReadyCount === s.integrityUnitCount) return 'ok'
+  if (s.snapshotCount > 0) return 'snapshot'
+  return 'none'
+}
+function integrityTitle(s?: InvestorSummary): string {
+  if (!s) return ''
+  return (
+    `${s.taxReadyCount} of ${s.integrityUnitCount} holdings tax-ready` +
+    (s.needsAttentionCount > 0 ? ` · ${s.needsAttentionCount} need attention` : '')
+  )
+}
+
+// --- family-group header helpers -------------------------------------------
+function familyIdFor(name: string): number | null {
+  return roster.families.find((f) => f.name === name)?.id ?? null
+}
+function familyCombined(name: string): string | null {
+  const id = familyIdFor(name)
+  const a = id != null ? metrics.familyAggregates.value[id] : undefined
+  return a ? formatInr(a.totalInr) : null
+}
+function familyNeedsAttention(name: string): boolean {
+  const id = familyIdFor(name)
+  const a = id != null ? metrics.familyAggregates.value[id] : undefined
+  return !!a && a.needsAttentionCount > 0
+}
+function memberCount(name: string): number {
+  return rows.value.filter((r) => r.familyName === name).length
+}
+
+// --- overflow menus ---------------------------------------------------------
+const rowMenu = ref<InstanceType<typeof Menu> | null>(null)
+const rowMenuModel = ref<MenuItem[]>([])
+function openInvestorMenu(e: Event, row: Row): void {
+  const inv = rosterInvestor(row)
+  rowMenuModel.value = [
+    { label: 'Edit', icon: 'pi pi-pencil', command: () => openEditInvestor(inv) },
+    { label: 'Delete', icon: 'pi pi-trash', command: () => confirmDeleteInvestor(inv) },
+  ]
+  rowMenu.value?.toggle(e)
+}
+function openFamilyMenu(e: Event, name: string): void {
+  const id = familyIdFor(name)
+  if (id == null) return
+  const family: RosterFamily = { id, name }
+  rowMenuModel.value = [
+    { label: 'Open family dashboard', icon: 'pi pi-chart-line', command: () => openFamily(id) },
+    { label: 'Add investor', icon: 'pi pi-user-plus', command: () => openCreateInvestor(id) },
+    { label: 'Rename family', icon: 'pi pi-pencil', command: () => openRenameFamily(family) },
+    { label: 'Delete family', icon: 'pi pi-trash', command: () => confirmDeleteFamily(family) },
+  ]
+  rowMenu.value?.toggle(e)
 }
 
 // --- family dialog ----------------------------------------------------------
-const familyForm = reactive<{ visible: boolean; mode: 'create' | 'rename'; id: number | null; name: string }>({
-  visible: false,
-  mode: 'create',
-  id: null,
-  name: '',
-})
+const familyForm = reactive<{
+  visible: boolean
+  mode: 'create' | 'rename'
+  id: number | null
+  name: string
+}>({ visible: false, mode: 'create', id: null, name: '' })
 function openCreateFamily(): void {
   Object.assign(familyForm, { visible: true, mode: 'create', id: null, name: '' })
 }
@@ -73,16 +190,17 @@ async function saveFamily(): Promise<void> {
       : await familyStore.renameFamily(familyForm.id as number, name)
   if (ok) {
     familyForm.visible = false
-    ui.notify({ severity: 'success', summary: familyForm.mode === 'create' ? 'Family created' : 'Family renamed' })
+    ui.notify({
+      severity: 'success',
+      summary: familyForm.mode === 'create' ? 'Family created' : 'Family renamed',
+    })
   }
 }
-function confirmDeleteFamily(group: RosterGroup): void {
-  const family = group.family
-  if (!family) return
-  const n = group.investors.length
+function confirmDeleteFamily(family: RosterFamily): void {
+  const n = memberCount(family.name)
   confirm.require({
     header: 'Delete family',
-    message: `Delete "${family.name}"?${n ? ` Its ${n} investor${n > 1 ? 's' : ''} move to ${roster.UNAFFILIATED_LABEL}.` : ''}`,
+    message: `Delete "${family.name}"?${n ? ` Its ${n} investor${n > 1 ? 's' : ''} move to ${SOLO_GROUP}.` : ''}`,
     icon: 'pi pi-exclamation-triangle',
     rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
     acceptProps: { label: 'Delete', severity: 'danger' },
@@ -100,39 +218,17 @@ const investorForm = reactive<{
   mode: 'create' | 'edit'
   id: number | null
   name: string
-  relation: string
-  isHuf: boolean
   familyId: number | null
   pan: string
-}>({
-  visible: false,
-  mode: 'create',
-  id: null,
-  name: '',
-  relation: 'Self',
-  isHuf: false,
-  familyId: null,
-  pan: '',
-})
+}>({ visible: false, mode: 'create', id: null, name: '', familyId: null, pan: '' })
 
-// Indian PAN: five letters, four digits, one letter (e.g. ABCDE1234F).
 const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 const panError = computed(() => {
   const value = investorForm.pan.trim()
   return value && !PAN_PATTERN.test(value) ? 'PAN must look like ABCDE1234F' : ''
 })
-
 function openCreateInvestor(familyId: number | null = null): void {
-  Object.assign(investorForm, {
-    visible: true,
-    mode: 'create',
-    id: null,
-    name: '',
-    relation: 'Self',
-    isHuf: false,
-    familyId,
-    pan: '',
-  })
+  Object.assign(investorForm, { visible: true, mode: 'create', id: null, name: '', familyId, pan: '' })
 }
 function openEditInvestor(inv: RosterInvestor): void {
   Object.assign(investorForm, {
@@ -140,10 +236,7 @@ function openEditInvestor(inv: RosterInvestor): void {
     mode: 'edit',
     id: inv.id,
     name: inv.name,
-    relation: 'Self',
-    isHuf: false,
     familyId: inv.familyId,
-    // The API never returns a stored PAN; blank means "leave unchanged" on save.
     pan: '',
   })
 }
@@ -151,24 +244,20 @@ async function saveInvestor(): Promise<void> {
   const name = investorForm.name.trim()
   if (!name || panError.value) return
   const pan = investorForm.pan.trim().toUpperCase()
-  const fields = {
-    name,
-    relation: investorForm.relation,
-    is_huf: investorForm.isHuf,
-    family_id: investorForm.familyId,
-  }
+  const fields = { name, relation: 'Self', is_huf: false, family_id: investorForm.familyId }
   const ok =
     investorForm.mode === 'create'
-      ? // PAN is optional on create; omit it entirely when blank.
-        await investorStore.createInvestor({ ...fields, email: '', ...(pan ? { pan } : {}) })
-      : // On edit a blank PAN field means "leave unchanged" — only PATCH it when set.
-        await investorStore.updateInvestor(investorForm.id as number, {
+      ? await investorStore.createInvestor({ ...fields, email: '', ...(pan ? { pan } : {}) })
+      : await investorStore.updateInvestor(investorForm.id as number, {
           ...fields,
           ...(pan ? { pan } : {}),
         })
   if (ok) {
     investorForm.visible = false
-    ui.notify({ severity: 'success', summary: investorForm.mode === 'create' ? 'Investor added' : 'Investor updated' })
+    ui.notify({
+      severity: 'success',
+      summary: investorForm.mode === 'create' ? 'Investor added' : 'Investor updated',
+    })
   }
 }
 function confirmDeleteInvestor(inv: RosterInvestor): void {
@@ -184,31 +273,6 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
       }
     },
   })
-}
-
-async function moveInvestor(inv: RosterInvestor, familyId: number | null): Promise<void> {
-  if (familyId === inv.familyId) return
-  await investorStore.setFamily(inv.id, familyId)
-}
-
-// Honest value state: a held investor whose value computes to 0 isn't worth ₹0 —
-// it's not priced yet (valuation running, or snapshot-only holdings with no live
-// price). Show that instead of a misleading zero. A genuinely empty roster entry
-// (no holdings) keeps the dash.
-function isValuePending(inv: RosterInvestor): boolean {
-  const s = metrics.investorSummaries.value[inv.id]
-  return !!s && s.holdingsCount > 0 && toNumber(s.totalInr) <= 0
-}
-function investorValue(inv: RosterInvestor): string {
-  const s = metrics.investorSummaries.value[inv.id]
-  if (!s) return '—'
-  return isValuePending(inv) ? 'Valuation pending' : formatInr(s.totalInr)
-}
-// Held funds with no NAV — the value above silently excludes them. Surface the
-// count so an understated total is flagged (equity snapshots are excluded by
-// design and aren't counted here).
-function unpricedFunds(inv: RosterInvestor): number {
-  return metrics.investorSummaries.value[inv.id]?.unpricedFundCount ?? 0
 }
 </script>
 
@@ -227,77 +291,148 @@ function unpricedFunds(inv: RosterInvestor): number {
       </div>
     </header>
 
-    <p v-if="roster.loading && !roster.loaded" class="muted">Loading roster…</p>
+    <section v-if="agg && !roster.isEmpty" class="roster-summary">
+      <div class="rs-main">
+        <p class="rs-label">Total net worth</p>
+        <p class="rs-value">{{ formatInr(agg.totalInr) }}</p>
+        <p class="rs-sub">
+          {{ agg.investorCount }} investor{{ agg.investorCount === 1 ? '' : 's' }}
+          <template v-if="agg.familyCount > 0"> · {{ agg.familyCount }} {{ agg.familyCount === 1 ? 'family' : 'families' }}</template>
+        </p>
+      </div>
+      <div class="rs-integrity" :title="`${agg.taxReadyCount} of ${agg.integrityUnitCount} holdings tax-ready`">
+        <span class="dot ok" /> {{ agg.taxReadyCount }}/{{ agg.integrityUnitCount }} tax-ready
+        <span v-if="agg.needsAttentionCount > 0" class="rs-attn">
+          <span class="dot attention" /> {{ agg.needsAttentionCount }} need attention
+        </span>
+      </div>
+    </section>
 
-    <div v-else-if="roster.isEmpty" class="empty">
+    <div v-if="roster.isEmpty" class="empty">
       <i class="pi pi-inbox" />
       <p>No investors yet.</p>
       <p class="muted">Add an investor, then import a CAS to get started.</p>
       <Button v-if="!ui.isMobile" label="Add investor" icon="pi pi-user-plus" @click="openCreateInvestor()" />
     </div>
 
-    <div v-else class="groups">
-      <Panel
-        v-for="group in roster.groups"
-        :key="group.family?.id ?? 'unaffiliated'"
-        toggleable
-        :collapsed="true"
-        @toggle="(e) => onGroupToggle(group, e.value)"
+    <template v-else>
+      <div class="toolbar">
+        <IconField class="search">
+          <InputIcon class="pi pi-search" />
+          <InputText v-model="filterText" placeholder="Find an investor or family…" />
+        </IconField>
+        <ToggleButton
+          v-if="hasFamilies"
+          v-model="grouped"
+          on-label="Grouped by family"
+          off-label="Flat list"
+          on-icon="pi pi-sitemap"
+          off-icon="pi pi-list"
+          size="small"
+        />
+      </div>
+
+      <DataTable
+        :value="rows"
+        data-key="id"
+        :filters="filters"
+        :global-filter-fields="['name', 'familyName']"
+        :row-group-mode="grouped ? 'subheader' : undefined"
+        :group-rows-by="grouped ? 'familyName' : undefined"
+        :sort-field="grouped ? 'familyName' : undefined"
+        :sort-order="grouped ? 1 : undefined"
+        removable-sort
+        class="roster-table"
+        @row-click="(e) => openInvestor((e.data as Row).id)"
       >
-        <template #header>
-          <div class="group-header">
-            <button v-if="group.family" type="button" class="family-name is-link" @click.stop="openFamily(group.family.id)">
-              {{ group.family.name }}
-            </button>
-            <span v-else class="family-name">{{ roster.UNAFFILIATED_LABEL }}</span>
-            <Tag :value="`${group.investors.length}`" rounded severity="secondary" />
-            <span v-if="group.family && metrics.familyAggregates.value[group.family.id]" class="combined">
-              {{ formatInr(metrics.familyAggregates.value[group.family.id].totalInr) }} combined
-            </span>
+        <template #groupheader="{ data }">
+          <div class="grp">
+            <span class="grp-name">{{ (data as Row).familyName }}</span>
+            <span class="count-tag">{{ memberCount((data as Row).familyName) }}</span>
+            <template v-if="(data as Row).familyId != null">
+              <span v-if="familyCombined((data as Row).familyName)" class="grp-combined">
+                {{ familyCombined((data as Row).familyName) }}
+                <span class="dot" :class="familyNeedsAttention((data as Row).familyName) ? 'attention' : 'ok'" />
+              </span>
+              <button type="button" class="grp-link is-link" @click.stop="openFamily((data as Row).familyId!)">
+                Open dashboard <i class="pi pi-angle-right" />
+              </button>
+              <Button
+                icon="pi pi-ellipsis-v"
+                text
+                rounded
+                size="small"
+                class="grp-menu"
+                aria-label="Family actions"
+                @click.stop="openFamilyMenu($event, (data as Row).familyName)"
+              />
+            </template>
           </div>
         </template>
-        <template v-if="group.family && !ui.isMobile" #icons>
-          <Button icon="pi pi-pencil" text rounded size="small" aria-label="Rename family" @click.stop="openRenameFamily(group.family)" />
-          <Button icon="pi pi-trash" text rounded size="small" severity="danger" aria-label="Delete family" @click.stop="confirmDeleteFamily(group)" />
-          <Button icon="pi pi-user-plus" text rounded size="small" aria-label="Add investor to family" @click.stop="openCreateInvestor(group.family.id)" />
-        </template>
 
-        <ul class="investors">
-          <li v-for="inv in group.investors" :key="inv.id" class="investor-row">
-            <button type="button" class="inv-name is-link" @click="openInvestor(inv.id)">{{ inv.name }}</button>
-            <span class="metric value" :class="{ pending: isValuePending(inv) }">
-              {{ investorValue(inv) }}
+        <Column field="name" header="Investor" :sortable="!grouped">
+          <template #body="{ data }">
+            <div class="inv-name-cell">
+              <button type="button" class="inv-name is-link" @click.stop="openInvestor((data as Row).id)">
+                {{ (data as Row).name }}
+              </button>
+              <span v-if="(data as Row).hasPan" class="pan-flag" title="PAN on file — required for the capital-gains export">PAN</span>
+              <span v-if="!grouped && (data as Row).familyId != null" class="row-family">{{ (data as Row).familyName }}</span>
+            </div>
+          </template>
+        </Column>
+
+        <Column field="valueNum" header="Value" :sortable="!grouped" class="col-num">
+          <template #body="{ data }">
+            <span class="value" :class="{ pending: isPending((data as Row).summary) }">
+              {{ valueText((data as Row).summary) }}
               <small
-                v-if="!isValuePending(inv) && unpricedFunds(inv) > 0"
+                v-if="!isPending((data as Row).summary) && unpriced((data as Row).summary) > 0"
                 class="unpriced-flag"
-                :title="`Total excludes ${unpricedFunds(inv)} fund${unpricedFunds(inv) > 1 ? 's' : ''} we couldn't price (no NAV yet).`"
-              >⚠ {{ unpricedFunds(inv) }}</small>
+                :title="`Total excludes ${unpriced((data as Row).summary)} fund(s) we couldn't price (no NAV yet).`"
+              >⚠ {{ unpriced((data as Row).summary) }}</small>
             </span>
-            <span class="metric tax-ready" :class="{ attention: (metrics.investorSummaries.value[inv.id]?.needsAttentionCount ?? 0) > 0 }">
-              <template v-if="metrics.investorSummaries.value[inv.id]">
-                {{ metrics.investorSummaries.value[inv.id].taxReadyCount }}/{{ metrics.investorSummaries.value[inv.id].integrityUnitCount }} tax-ready
+          </template>
+        </Column>
+
+        <Column header="Tax-ready" class="col-num">
+          <template #body="{ data }">
+            <span class="tax-ready" :title="integrityTitle((data as Row).summary)">
+              <template v-if="(data as Row).summary">
+                <span class="dot" :class="integrityTone((data as Row).summary)" />
+                {{ (data as Row).summary!.taxReadyCount }}/{{ (data as Row).summary!.integrityUnitCount }}
               </template>
               <template v-else>—</template>
             </span>
-            <span class="metric last-import muted">{{ formatDate(metrics.investorSummaries.value[inv.id]?.lastImportAt) }}</span>
-            <div v-if="!ui.isMobile" class="row-actions">
-              <Select
-                :model-value="inv.familyId"
-                :options="familyOptions"
-                option-label="label"
-                option-value="value"
-                size="small"
-                class="move-select"
-                @update:model-value="(v) => moveInvestor(inv, v)"
-              />
-              <Button icon="pi pi-pencil" text rounded size="small" aria-label="Edit investor" @click="openEditInvestor(inv)" />
-              <Button icon="pi pi-trash" text rounded size="small" severity="danger" aria-label="Delete investor" @click="confirmDeleteInvestor(inv)" />
-            </div>
-          </li>
-          <li v-if="group.investors.length === 0" class="muted empty-group">No investors in this family.</li>
-        </ul>
-      </Panel>
-    </div>
+          </template>
+        </Column>
+
+        <Column header="Imported" class="col-num">
+          <template #body="{ data }">
+            <span class="muted">{{ formatDate((data as Row).summary?.lastImportAt) }}</span>
+          </template>
+        </Column>
+
+        <Column class="col-actions">
+          <template #body="{ data }">
+            <Button
+              icon="pi pi-ellipsis-v"
+              text
+              rounded
+              size="small"
+              aria-label="Investor actions"
+              @click.stop="openInvestorMenu($event, data as Row)"
+            />
+          </template>
+        </Column>
+
+        <template #empty>
+          <span class="muted">No investor matches “{{ filterText }}”.</span>
+        </template>
+      </DataTable>
+    </template>
+
+    <Menu ref="rowMenu" :model="rowMenuModel" popup />
 
     <!-- Family create / rename -->
     <Dialog v-model:visible="familyForm.visible" modal :header="familyForm.mode === 'create' ? 'New family' : 'Rename family'" :style="{ width: '24rem' }">
@@ -311,15 +446,11 @@ function unpricedFunds(inv: RosterInvestor): number {
       </template>
     </Dialog>
 
-    <!-- Investor create / edit -->
+    <!-- Investor create / edit (family reassignment lives here, not in the row) -->
     <Dialog v-model:visible="investorForm.visible" modal :header="investorForm.mode === 'create' ? 'New investor' : 'Edit investor'" :style="{ width: '26rem' }">
       <div class="field">
         <label for="inv-name">Name</label>
         <InputText id="inv-name" v-model="investorForm.name" autofocus />
-      </div>
-      <div class="field">
-        <label for="inv-relation">Relation</label>
-        <Select id="inv-relation" v-model="investorForm.relation" :options="RELATIONS" editable />
       </div>
       <div class="field">
         <label for="inv-pan">PAN <span class="optional">(optional)</span></label>
@@ -342,10 +473,6 @@ function unpricedFunds(inv: RosterInvestor): number {
         <label for="inv-family">Family</label>
         <Select id="inv-family" v-model="investorForm.familyId" :options="familyOptions" option-label="label" option-value="value" />
       </div>
-      <div class="field-inline">
-        <Checkbox v-model="investorForm.isHuf" input-id="inv-huf" binary />
-        <label for="inv-huf">This is a HUF entity</label>
-      </div>
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="investorForm.visible = false" />
         <Button label="Save" :loading="investorStore.saving" :disabled="!investorForm.name.trim() || !!panError" @click="saveInvestor" />
@@ -361,7 +488,6 @@ function unpricedFunds(inv: RosterInvestor): number {
   margin: 0 auto;
   width: 100%;
 }
-
 .page-head {
   display: flex;
   align-items: flex-start;
@@ -378,11 +504,9 @@ function unpricedFunds(inv: RosterInvestor): number {
   display: flex;
   gap: var(--fm-space-2);
 }
-
 .muted {
   color: var(--fm-text-muted);
 }
-
 .demo-hint {
   display: inline-flex;
   align-items: center;
@@ -390,6 +514,55 @@ function unpricedFunds(inv: RosterInvestor): number {
   color: var(--fm-text-muted);
   font-size: 0.8125rem;
   margin: 0.25rem 0 0;
+}
+
+/* Roster summary strip */
+.roster-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fm-space-4);
+  flex-wrap: wrap;
+  padding: var(--fm-space-4) var(--fm-space-5);
+  margin-bottom: var(--fm-space-5);
+  background: var(--fm-surface);
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-lg);
+  box-shadow: var(--fm-shadow-sm);
+}
+.rs-label {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fm-text-muted);
+}
+.rs-value {
+  margin: 0.1rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.rs-sub {
+  margin: 0.1rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.rs-integrity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fm-space-2);
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.rs-attn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fm-space-1);
+  margin-left: var(--fm-space-3);
+  color: var(--fm-critical);
+  font-weight: 500;
 }
 
 .empty {
@@ -404,65 +577,87 @@ function unpricedFunds(inv: RosterInvestor): number {
   margin: var(--fm-space-2) 0 var(--fm-space-4);
 }
 
-.groups {
+.toolbar {
   display: flex;
-  flex-direction: column;
-  gap: var(--fm-space-4);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fm-space-3);
+  margin-bottom: var(--fm-space-3);
+  flex-wrap: wrap;
+}
+.search {
+  flex: 1;
+  max-width: 22rem;
+}
+.search :deep(input) {
+  width: 100%;
 }
 
-.group-header {
+/* Group subheader */
+.grp {
   display: flex;
   align-items: center;
   gap: var(--fm-space-3);
+  width: 100%;
 }
-.family-name {
+.grp-name {
   font-weight: 600;
-  font-size: 1rem;
 }
-.combined {
+.count-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fm-text-muted);
+  background: var(--fm-surface);
+  border-radius: var(--fm-radius-pill);
+  padding: 0.05rem 0.5rem;
+}
+.grp-combined {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fm-space-2);
   color: var(--fm-text-muted);
   font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.grp-link {
+  margin-left: auto;
+  font-size: 0.8125rem;
+}
+.grp-menu {
+  margin-left: 0;
 }
 
-.investors {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-.investor-row {
-  display: flex;
+/* Cells */
+.inv-name-cell {
+  display: inline-flex;
   align-items: center;
-  gap: var(--fm-space-3);
-  padding: var(--fm-space-2) 0;
-  border-bottom: 1px solid var(--fm-border-subtle);
+  gap: var(--fm-space-2);
+  min-width: 0;
 }
-.investor-row:last-child {
-  border-bottom: none;
+.row-family {
+  font-size: 0.6875rem;
+  color: var(--fm-text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
-.inv-name {
-  flex: 1;
-  text-align: left;
-  font-weight: 500;
-}
-.metric {
-  font-size: 0.8125rem;
-  white-space: nowrap;
+.pan-flag {
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--fm-verified);
+  background: var(--fm-verified-bg);
+  border-radius: var(--fm-radius-sm);
+  padding: 0.05rem 0.3rem;
 }
 .value {
-  min-width: 7rem;
-  text-align: right;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
-/* "Valuation pending" — not a real number, so de-emphasise it (never a hard ₹0). */
 .value.pending {
   color: var(--fm-text-muted);
   font-weight: 500;
   font-size: 0.8125rem;
 }
-/* The total excludes N unpriced funds — flag it without shouting. */
 .unpriced-flag {
   margin-left: 0.35rem;
   font-size: 0.6875rem;
@@ -472,27 +667,47 @@ function unpricedFunds(inv: RosterInvestor): number {
   cursor: help;
 }
 .tax-ready {
-  min-width: 8rem;
-  color: var(--fm-text-muted);
-}
-.tax-ready.attention {
-  color: var(--fm-critical);
-  font-weight: 500;
-}
-.last-import {
-  min-width: 6.5rem;
-}
-.row-actions {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--fm-space-1);
+  gap: 0.35rem;
+  color: var(--fm-text-muted);
+  font-size: 0.8125rem;
 }
-.move-select {
-  min-width: 11rem;
+:deep(.col-num) {
+  text-align: right;
 }
-.empty-group {
-  padding: var(--fm-space-2) 0;
-  font-size: 0.875rem;
+:deep(.col-actions) {
+  width: 3rem;
+  text-align: right;
+}
+.roster-table :deep(.p-datatable-tbody > tr) {
+  cursor: pointer;
+}
+/* Group-header is a full-width band. PrimeVue spans its cell over all columns but
+   the last, so paint the row itself to fill that trailing column (no seam/gap). */
+.roster-table :deep(.p-datatable-row-group-header),
+.roster-table :deep(.p-datatable-row-group-header > td) {
+  background: var(--fm-surface-raised);
+  cursor: default;
+}
+
+/* Integrity dot */
+.dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex: none;
+  background: var(--fm-text-subtle);
+}
+.dot.ok {
+  background: var(--fm-verified);
+}
+.dot.snapshot {
+  background: var(--fm-warn);
+}
+.dot.attention {
+  background: var(--fm-critical);
 }
 
 .is-link {
@@ -518,11 +733,6 @@ function unpricedFunds(inv: RosterInvestor): number {
   font-weight: 500;
   color: var(--fm-text-muted);
 }
-.field-inline {
-  display: flex;
-  align-items: center;
-  gap: var(--fm-space-2);
-}
 .field .optional {
   font-weight: 400;
   color: var(--fm-text-subtle, var(--fm-text-muted));
@@ -536,29 +746,9 @@ function unpricedFunds(inv: RosterInvestor): number {
   color: var(--fm-danger, #d32f2f);
 }
 
-/* Mobile: each investor becomes a stacked card; metrics wrap below the name.
-   CRUD/move controls are already hidden (isMobile), so rows stay tappable. */
-@media (max-width: 768px) {
-  .investor-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--fm-space-1);
-    padding: var(--fm-space-3) 0;
-  }
-  .inv-name {
-    flex: none;
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    font-size: 1rem;
-  }
-  .metric {
-    min-width: 0;
-    text-align: left;
-  }
-  .value {
-    text-align: left;
-    font-size: 1rem;
+@media (max-width: 640px) {
+  .roster {
+    padding: var(--fm-space-4);
   }
 }
 </style>

@@ -29,6 +29,7 @@ from folioman_app.models import (
     Investor,
     InvestorValue,
     NAVHistory,
+    SecurityIntegrityStatus,
     ValuationStatus,
 )
 from folioman_app.models.jobs import ImportJobStatus
@@ -280,6 +281,15 @@ def build_family_aggregate(family: Family, as_of: date) -> dict:
     valuation, meta_by_security = _value_investors(investors, as_of)
     extras = _holding_extras(investors, as_of)
     rollup = _rollup(valuation, meta_by_security, extras)
+    statuses = (
+        list(
+            SecurityIntegrityStatus.objects.filter(investor__in=investors).values_list(
+                "status", "tax_safe"
+            )
+        )
+        if investors
+        else []
+    )
     return {
         "family_id": family.id,
         "as_of": as_of,
@@ -289,8 +299,46 @@ def build_family_aggregate(family: Family, as_of: date) -> dict:
         "asset_mix": rollup["asset_mix"],
         "top_holdings": rollup["top_holdings"],
         "stale_count": rollup["stale_count"],
+        "integrity_unit_count": len(statuses),
+        "tax_ready_count": sum(1 for _status, tax_safe in statuses if tax_safe),
+        "needs_attention_count": sum(
+            1 for status, _ in statuses if status == IntegrityStatus.MISMATCH.value
+        ),
         "day_change_inr": _day_change_total(extras),
         "xirr": compute_portfolio_xirr(investors, as_of),
+    }
+
+
+def build_roster_summary(investors: list[Investor], family_count: int, as_of: date) -> dict:
+    """Advisor-wide roster header: total net worth across *all* investors, the
+    investor/family counts, and an integrity roll-up (per (security, folio) units).
+    One aggregate pass so the landing page orients without N+1 per-investor fetches.
+    """
+    valuation, meta_by_security = _value_investors(investors, as_of)
+    extras = _holding_extras(investors, as_of)
+    rollup = _rollup(valuation, meta_by_security, extras)
+    statuses = (
+        list(
+            SecurityIntegrityStatus.objects.filter(investor__in=investors).values_list(
+                "status", "tax_safe"
+            )
+        )
+        if investors
+        else []
+    )
+    return {
+        "as_of": as_of,
+        "total_inr": rollup["total_inr"],
+        "investor_count": len(investors),
+        "family_count": family_count,
+        "integrity_unit_count": len(statuses),
+        "tax_ready_count": sum(1 for _status, tax_safe in statuses if tax_safe),
+        "needs_attention_count": sum(
+            1 for status, _ in statuses if status == IntegrityStatus.MISMATCH.value
+        ),
+        "snapshot_count": sum(
+            1 for status, _ in statuses if status == IntegrityStatus.SNAPSHOT_ONLY.value
+        ),
     }
 
 

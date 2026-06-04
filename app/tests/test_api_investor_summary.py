@@ -193,3 +193,19 @@ def test_summary_empty_portfolio_stays_zero_not_provisional(client, make_investo
 
 def test_summary_unknown_investor_404(client):
     assert client.get("/api/investors/999999/summary").status_code == 404
+
+
+def test_roster_aggregate_sums_value_and_counts(client, make_investor, make_security, make_holding):
+    # Advisor-wide header: value summed across all investors, plus counts. The
+    # literal /aggregate route must win over /{investor_id}.
+    holder = make_investor()
+    make_investor()  # a second investor, no holdings
+    mf = make_security(security_type=SecurityType.MF.value)
+    make_holding(investor=holder, security=mf, units=Decimal("100"), as_of_date=dt.date(2025, 6, 1))
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("75"))
+
+    body = client.get("/api/investors/aggregate", {"as_of": "2025-06-01"}).json()
+
+    assert body["investor_count"] == 2
+    assert body["family_count"] == 0
+    assert Decimal(str(body["total_inr"])) == Decimal("7500")

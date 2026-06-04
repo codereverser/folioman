@@ -88,6 +88,19 @@ class HoldingValueRow(Schema):
     day_change_pct: float | None = None  # (latest NAV - prior NAV) / prior NAV
 
 
+class RosterAggregateOut(Schema):
+    """Advisor-wide roster header: net worth + counts + integrity roll-up."""
+
+    as_of: date
+    total_inr: Decimal
+    investor_count: int
+    family_count: int
+    integrity_unit_count: int  # (security, folio) reconciliation units
+    tax_ready_count: int
+    needs_attention_count: int
+    snapshot_count: int
+
+
 class FamilyAggregateOut(Schema):
     family_id: int
     as_of: date
@@ -97,6 +110,9 @@ class FamilyAggregateOut(Schema):
     asset_mix: list[AssetMixRow]
     top_holdings: list[HoldingValueRow]
     stale_count: int
+    integrity_unit_count: int = 0  # (security, folio) reconciliation units
+    tax_ready_count: int = 0
+    needs_attention_count: int = 0  # mismatches awaiting resolution
     day_change_inr: Decimal | None = None  # portfolio-wide intraday change (INR)
     # portfolio lifetime money-weighted return as a fraction (0.1849 = 18.49%),
     # over all cashflows incl. sold-out positions. Per-fund XIRR is on each holding.
