@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 from django.core.management import call_command
 from folioman_app.models import NAVHistory, Security
+from folioman_app.tasks import refresh_navs as refresh_navs_mod
 from folioman_app.tasks.import_csv import create_manual_transaction
 from folioman_app.tasks.refresh_navs import refresh_navs
 from folioman_core.models import NAVPoint, Quote, SecurityType
@@ -16,6 +17,12 @@ from folioman_core.price_feeds import coingecko, mfapi, yfinance_feed
 pytestmark = pytest.mark.django_db
 
 _TODAY = dt.date(2025, 6, 2)
+
+
+@pytest.fixture(autouse=True)
+def _no_request_spacing(monkeypatch):
+    """Don't actually sleep between feed calls in tests."""
+    monkeypatch.setattr(refresh_navs_mod, "_SLEEP", lambda *_a, **_k: None)
 
 
 @pytest.fixture

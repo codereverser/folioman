@@ -8,6 +8,12 @@ import pytest
 from folioman_core.price_feeds import mfapi
 
 
+@pytest.fixture(autouse=True)
+def _no_backoff_sleep(monkeypatch):
+    """Stub the retry backoff so tests don't actually sleep."""
+    monkeypatch.setattr(mfapi, "_SLEEP", lambda *_a, **_k: None)
+
+
 def _client(handler) -> httpx.Client:
     """Build an httpx.Client whose transport invokes ``handler`` for every request."""
     return httpx.Client(transport=httpx.MockTransport(handler), base_url=mfapi.BASE_URL)
@@ -120,6 +126,36 @@ def test_invalid_json_raises_navfetcherror():
 
     with _client(handler) as c, pytest.raises(mfapi.NAVFetchError):
         mfapi.fetch_latest_nav("122639", client=c)
+
+
+def test_transient_5xx_is_retried_then_succeeds():
+    """A 5xx is transient — retry and recover rather than failing the caller."""
+    calls = {"n": 0}
+
+    def handler(_request):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(503, text="busy")
+        return httpx.Response(200, json=_success([{"date": "27-03-2025", "nav": "75.4"}]))
+
+    with _client(handler) as c:
+        point = mfapi.fetch_latest_nav("122639", client=c)
+
+    assert point is not None and calls["n"] == 2  # one retry
+
+
+def test_permanent_404_is_not_retried():
+    """A 404 is permanent — fail fast, no retries (don't hammer the feed)."""
+    calls = {"n": 0}
+
+    def handler(_request):
+        calls["n"] += 1
+        return httpx.Response(404, text="not found")
+
+    with _client(handler) as c, pytest.raises(mfapi.NAVFetchError):
+        mfapi.fetch_latest_nav("122639", client=c)
+
+    assert calls["n"] == 1  # no retry on a permanent error
 
 
 def test_malformed_rows_are_skipped_not_fatal():

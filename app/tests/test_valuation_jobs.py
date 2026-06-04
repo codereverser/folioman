@@ -123,12 +123,91 @@ def test_unpriced_mf_errors_then_recovers_on_retry(
     assert InvestorValue.objects.filter(investor=inv).exists()
 
 
+def test_unpriceable_mf_does_not_block_the_whole_investor(
+    make_investor, make_security, make_folio, make_transaction
+):
+    """A structurally unpriceable MF (no amfi_code — e.g. an eCAS demat fund the
+    ISIN DB can't map, or a matured scheme) must NOT error the whole investor.
+    Value the priceable holdings; skip the unpriceable one (it surfaces as
+    stale_count), and stay READY — never blank an otherwise-valued portfolio."""
+    inv = make_investor()
+    priced = make_security(security_type=SecurityType.MF.value)  # auto amfi_code
+    unpriceable = make_security(
+        security_type=SecurityType.MF.value, amfi_code="", isin="INF0000UNP12"
+    )
+    folio = make_folio(investor=inv)
+    make_transaction(
+        investor=inv,
+        security=priced,
+        folio=folio,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    make_transaction(
+        investor=inv,
+        security=unpriceable,
+        folio=folio,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("50"),
+        nav_or_price=Decimal("20"),
+    )
+    NAVHistory.objects.create(security=priced, date=dt.date(2025, 1, 1), nav=Decimal("10"))
+    # unpriceable has NO NAVHistory and no amfi_code → can never be priced via the feed.
+
+    status = valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+
+    assert status == ValuationStatus.READY  # degraded, not errored
+    # Series reflects only the priceable holding (100 * 10); the unpriceable is skipped.
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("1000")
+
+
 def test_process_pending_skips_error_not_yet_due(make_investor):
     inv = make_investor()
     inv.valuation_status = ValuationStatus.ERROR
     inv.valuation_next_attempt_at = timezone.now() + dt.timedelta(minutes=30)  # future
     inv.save()
     assert valuation_jobs.process_pending_valuations() == 0
+
+
+def test_process_pending_primes_navs_once_globally(
+    monkeypatch, make_investor, make_security, make_folio, make_transaction
+):
+    """The tick primes the NAV cache once for all due investors, not per-investor
+    (so shared schemes aren't re-fetched — the cause of feed rate-limiting)."""
+    calls = {"refresh": 0, "backfill": 0}
+    monkeypatch.setattr(
+        valuation_jobs,
+        "refresh_navs",
+        lambda **kw: (calls.__setitem__("refresh", calls["refresh"] + 1), {"updated": 0})[1],
+    )
+    monkeypatch.setattr(
+        valuation_jobs,
+        "backfill_missing_history",
+        lambda **kw: (calls.__setitem__("backfill", calls["backfill"] + 1), {"points": 0})[1],
+    )
+    mf = make_security(security_type=SecurityType.MF.value)
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 1, 1), nav=Decimal("10"))
+    for _ in range(2):
+        inv = make_investor()
+        folio = make_folio(investor=inv)
+        make_transaction(
+            investor=inv,
+            security=mf,
+            folio=folio,
+            date=dt.date(2025, 1, 1),
+            units=Decimal("100"),
+            nav_or_price=Decimal("10"),
+        )
+        inv.valuation_status = ValuationStatus.PENDING
+        inv.valuation_recompute_from = dt.date(2025, 1, 1)
+        inv.save()
+
+    processed = valuation_jobs.process_pending_valuations()
+
+    assert processed == 2
+    assert calls["refresh"] == 1  # primed once for the union, not per-investor
+    assert calls["backfill"] == 1
 
 
 def test_empty_investor_is_ready_with_no_rows(make_investor):

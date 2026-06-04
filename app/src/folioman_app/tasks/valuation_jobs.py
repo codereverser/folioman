@@ -167,10 +167,18 @@ def _mark_error(inv: Investor, message: str) -> None:
     )
 
 
-def recompute_investor_valuation(investor_id: int, from_date: dt.date | None = None) -> str:
+def recompute_investor_valuation(
+    investor_id: int, from_date: dt.date | None = None, *, prime_navs: bool = True
+) -> str:
     """Recompute the daily ``InvestorValue`` series for one investor from
     ``from_date`` (or its pending/last-computed/earliest date) to today. Returns the
-    resulting status string. Best-effort: feed failures leave it retryable."""
+    resulting status string. Best-effort: feed failures leave it retryable.
+
+    ``prime_navs`` (default True) refreshes current NAVs + backfills MF history for
+    this investor's holdings before valuing. Batch callers that already primed the
+    NAV cache once for *all* due investors (see ``process_pending_valuations``) pass
+    ``False`` so shared schemes aren't re-fetched per investor — the cause of
+    feed rate-limiting at scale."""
     inv = Investor.objects.filter(id=investor_id).first()
     if inv is None:
         return "missing"
@@ -190,18 +198,32 @@ def recompute_investor_valuation(investor_id: int, from_date: dt.date | None = N
     try:
         sec_ids = _held_security_ids(inv)
         securities = Security.objects.filter(id__in=sec_ids)
-        refresh_navs(securities=securities)  # current NAV per security
-        backfill_missing_history(  # MF history (mfapi); equities keep latest only
-            securities=securities.filter(security_type=SecurityType.MF.value)
-        )
-        # Only MF securities have a history feed; require *those* to be priced before
-        # we trust the day-wise series. Non-MF (equity/crypto) keep the latest point.
+        if prime_navs:
+            refresh_navs(securities=securities)  # current NAV per security
+            backfill_missing_history(  # MF history (mfapi); equities keep latest only
+                securities=securities.filter(security_type=SecurityType.MF.value)
+            )
+        # Only MF securities have a history feed. An unpriced MF splits two ways:
+        #  - **feed-pending** (has an amfi_code → the feed should price it): a slow
+        #    or transient feed; keep erroring + retrying with backoff so it recovers.
+        #  - **unpriceable** (no amfi_code → nothing to query: an eCAS demat fund the
+        #    ISIN DB can't map, or a closed/matured scheme): retrying never helps, so
+        #    it must NOT block the whole investor.
+        # Degrade per-security: value the priceable holdings and let the unpriced ones
+        # fall out of the series (``_value_series`` skips + flags them; they surface as
+        # ``stale_count`` in the summary) — never blank an otherwise-valued portfolio.
         unpriced = _unpriced_securities(
             {s.id for s in securities if s.security_type == SecurityType.MF.value}, today
         )
         if unpriced:
-            _mark_error(inv, f"{len(unpriced)} securities have no NAV yet (feed pending)")
-            return ValuationStatus.ERROR
+            no_code = set(
+                Security.objects.filter(id__in=unpriced, amfi_code="").values_list("id", flat=True)
+            )
+            pending = unpriced - no_code
+            if pending and inv.valuation_attempts < _MAX_ATTEMPTS:
+                _mark_error(inv, f"{len(pending)} securities awaiting NAV (feed pending)")
+                return ValuationStatus.ERROR
+            # else: only structurally-unpriceable left (or retries exhausted) — degrade.
 
         points = _value_series([inv], start, today, "daily")
         with db_transaction.atomic():
@@ -228,13 +250,28 @@ def process_pending_valuations() -> int:
     """Interval tick: recompute every investor that's pending/computing, or an error
     whose backoff has elapsed. Returns how many were processed."""
     now = timezone.now()
-    due = Investor.objects.filter(
-        Q(valuation_status__in=[ValuationStatus.PENDING, ValuationStatus.COMPUTING])
-        | Q(valuation_status=ValuationStatus.ERROR, valuation_next_attempt_at__lte=now)
-    ).values_list("id", "valuation_recompute_from")
+    due = list(
+        Investor.objects.filter(
+            Q(valuation_status__in=[ValuationStatus.PENDING, ValuationStatus.COMPUTING])
+            | Q(valuation_status=ValuationStatus.ERROR, valuation_next_attempt_at__lte=now)
+        ).values_list("id", "valuation_recompute_from")
+    )
+    if not due:
+        return 0
+    # Prime the NAV cache ONCE for the union of all due investors' holdings, then
+    # value each off the cache (prime_navs=False). Without this, investors sharing
+    # popular schemes each re-fetch them — the burst that rate-limits the feed.
+    investor_ids = [iid for iid, _ in due]
+    sec_ids: set[int] = set()
+    for inv in Investor.objects.filter(id__in=investor_ids):
+        sec_ids.update(_held_security_ids(inv))
+    if sec_ids:
+        securities = Security.objects.filter(id__in=sec_ids)
+        refresh_navs(securities=securities)
+        backfill_missing_history(securities=securities.filter(security_type=SecurityType.MF.value))
     processed = 0
-    for investor_id, recompute_from in list(due):
-        recompute_investor_valuation(investor_id, recompute_from)
+    for investor_id, recompute_from in due:
+        recompute_investor_valuation(investor_id, recompute_from, prime_navs=False)
         processed += 1
     return processed
 

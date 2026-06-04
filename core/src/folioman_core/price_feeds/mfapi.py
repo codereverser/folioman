@@ -20,6 +20,7 @@ but unofficial — callers should treat transient failures as recoverable
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterable
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -31,9 +32,27 @@ from folioman_core.models.nav import NAVHistory, NAVPoint
 BASE_URL = "https://api.mfapi.in"
 DEFAULT_TIMEOUT = 30.0  # seconds — mfapi is normally fast; generous for cold connects
 
+# mfapi is a free, unofficial feed — be a good citizen. Retry only *transient*
+# failures (timeouts, connection drops, 429/5xx) with exponential backoff; a
+# permanent error (404, bad JSON) fails fast without retrying. Indirected through
+# ``_SLEEP`` so tests can stub the wait.
+_MAX_RETRIES = 2  # i.e. up to 3 attempts
+_BACKOFF_BASE = 0.5  # seconds; waits 0.5s, 1.0s, ...
+_TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504})
+_SLEEP = time.sleep
+
 
 class NAVFetchError(RuntimeError):
     """mfapi returned an error, or the response was unusable."""
+
+
+def _is_transient(exc: Exception) -> bool:
+    """A failure worth retrying (vs a permanent 404 / malformed response)."""
+    if isinstance(exc, httpx.TransportError):  # timeouts, connect/read errors
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _TRANSIENT_STATUS
+    return False
 
 
 def fetch_latest_nav(amfi_code: str, *, client: httpx.Client | None = None) -> NAVPoint | None:
@@ -70,25 +89,43 @@ def fetch_nav_history(
     )
 
 
-def _fetch_json(path: str, *, client: httpx.Client | None) -> dict:
-    """GET ``path`` and return the parsed JSON; wrap any failure as ``NAVFetchError``."""
+def _fetch_json(
+    path: str,
+    *,
+    client: httpx.Client | None,
+    retries: int = _MAX_RETRIES,
+    backoff: float = _BACKOFF_BASE,
+) -> dict:
+    """GET ``path`` and return the parsed JSON; wrap any failure as ``NAVFetchError``.
+
+    Transient failures (timeouts, connection drops, 429/5xx) are retried with
+    exponential backoff; permanent ones (404, malformed JSON) fail immediately.
+    """
     owned = client is None
     if owned:
         client = httpx.Client(base_url=BASE_URL, timeout=DEFAULT_TIMEOUT)
     try:
-        response = client.get(path)
-        response.raise_for_status()
-        payload = response.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        msg = f"mfapi GET {path} failed: {exc}"
-        raise NAVFetchError(msg) from exc
+        for attempt in range(retries + 1):
+            try:
+                response = client.get(path)
+                response.raise_for_status()
+                payload = response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                if attempt < retries and _is_transient(exc):
+                    _SLEEP(backoff * (2**attempt))
+                    continue
+                msg = f"mfapi GET {path} failed: {exc}"
+                raise NAVFetchError(msg) from exc
+            if payload.get("status") != "SUCCESS":
+                msg = f"mfapi GET {path}: status={payload.get('status', 'unknown')!r}"
+                raise NAVFetchError(msg)
+            return payload
+        # Unreachable: the final attempt either returns or raises above.
+        msg = f"mfapi GET {path}: exhausted retries"
+        raise NAVFetchError(msg)
     finally:
         if owned:
             client.close()
-    if payload.get("status") != "SUCCESS":
-        msg = f"mfapi GET {path}: status={payload.get('status', 'unknown')!r}"
-        raise NAVFetchError(msg)
-    return payload
 
 
 def _parse_points(rows: list[dict]) -> Iterable[NAVPoint]:

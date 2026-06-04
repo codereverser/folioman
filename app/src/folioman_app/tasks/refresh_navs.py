@@ -13,10 +13,12 @@ Historical backfill on first import is covered by the backfill helpers here.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterable
 from datetime import date as date_cls
 
-from django.db.models import Min
+from django.db.models import Max, Min
+from django.utils import timezone
 from folioman_core.models import SecurityType
 from folioman_core.price_feeds import coingecko, mfapi, nse_bse, yfinance_feed
 from folioman_core.price_feeds.mfapi import NAVFetchError
@@ -30,6 +32,13 @@ _QUOTE_TYPES = {
     SecurityType.BOND.value,
     SecurityType.FOREIGN_EQUITY.value,
 }
+
+# Politeness: a small gap between consecutive feed calls so a batch refresh /
+# backfill doesn't hammer a free public API. Indirected through ``_SLEEP`` so
+# tests stub it; ``_REQUEST_SPACING`` is module-level so a caller can tune it.
+_REQUEST_SPACING = 0.15  # seconds between live fetches
+_HISTORY_FRESH_DAYS = 5  # skip a backfill whose latest point is this recent
+_SLEEP = time.sleep
 
 
 def _fetch_point(security: Security):
@@ -54,7 +63,11 @@ def _fetch_point(security: Security):
 def refresh_navs(*, securities: Iterable[Security] | None = None) -> dict:
     qs = Security.objects.all() if securities is None else securities
     summary = {"updated": 0, "skipped": 0, "errors": 0}
+    fetched = False
     for security in qs:
+        if fetched:
+            _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
+        fetched = True
         try:
             point = _fetch_point(security)
         except (NAVFetchError, PriceFetchError):
@@ -104,8 +117,20 @@ def backfill_missing_history(*, securities: Iterable[Security] | None = None) ->
         if securities is not None
         else Security.objects.filter(security_type=SecurityType.MF.value)
     )
-    summary = {"securities": 0, "points": 0, "errors": 0}
+    summary = {"securities": 0, "points": 0, "errors": 0, "skipped": 0}
+    today = timezone.localdate()
+    fetched = False
     for security in qs:
+        # Skip if the series is already current — mfapi returns the *whole* history
+        # on every call, so refetching a fund we already hold is pure waste (the
+        # main cause of feed hammering when many investors share schemes).
+        latest = NAVHistory.objects.filter(security=security).aggregate(m=Max("date"))["m"]
+        if latest is not None and (today - latest).days <= _HISTORY_FRESH_DAYS:
+            summary["skipped"] += 1
+            continue
+        if fetched:
+            _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
+        fetched = True
         since = Transaction.objects.filter(security=security).aggregate(first=Min("date"))["first"]
         try:
             written = backfill_nav_history(security, since=since)
