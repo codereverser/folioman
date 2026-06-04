@@ -33,6 +33,116 @@
         "title": "AssetMixRow",
         "type": "object"
       },
+      "CapitalGainRow": {
+        "description": "One realised disposal (FIFO lot) in the capital-gains view.",
+        "properties": {
+          "acquired_on": {
+            "format": "date",
+            "title": "Acquired On",
+            "type": "string"
+          },
+          "cost": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cost",
+            "type": "string"
+          },
+          "gain": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gain",
+            "type": "string"
+          },
+          "isin": {
+            "title": "Isin",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sale_value": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Sale Value",
+            "type": "string"
+          },
+          "security_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Security Id"
+          },
+          "sold_on": {
+            "format": "date",
+            "title": "Sold On",
+            "type": "string"
+          },
+          "term": {
+            "title": "Term",
+            "type": "string"
+          },
+          "units": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units",
+            "type": "string"
+          }
+        },
+        "required": [
+          "security_id",
+          "name",
+          "isin",
+          "units",
+          "sale_value",
+          "cost",
+          "gain",
+          "term",
+          "acquired_on",
+          "sold_on"
+        ],
+        "title": "CapitalGainRow",
+        "type": "object"
+      },
+      "CapitalGainsOut": {
+        "description": "Realised capital gains for one FY \u2014 STCG/LTCG split, equity-MF only in v1.",
+        "properties": {
+          "disclaimer": {
+            "default": "Heads up \u2014 this isn't tax advice. folioman builds a capital-gains worksheet from the transactions you import, so you and your CA have a starting point. It doesn't file anything, it's no substitute for a Chartered Accountant, and we can't promise the numbers are right or complete \u2014 a misparsed or incomplete statement can throw them off. Always check every figure with a qualified CA before you file. Provided as-is, no warranty; we're not liable for any filing, penalty, or loss that comes from using it.",
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "fy": {
+            "title": "Fy",
+            "type": "string"
+          },
+          "ltcg_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Ltcg Total",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/CapitalGainRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "stcg_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stcg Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fy",
+          "stcg_total",
+          "ltcg_total"
+        ],
+        "title": "CapitalGainsOut",
+        "type": "object"
+      },
       "CasPreviewOut": {
         "description": "Owner identity parsed from an uploaded CAS, before anything is persisted.\n\nLets the UI confirm who the statement belongs to (and whether it matches an\nexisting investor) before the import creates or attaches. Only a *masked* PAN\nis returned \u2014 the full PAN is never sent back to the client.",
         "properties": {
@@ -2332,6 +2442,58 @@
         "summary": "Update Investor",
         "tags": [
           "investors"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/exports/capital-gains": {
+      "get": {
+        "description": "Realised capital gains for one FY: STCG/LTCG totals + per-disposal rows\n(equity-MF only in v1). A read view to review \u2014 not a filed return.",
+        "operationId": "folioman_app_api_exports_capital_gains",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": true,
+            "schema": {
+              "title": "Fy",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_unreconciled",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Unreconciled",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapitalGainsOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Capital Gains",
+        "tags": [
+          "exports"
         ]
       }
     },

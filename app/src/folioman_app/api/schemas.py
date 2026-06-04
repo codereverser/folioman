@@ -325,6 +325,31 @@ class Schedule112ARequest(Schema):
     include_unreconciled: bool = False
 
 
+class CapitalGainRow(Schema):
+    """One realised disposal (FIFO lot) in the capital-gains view."""
+
+    security_id: int | None  # Django id for deep-linking; None if not resolvable
+    name: str
+    isin: str
+    units: Decimal
+    sale_value: Decimal  # gross consideration (units * sale price)
+    cost: Decimal  # cost of acquisition (FMV-grandfathered where applicable)
+    gain: Decimal
+    term: str  # "short" | "long"
+    acquired_on: date
+    sold_on: date
+
+
+class CapitalGainsOut(Schema):
+    """Realised capital gains for one FY — STCG/LTCG split, equity-MF only in v1."""
+
+    fy: str
+    stcg_total: Decimal
+    ltcg_total: Decimal
+    rows: list[CapitalGainRow] = Field(default_factory=list)
+    disclaimer: str = TAX_WORKSHEET_DISCLAIMER
+
+
 class Schedule112AResponse(Schema):
     fy: str
     include_unreconciled: bool

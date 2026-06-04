@@ -5,8 +5,8 @@ import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Message from 'primevue/message'
 import Select from 'primevue/select'
-import ExportPreview from '@/components/ExportPreview.vue'
-import { useTaxExport } from '@/composables/useTaxExport'
+import RealisedGains from '@/components/RealisedGains.vue'
+import { useCapitalGains } from '@/composables/useCapitalGains'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { toCsv, downloadText } from '@/utils/csv'
@@ -23,10 +23,21 @@ const investorId = computed(() => {
 })
 const investorName = computed(() => roster.investorName(investorId.value) ?? 'Investor')
 
-const { fy, fyOptions, includeUnreconciled, report, loading, error, built, rowCount, excluded, build } =
-  useTaxExport(investorId)
+const {
+  fy,
+  fyOptions,
+  includeUnreconciled,
+  gains,
+  report,
+  loading,
+  error,
+  built,
+  worksheetRowCount,
+  excluded,
+  build,
+} = useCapitalGains(investorId)
 
-// A fresh worksheet must be re-acknowledged before it can be downloaded.
+// A fresh build must be re-acknowledged before the worksheet can be downloaded.
 const acknowledged = ref(false)
 async function rebuild(): Promise<void> {
   acknowledged.value = false
@@ -34,14 +45,12 @@ async function rebuild(): Promise<void> {
 }
 watch([investorId, fy, includeUnreconciled], () => void rebuild(), { immediate: true })
 
-const title = computed(() => report.value?.title ?? 'Capital-gains worksheet')
-const canDownload = computed(() => acknowledged.value && rowCount.value > 0)
+const canDownload = computed(() => acknowledged.value && worksheetRowCount.value > 0)
 
 function download(): void {
   const r = report.value
   if (!r || !canDownload.value) return
-  const csv = toCsv(r.columns, r.rows)
-  downloadText(`capital-gains-worksheet-${r.fy}.csv`, csv)
+  downloadText(`capital-gains-worksheet-${r.fy}.csv`, toCsv(r.columns, r.rows))
   ui.notify({ severity: 'success', summary: 'Worksheet downloaded for your review' })
 }
 
@@ -51,14 +60,20 @@ function back(): void {
 </script>
 
 <template>
-  <section class="tax-page">
+  <section class="cg-page">
     <header class="page-head">
       <button class="back" type="button" @click="back"><i class="pi pi-arrow-left" /> Dashboard</button>
       <div class="title-row">
-        <h1>{{ title }}</h1>
+        <h1>Capital Gains</h1>
       </div>
-      <p class="subtitle">{{ investorName }} — a draft for your review, not a filed return.</p>
+      <p class="subtitle">{{ investorName }} — realised gains for the year, for your review.</p>
     </header>
+
+    <Message severity="info" :closable="false" class="coming-soon">
+      Showing realised gains on <strong>mutual funds with full history</strong>. A comprehensive
+      cross-asset tax statement — all asset classes, quarterly STCG/LTCG, crypto, and FD/dividend
+      income — is coming once multi-asset support lands.
+    </Message>
 
     <div class="controls">
       <label class="field">
@@ -67,27 +82,28 @@ function back(): void {
       </label>
       <label class="check">
         <Checkbox v-model="includeUnreconciled" :binary="true" :disabled="loading" />
-        <span>Include unreconciled folios <small>(adds rows that may be wrong — review carefully)</small></span>
+        <span>Include unreconciled folios <small>(may be wrong — review carefully)</small></span>
       </label>
     </div>
 
     <Message v-if="error" severity="error" :closable="false">
-      Couldn’t build the worksheet for {{ fy }}. {{ error }}
+      Couldn’t compute capital gains for {{ fy }}. {{ error }}
     </Message>
 
-    <Message v-if="report?.disclaimer" severity="warn" :closable="false" class="disclaimer">
-      {{ report.disclaimer }}
-    </Message>
-
-    <ExportPreview
+    <RealisedGains
       v-if="built && !loading"
-      :report="report"
+      :gains="gains"
       :excluded="excluded"
       :investor-id="investorId"
     />
-    <p v-else-if="loading" class="loading-note">Building worksheet…</p>
+    <p v-else-if="loading" class="loading-note">Computing capital gains…</p>
 
-    <section v-if="built && rowCount > 0" class="download">
+    <Message v-if="gains?.disclaimer" severity="warn" :closable="false" class="disclaimer">
+      {{ gains.disclaimer }}
+    </Message>
+
+    <section v-if="built && worksheetRowCount > 0" class="download">
+      <h2>Schedule 112A worksheet (LTCG)</h2>
       <label class="ack">
         <Checkbox v-model="acknowledged" :binary="true" input-id="ack-draft" />
         <span>
@@ -96,7 +112,7 @@ function back(): void {
         </span>
       </label>
       <Button
-        label="Download worksheet (CSV)"
+        label="Download Schedule 112A (CSV)"
         icon="pi pi-download"
         :disabled="!canDownload"
         @click="download"
@@ -107,7 +123,7 @@ function back(): void {
 </template>
 
 <style scoped>
-.tax-page {
+.cg-page {
   padding: var(--fm-space-6);
   max-width: var(--fm-content-max);
   margin: 0 auto;
@@ -145,6 +161,10 @@ function back(): void {
   margin: 0;
   color: var(--fm-text-muted);
   font-size: 0.9375rem;
+}
+
+.coming-soon {
+  font-size: 0.875rem;
 }
 
 .controls {
@@ -185,6 +205,10 @@ function back(): void {
   border: 1px solid var(--fm-border-subtle);
   border-radius: var(--fm-radius-xl);
   background: var(--fm-surface);
+}
+.download h2 {
+  margin: 0;
+  font-size: 1.05rem;
 }
 .ack {
   display: flex;

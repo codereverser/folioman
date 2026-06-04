@@ -13,9 +13,13 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from folioman_app.api.auth import get_owned_investor
-from folioman_app.api.schemas import Schedule112ARequest, Schedule112AResponse
+from folioman_app.api.schemas import (
+    CapitalGainsOut,
+    Schedule112ARequest,
+    Schedule112AResponse,
+)
 from folioman_app.services.exports import build_holdings_csv, build_transactions_csv
-from folioman_app.services.tax_export import build_schedule_112a
+from folioman_app.services.tax_export import build_capital_gains, build_schedule_112a
 
 router = Router(tags=["exports"])
 
@@ -50,4 +54,15 @@ def schedule_112a(request, investor_id: int, payload: Schedule112ARequest):
             investor, payload.fy, include_unreconciled=payload.include_unreconciled
         )
     except ValueError as exc:  # e.g. an out-of-range FY label
+        raise HttpError(422, str(exc)) from exc
+
+
+@router.get("/{investor_id}/exports/capital-gains", response=CapitalGainsOut)
+def capital_gains(request, investor_id: int, fy: str, include_unreconciled: bool = False):
+    """Realised capital gains for one FY: STCG/LTCG totals + per-disposal rows
+    (equity-MF only in v1). A read view to review — not a filed return."""
+    investor = get_owned_investor(request, investor_id)
+    try:
+        return build_capital_gains(investor, fy, include_unreconciled=include_unreconciled)
+    except ValueError as exc:  # e.g. a malformed FY label
         raise HttpError(422, str(exc)) from exc

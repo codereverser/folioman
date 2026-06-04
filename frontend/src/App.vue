@@ -42,9 +42,9 @@ const navLinks = computed<NavLink[]>(() => {
       to: { name: 'integrity', params: { investorId } },
     })
     links.push({
-      label: 'Tax',
+      label: 'Capital Gains',
       icon: 'pi pi-file-edit',
-      to: { name: 'tax-export', params: { investorId } },
+      to: { name: 'capital-gains', params: { investorId } },
     })
   }
   if (ui.selectedFamilyId !== null) {

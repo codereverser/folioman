@@ -223,6 +223,27 @@ export interface paths {
         patch: operations["folioman_app_api_investors_update_investor"];
         trace?: never;
     };
+    "/api/investors/{investor_id}/exports/capital-gains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capital Gains
+         * @description Realised capital gains for one FY: STCG/LTCG totals + per-disposal rows
+         *     (equity-MF only in v1). A read view to review — not a filed return.
+         */
+        get: operations["folioman_app_api_exports_capital_gains"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/exports/holdings": {
         parameters: {
             query?: never;
@@ -526,6 +547,57 @@ export interface components {
             security_type: string;
             /** Value Inr */
             value_inr: string;
+        };
+        /**
+         * CapitalGainRow
+         * @description One realised disposal (FIFO lot) in the capital-gains view.
+         */
+        CapitalGainRow: {
+            /**
+             * Acquired On
+             * Format: date
+             */
+            acquired_on: string;
+            /** Cost */
+            cost: string;
+            /** Gain */
+            gain: string;
+            /** Isin */
+            isin: string;
+            /** Name */
+            name: string;
+            /** Sale Value */
+            sale_value: string;
+            /** Security Id */
+            security_id: number | null;
+            /**
+             * Sold On
+             * Format: date
+             */
+            sold_on: string;
+            /** Term */
+            term: string;
+            /** Units */
+            units: string;
+        };
+        /**
+         * CapitalGainsOut
+         * @description Realised capital gains for one FY — STCG/LTCG split, equity-MF only in v1.
+         */
+        CapitalGainsOut: {
+            /**
+             * Disclaimer
+             * @default Heads up — this isn't tax advice. folioman builds a capital-gains worksheet from the transactions you import, so you and your CA have a starting point. It doesn't file anything, it's no substitute for a Chartered Accountant, and we can't promise the numbers are right or complete — a misparsed or incomplete statement can throw them off. Always check every figure with a qualified CA before you file. Provided as-is, no warranty; we're not liable for any filing, penalty, or loss that comes from using it.
+             */
+            disclaimer: string;
+            /** Fy */
+            fy: string;
+            /** Ltcg Total */
+            ltcg_total: string;
+            /** Rows */
+            rows?: components["schemas"]["CapitalGainRow"][];
+            /** Stcg Total */
+            stcg_total: string;
         };
         /**
          * CasPreviewOut
@@ -1572,6 +1644,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvestorOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_exports_capital_gains: {
+        parameters: {
+            query: {
+                fy: string;
+                include_unreconciled?: boolean;
+            };
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapitalGainsOut"];
                 };
             };
         };

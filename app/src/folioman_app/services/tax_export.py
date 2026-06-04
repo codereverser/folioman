@@ -12,14 +12,19 @@ FMV-as-of-31-Jan-2018 (grandfathering) comes from casparser-isin via
 from __future__ import annotations
 
 from collections.abc import Callable
+from decimal import ROUND_HALF_EVEN, Decimal
 
 from folioman_core.price_feeds.casparser_fmv import fmv_lookup as _default_fmv
 from folioman_core.reconciliation import IntegrityStatus
 from folioman_core.tax import compute_gain_lines, compute_schedule_112a, get_policy
+from folioman_core.tax.india import india_fy_range
+from folioman_core.tax.models import Term
 from folioman_core.tax.schedule_112a import SCHEDULE_112A_CSV_COLUMNS
 
 from folioman_app.mappers import to_core_transaction
-from folioman_app.models import Investor
+from folioman_app.models import Investor, Security
+
+_Q2 = Decimal("0.01")
 
 
 def _folio_tax_ready(status: IntegrityStatus, *, include_unreconciled: bool) -> bool:
@@ -31,6 +36,87 @@ def _folio_tax_ready(status: IntegrityStatus, *, include_unreconciled: bool) -> 
     return status in (IntegrityStatus.FULL_HISTORY, IntegrityStatus.RECONCILED)
 
 
+def _tax_ready_transactions(investor: Investor, *, include_unreconciled: bool) -> list:
+    """Core transactions from this investor's tax-ready (security, folio) buckets.
+
+    Per-folio gating: only buckets whose integrity status is tax-ready reach FIFO,
+    so disposals can only come from those. Fails closed — a bucket with no status
+    is simply absent from the ready set.
+    """
+    ready_keys = {
+        (st.security_id, st.folio.number)
+        for st in investor.integrity_statuses.select_related("folio").all()
+        if _folio_tax_ready(IntegrityStatus(st.status), include_unreconciled=include_unreconciled)
+    }
+    return [
+        to_core_transaction(t)
+        for t in investor.transactions.select_related("security", "folio").all()
+        if (t.security_id, t.folio.number if t.folio else "") in ready_keys
+    ]
+
+
+def build_capital_gains(
+    investor: Investor,
+    fy_label: str,
+    *,
+    include_unreconciled: bool = False,
+    fmv_lookup: Callable | None = None,
+) -> dict:
+    """Realised capital gains for one India FY: per-disposal rows split into
+    short-/long-term, plus STCG/LTCG totals. Equity-MF only in v1 (the only asset
+    class with full transaction history); same tax-ready gating as the 112A export.
+    """
+    fmv = fmv_lookup if fmv_lookup is not None else _default_fmv
+    fy_start, fy_end = india_fy_range(fy_label)  # raises ValueError on a bad label
+    transactions = _tax_ready_transactions(investor, include_unreconciled=include_unreconciled)
+    gain_lines = compute_gain_lines(transactions, get_policy("IN"), fmv_lookup=fmv)
+
+    in_fy = [g for g in gain_lines if fy_start <= g.disposal.sold_on <= fy_end]
+    # Map core securities back to Django ids so rows can deep-link to the scheme.
+    isin_to_id = dict(
+        Security.objects.filter(
+            isin__in={g.disposal.security.isin for g in in_fy if g.disposal.security.isin}
+        ).values_list("isin", "id")
+    )
+
+    rows: list[dict] = []
+    stcg = Decimal("0")
+    ltcg = Decimal("0")
+    for line in in_fy:
+        d = line.disposal
+        sale_value = (d.units * d.sale_price_per_unit).quantize(_Q2, rounding=ROUND_HALF_EVEN)
+        if line.term is Term.SHORT:
+            stcg += line.gain
+        else:
+            ltcg += line.gain
+        rows.append(
+            {
+                "security_id": isin_to_id.get(d.security.isin),
+                "name": d.security.name,
+                "isin": d.security.isin,
+                "units": d.units,
+                "sale_value": sale_value,
+                # Total cost basis (acquisition cost + stamp duty), defined as
+                # sale minus gain so the row ties out exactly; matches how CAMS/KFin
+                # fold purchase stamp into cost.
+                "cost": sale_value - line.gain,
+                "gain": line.gain,
+                "term": line.term.value,
+                "acquired_on": d.acquired_on,
+                "sold_on": d.sold_on,
+            }
+        )
+
+    # Long-term first, then by sale date — the order a reviewer reads.
+    rows.sort(key=lambda r: (r["term"], r["sold_on"]))
+    return {
+        "fy": fy_label,
+        "stcg_total": stcg.quantize(_Q2, rounding=ROUND_HALF_EVEN),
+        "ltcg_total": ltcg.quantize(_Q2, rounding=ROUND_HALF_EVEN),
+        "rows": rows,
+    }
+
+
 def build_schedule_112a(
     investor: Investor,
     fy_label: str,
@@ -40,20 +126,9 @@ def build_schedule_112a(
 ) -> dict:
     fmv = fmv_lookup if fmv_lookup is not None else _default_fmv
 
-    # Which (security, folio) buckets are tax-ready? (Fails closed: a bucket with
-    # no integrity status simply isn't in this set, so it can't be exported.)
-    ready_keys = {
-        (st.security_id, st.folio.number)
-        for st in investor.integrity_statuses.select_related("folio").all()
-        if _folio_tax_ready(IntegrityStatus(st.status), include_unreconciled=include_unreconciled)
-    }
-    # Only ready folios' transactions reach FIFO, so disposals come only from
-    # tax-ready (security, folio) buckets.
-    transactions = [
-        to_core_transaction(t)
-        for t in investor.transactions.select_related("security", "folio").all()
-        if (t.security_id, t.folio.number if t.folio else "") in ready_keys
-    ]
+    # Only tax-ready (security, folio) buckets reach FIFO, so disposals come only
+    # from them (shared with the realised capital-gains view).
+    transactions = _tax_ready_transactions(investor, include_unreconciled=include_unreconciled)
     gain_lines = compute_gain_lines(transactions, get_policy("IN"), fmv_lookup=fmv)
 
     # Per-folio gating is already applied above; mark the surviving securities
