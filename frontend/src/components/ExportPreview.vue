@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue'
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import type { Schedule112A } from '@/composables/useTaxExport'
 import type { IntegrityRow } from '@/stores/integrity'
 import { formatInr } from '@/utils/format'
-
-const DataTable = defineAsyncComponent(() => import('primevue/datatable'))
-const Column = defineAsyncComponent(() => import('primevue/column'))
 
 const props = defineProps<{
   report: Schedule112A | null

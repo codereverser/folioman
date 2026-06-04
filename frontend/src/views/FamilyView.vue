@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
 import MetricCard from '@/components/MetricCard.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
@@ -11,8 +13,6 @@ import { formatInr } from '@/utils/format'
 
 const AllocationDonut = defineAsyncComponent(() => import('@/components/charts/AllocationDonut.vue'))
 const PortfolioValueChart = defineAsyncComponent(() => import('@/components/charts/PortfolioValueChart.vue'))
-const DataTable = defineAsyncComponent(() => import('primevue/datatable'))
-const Column = defineAsyncComponent(() => import('primevue/column'))
 const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
 const route = useRoute()

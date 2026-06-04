@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
 import MetricCard from '@/components/MetricCard.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
@@ -9,8 +11,6 @@ import { useUiStore } from '@/stores/ui'
 import { formatInr, formatInrPaise, formatUnits, formatDate } from '@/utils/format'
 
 const NavHistoryChart = defineAsyncComponent(() => import('@/components/charts/NavHistoryChart.vue'))
-const DataTable = defineAsyncComponent(() => import('primevue/datatable'))
-const Column = defineAsyncComponent(() => import('primevue/column'))
 
 const route = useRoute()
 const router = useRouter()

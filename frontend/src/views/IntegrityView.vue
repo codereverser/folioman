@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
 import SelectButton from 'primevue/selectbutton'
 import { useConfirm } from 'primevue/useconfirm'
@@ -10,9 +12,6 @@ import { useIntegrityStore, type IntegrityRow } from '@/stores/integrity'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { formatDate, formatUnits, toNumber } from '@/utils/format'
-
-const DataTable = defineAsyncComponent(() => import('primevue/datatable'))
-const Column = defineAsyncComponent(() => import('primevue/column'))
 
 const route = useRoute()
 const router = useRouter()
