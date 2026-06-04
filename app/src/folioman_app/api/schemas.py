@@ -121,6 +121,9 @@ class InvestorSummaryOut(Schema):
     needs_attention_count: int  # mismatches awaiting resolution
     snapshot_count: int  # snapshot-only (no transaction history)
     stale_count: int  # held but unpriced (no NAV on/before as_of)
+    # Held mutual funds with no NAV — the fixable subset of stale that the total
+    # silently excludes. Excludes equity/bond snapshots (unpriced by design in v1).
+    unpriced_fund_count: int
     last_import_at: datetime | None
     day_change_inr: Decimal | None = None  # portfolio-wide intraday change (INR)
     # portfolio lifetime money-weighted return as a fraction (0.1849 = 18.49%),

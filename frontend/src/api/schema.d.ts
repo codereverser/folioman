@@ -873,6 +873,8 @@ export interface components {
             top_holdings?: components["schemas"]["HoldingValueRow"][];
             /** Total Inr */
             total_inr: string;
+            /** Unpriced Fund Count */
+            unpriced_fund_count: number;
             /** Xirr */
             xirr?: number | null;
         };

@@ -40,6 +40,7 @@ describe('useRosterMetrics', () => {
         needs_attention_count: 1,
         snapshot_count: 1,
         stale_count: 0,
+        unpriced_fund_count: 0,
         last_import_at: '2026-05-30T10:00:00Z',
       },
     } as never)
@@ -54,6 +55,7 @@ describe('useRosterMetrics', () => {
       taxReadyCount: 1,
       needsAttentionCount: 1,
       snapshotCount: 1,
+      unpricedFundCount: 0,
       lastImportAt: '2026-05-30T10:00:00Z',
     })
   })

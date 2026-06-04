@@ -16,6 +16,8 @@ export interface InvestorSummary {
   taxReadyCount: number
   needsAttentionCount: number
   snapshotCount: number
+  /** Held funds with no NAV — the total silently excludes them (the fixable gap). */
+  unpricedFundCount: number
   lastImportAt: string | null
 }
 
@@ -73,6 +75,7 @@ export function useRosterMetrics() {
             taxReadyCount: data.tax_ready_count,
             needsAttentionCount: data.needs_attention_count,
             snapshotCount: data.snapshot_count,
+            unpricedFundCount: data.unpriced_fund_count,
             lastImportAt: data.last_import_at,
           },
         }

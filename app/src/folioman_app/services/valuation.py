@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
 from folioman_core.models import Holding as CoreHolding
-from folioman_core.models import HoldingSource, Quote, TransactionType
+from folioman_core.models import HoldingSource, Quote, SecurityType, TransactionType
 from folioman_core.reconciliation import IntegrityStatus
 from folioman_core.valuation import value_holdings
 from folioman_core.xirr import cashflows_from_transactions, compute_xirr
@@ -303,6 +303,18 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
     extras = _holding_extras([investor], as_of)
     rollup = _rollup(valuation, meta_by_security, extras)
 
+    # Held mutual funds we *couldn't* price (no NAV) — the genuine, fixable gap that
+    # silently understates the total (a transient feed lag, or a structurally
+    # unpriceable straggler the recompute degraded past). Excludes equity/bond
+    # snapshots, which are unpriced *by design* in v1 (no symbol feed yet) and are
+    # already conveyed by integrity snapshot_only — counting them here would just
+    # be alarming noise.
+    unpriced_fund_count = sum(
+        1
+        for row in valuation.stale_rows
+        if meta_by_security.get(row.security, (None, None, None))[2] == SecurityType.MF.value
+    )
+
     statuses = list(investor.integrity_statuses.values_list("status", "tax_safe"))
     # Integrity is tracked per (security, folio) — the FIFO / cost-basis unit (the
     # same fund in two folios reconciles separately; see fifo.build_sell_disposals).
@@ -360,6 +372,7 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
         "needs_attention_count": needs_attention_count,
         "snapshot_count": snapshot_count,
         "stale_count": rollup["stale_count"],
+        "unpriced_fund_count": unpriced_fund_count,
         "last_import_at": last_import_at,
         "day_change_inr": _day_change_total(extras),
         "xirr": compute_portfolio_xirr([investor], as_of),

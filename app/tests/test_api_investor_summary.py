@@ -111,6 +111,25 @@ def test_summary_tax_ready_is_counted_per_security_folio(
     assert body["tax_ready_count"] == 1  # only the full-history folio
 
 
+def test_summary_counts_unpriced_funds_excluding_snapshots(
+    client, make_investor, make_security, make_holding
+):
+    # A held MF with no NAV is a fixable pricing gap → counted (the total excludes
+    # it). A held equity with no price is a v1 snapshot (no symbol feed yet) →
+    # NOT counted; that's unpriced by design, not a gap to flag.
+    inv = make_investor()
+    fund = make_security(security_type=SecurityType.MF.value)  # no NAVHistory
+    equity = make_security(
+        security_type=SecurityType.EQUITY.value, isin="INE000000001", symbol="ABC"
+    )
+    make_holding(investor=inv, security=fund, units=Decimal("10"), as_of_date=dt.date(2025, 6, 1))
+    make_holding(investor=inv, security=equity, units=Decimal("5"), as_of_date=dt.date(2025, 6, 1))
+
+    body = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-01"}).json()
+
+    assert body["unpriced_fund_count"] == 1  # the fund only; the equity is excluded
+
+
 def test_summary_reports_last_successful_import(client, make_investor):
     inv = make_investor()
     ImportJob.objects.create(investor=inv, kind=ImportKind.CSV.value, status=ImportJobStatus.FAILED)

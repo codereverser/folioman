@@ -868,6 +868,10 @@
             "title": "Total Inr",
             "type": "string"
           },
+          "unpriced_fund_count": {
+            "title": "Unpriced Fund Count",
+            "type": "integer"
+          },
           "xirr": {
             "anyOf": [
               {
@@ -890,6 +894,7 @@
           "needs_attention_count",
           "snapshot_count",
           "stale_count",
+          "unpriced_fund_count",
           "last_import_at"
         ],
         "title": "InvestorSummaryOut",

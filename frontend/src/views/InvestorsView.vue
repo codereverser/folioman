@@ -204,6 +204,12 @@ function investorValue(inv: RosterInvestor): string {
   if (!s) return '—'
   return isValuePending(inv) ? 'Valuation pending' : formatInr(s.totalInr)
 }
+// Held funds with no NAV — the value above silently excludes them. Surface the
+// count so an understated total is flagged (equity snapshots are excluded by
+// design and aren't counted here).
+function unpricedFunds(inv: RosterInvestor): number {
+  return metrics.investorSummaries.value[inv.id]?.unpricedFundCount ?? 0
+}
 </script>
 
 <template>
@@ -259,7 +265,14 @@ function investorValue(inv: RosterInvestor): string {
         <ul class="investors">
           <li v-for="inv in group.investors" :key="inv.id" class="investor-row">
             <button type="button" class="inv-name is-link" @click="openInvestor(inv.id)">{{ inv.name }}</button>
-            <span class="metric value" :class="{ pending: isValuePending(inv) }">{{ investorValue(inv) }}</span>
+            <span class="metric value" :class="{ pending: isValuePending(inv) }">
+              {{ investorValue(inv) }}
+              <small
+                v-if="!isValuePending(inv) && unpricedFunds(inv) > 0"
+                class="unpriced-flag"
+                :title="`Total excludes ${unpricedFunds(inv)} fund${unpricedFunds(inv) > 1 ? 's' : ''} we couldn't price (no NAV yet).`"
+              >⚠ {{ unpricedFunds(inv) }}</small>
+            </span>
             <span class="metric tax-ready" :class="{ attention: (metrics.investorSummaries.value[inv.id]?.needsAttentionCount ?? 0) > 0 }">
               <template v-if="metrics.investorSummaries.value[inv.id]">
                 {{ metrics.investorSummaries.value[inv.id].taxReadyCount }}/{{ metrics.investorSummaries.value[inv.id].integrityUnitCount }} tax-ready
@@ -448,6 +461,15 @@ function investorValue(inv: RosterInvestor): string {
   color: var(--fm-text-muted);
   font-weight: 500;
   font-size: 0.8125rem;
+}
+/* The total excludes N unpriced funds — flag it without shouting. */
+.unpriced-flag {
+  margin-left: 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--fm-warn);
+  white-space: nowrap;
+  cursor: help;
 }
 .tax-ready {
   min-width: 8rem;
