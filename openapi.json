@@ -740,8 +740,32 @@
             ],
             "title": "Last Reconciled At"
           },
+          "ledger_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ledger Through"
+          },
           "security": {
             "$ref": "#/components/schemas/SecurityRef"
+          },
+          "snapshot_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot As Of"
           },
           "status": {
             "title": "Status",
@@ -784,6 +808,8 @@
           "units_from_transactions",
           "units_from_holdings",
           "issues",
+          "ledger_through",
+          "snapshot_as_of",
           "last_reconciled_at"
         ],
         "title": "IntegrityStatusOut",
@@ -3299,6 +3325,57 @@
           }
         },
         "summary": "Acknowledge",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/unacknowledge": {
+      "post": {
+        "description": "Undo an acknowledgement: the row reverts to its real status (an unresolved\ngap reappears as a mismatch). Lets the user take back a mis-click.",
+        "operationId": "folioman_app_api_integrity_unacknowledge",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrityStatusOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Unacknowledge",
         "tags": [
           "integrity"
         ]

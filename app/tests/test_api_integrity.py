@@ -129,3 +129,51 @@ def test_recompute_returns_statuses(client, make_investor):
     rows = client.post(f"/api/investors/{inv.id}/integrity/recompute").json()
     assert len(rows) == 1
     assert rows[0]["status"] == "full_history"
+
+
+def test_status_reports_ledger_and_snapshot_dates(client, make_investor):
+    # The ledger reaches the latest transaction date; the snapshot reaches the
+    # eCAS observation date. Both surface so the UI can date each side.
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="100", price="100", on=dt.date(2020, 1, 1))
+    _ecas_holding(inv, isin=_ISIN, units="90")  # statement_date 2025-06-01
+    row = client.get(f"/api/investors/{inv.id}/integrity").json()[0]
+    assert row["ledger_through"] == "2020-01-01"
+    assert row["snapshot_as_of"] == "2025-06-01"
+
+
+def test_full_history_has_no_snapshot_date(client, make_investor):
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="10", price="100", on=dt.date(2021, 7, 2))
+    row = client.get(f"/api/investors/{inv.id}/integrity").json()[0]
+    assert row["ledger_through"] == "2021-07-02"
+    assert row["snapshot_as_of"] is None
+
+
+def test_unacknowledge_reverts_to_mismatch(client, make_investor):
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="100", price="100")
+    _ecas_holding(inv, isin=_ISIN, units="90")  # mismatch
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+
+    client.post(f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/acknowledge")
+    # Taking the acknowledgement back exposes the unresolved gap again, and a
+    # later recompute must NOT silently re-suppress it.
+    body = client.post(
+        f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/unacknowledge"
+    ).json()
+    assert body["status"] == "mismatch"
+    assert body["tax_safe"] is False
+    rows = client.post(f"/api/investors/{inv.id}/integrity/recompute").json()
+    assert rows[0]["status"] == "mismatch"
+
+
+def test_unacknowledge_unknown_status_404(client, make_investor):
+    inv = make_investor()
+    sec = Security.objects.create(
+        security_type=SecurityType.EQUITY.value, name="Untracked", isin="INE222222222"
+    )
+    folio = Folio.objects.create(investor=inv, number="X", folio_type="demat")
+    resp = client.post(f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/unacknowledge")
+    assert resp.status_code == 404

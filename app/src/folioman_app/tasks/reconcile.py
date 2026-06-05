@@ -20,13 +20,21 @@ from folioman_app.models import Folio, Investor, Security, SecurityIntegrityStat
 
 
 def reconcile_security_folio(
-    investor: Investor, security: Security, folio: Folio, *, acknowledge: bool = False
+    investor: Investor,
+    security: Security,
+    folio: Folio,
+    *,
+    acknowledge: bool = False,
+    clear_acknowledgement: bool = False,
 ) -> SecurityIntegrityStatus | None:
     """Reconcile one (investor, security, folio) and upsert its status.
 
     ``acknowledge=True`` forces user-acknowledgement of a current mismatch (the
     explicit "I accept this gap" action); a prior acknowledgement is preserved
-    on re-reconcile regardless.
+    on re-reconcile regardless. ``clear_acknowledgement=True`` undoes that — it
+    drops a prior acknowledgement so the row reverts to its real status (a
+    still-unresolved gap reappears as a mismatch). The two are mutually
+    exclusive; ``clear_acknowledgement`` wins if both are set.
     """
     txns = [
         to_core_transaction(t)
@@ -62,16 +70,19 @@ def reconcile_security_folio(
     already_acknowledged = bool(
         existing and existing.status == IntegrityStatus.USER_ACKNOWLEDGED.value
     )
+    user_acknowledged = False if clear_acknowledgement else (already_acknowledged or acknowledge)
 
-    result = reconcile(
-        txns or None, holdings or None, user_acknowledged=already_acknowledged or acknowledge
-    )
+    result = reconcile(txns or None, holdings or None, user_acknowledged=user_acknowledged)
 
     if result is None:
         # Nothing to reconcile in this folio — drop any stale status.
         if existing:
             existing.delete()
         return None
+
+    # Temporal context for the comparison: how far each side's evidence reaches.
+    ledger_through = max((t.date for t in txns), default=None)
+    snapshot_as_of = max((h.as_of_date for h in holdings), default=None)
 
     status, _ = SecurityIntegrityStatus.objects.update_or_create(
         investor=investor,
@@ -83,6 +94,8 @@ def reconcile_security_folio(
             "units_from_transactions": result.units_from_transactions,
             "units_from_holdings": result.units_from_holdings,
             "issues": result.issues,
+            "ledger_through": ledger_through,
+            "snapshot_as_of": snapshot_as_of,
             "last_reconciled_at": timezone.now(),
         },
     )

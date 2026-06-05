@@ -35,16 +35,34 @@ def recompute(request, investor_id: int):
     return _statuses(investor)
 
 
-@router.post(
-    "/{investor_id}/integrity/{security_id}/{folio_id}/acknowledge",
-    response=IntegrityStatusOut,
-)
-def acknowledge(request, investor_id: int, security_id: int, folio_id: int):
-    investor = get_owned_investor(request, investor_id)
+def _owned_status(investor, security_id: int, folio_id: int):
+    """Resolve (security, folio) for an existing integrity row, or 404."""
     security = get_object_or_404(Security, id=security_id)
     folio = get_object_or_404(Folio, id=folio_id, investor=investor)
     if not SecurityIntegrityStatus.objects.filter(
         investor=investor, security=security, folio=folio
     ).exists():
         raise HttpError(404, "no integrity status for this security/folio")
+    return security, folio
+
+
+@router.post(
+    "/{investor_id}/integrity/{security_id}/{folio_id}/acknowledge",
+    response=IntegrityStatusOut,
+)
+def acknowledge(request, investor_id: int, security_id: int, folio_id: int):
+    investor = get_owned_investor(request, investor_id)
+    security, folio = _owned_status(investor, security_id, folio_id)
     return reconcile_security_folio(investor, security, folio, acknowledge=True)
+
+
+@router.post(
+    "/{investor_id}/integrity/{security_id}/{folio_id}/unacknowledge",
+    response=IntegrityStatusOut,
+)
+def unacknowledge(request, investor_id: int, security_id: int, folio_id: int):
+    """Undo an acknowledgement: the row reverts to its real status (an unresolved
+    gap reappears as a mismatch). Lets the user take back a mis-click."""
+    investor = get_owned_investor(request, investor_id)
+    security, folio = _owned_status(investor, security_id, folio_id)
+    return reconcile_security_folio(investor, security, folio, clear_acknowledgement=True)

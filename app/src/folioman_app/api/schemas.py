@@ -338,6 +338,8 @@ class IntegrityStatusOut(Schema):
     units_from_transactions: Decimal | None
     units_from_holdings: Decimal | None
     issues: list[dict]
+    ledger_through: date | None
+    snapshot_as_of: date | None
     last_reconciled_at: datetime | None
 
 

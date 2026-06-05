@@ -42,6 +42,11 @@ class SecurityIntegrityStatus(TimeStampedModel):
     )
     # List of issue dicts (e.g. unit_mismatch with deltas); mirrors core issues.
     issues = models.JSONField(default=list, blank=True)
+    # Temporal context for the comparison, so the UI can say *when* each side was
+    # observed: the latest ledger transaction date and the snapshot's as-of date.
+    # Both null until there is data on that side.
+    ledger_through = models.DateField(null=True, blank=True)
+    snapshot_as_of = models.DateField(null=True, blank=True)
     last_reconciled_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
