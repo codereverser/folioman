@@ -16,18 +16,17 @@ from pydantic import Field
 class InvestorIn(Schema):
     name: str
     email: str = ""
-    is_huf: bool = False
-    relation: str = ""
     family_id: int | None = None
     pan: str | None = None  # plaintext in; encrypted server-side; never returned
+    # is_huf / relation aren't part of v1 and the UI can't set them, so they're not
+    # accepted on input — the model owns their defaults (False / ""). Still read
+    # back on InvestorOut for forward-compat.
 
 
 class InvestorUpdate(Schema):
     # All optional — PATCH applies only the fields present in the request body.
     name: str | None = None
     email: str | None = None
-    is_huf: bool | None = None
-    relation: str | None = None
     family_id: int | None = None  # present+null clears the family (move to solo)
     pan: str | None = None  # present+null/'' clears the PAN
 

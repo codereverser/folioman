@@ -126,9 +126,6 @@ onBeforeUnmount(() => {
           <i :class="ui.sidebarCollapsed ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'" />
         </button>
       </div>
-      <div class="switcher">
-        <ScopeSwitcher />
-      </div>
       <nav class="side-nav">
         <RouterLink
           v-for="link in navLinks"
@@ -148,11 +145,16 @@ onBeforeUnmount(() => {
     <main class="app-main">
       <ProgressBar v-if="ui.loading" mode="indeterminate" class="loading-bar" />
       <header class="context-bar">
-        <span class="privacy-indicator" title="Your data stays on this device.">
-          <i class="pi pi-lock" />
-          <span>Local</span>
-        </span>
-        <ThemeToggle />
+        <div class="ctx-scope">
+          <ScopeSwitcher />
+        </div>
+        <div class="ctx-right">
+          <span class="privacy-indicator" title="Your data stays on this device.">
+            <i class="pi pi-lock" />
+            <span>Local</span>
+          </span>
+          <ThemeToggle />
+        </div>
       </header>
       <div class="route-frame">
         <RouterView v-slot="{ Component }">
@@ -236,15 +238,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  /* Don't let the scope switcher's min-content set a floor on the grid column —
+  /* Keep the nav column from setting a min-content floor on the grid track —
      without this the single-column mobile shell can't shrink to the viewport and
      the page scrolls sideways. */
-  min-width: 0;
-}
-
-/* Flex child holding the Select — must also opt out of the auto min-width floor
-   so the control can shrink and ellipsize its label. */
-.switcher {
   min-width: 0;
 }
 
@@ -335,7 +331,6 @@ nav {
   margin-left: 0;
 }
 .is-collapsed .brand-name,
-.is-collapsed .switcher,
 .is-collapsed .nav-label {
   display: none;
 }
@@ -377,6 +372,20 @@ nav {
   border-bottom: 1px solid var(--fm-border-subtle);
 }
 
+/* The scope switcher lives in the top bar (DESIGN-SYSTEM §5): always visible,
+   independent of the sidebar's collapsed state. Capped so a long name doesn't
+   stretch the control across the bar. */
+.ctx-scope {
+  min-width: 0;
+  flex: 0 1 22rem;
+}
+.ctx-right {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-3);
+  flex-shrink: 0;
+}
+
 .privacy-indicator {
   display: inline-flex;
   align-items: center;
@@ -416,6 +425,11 @@ nav {
   background:
     linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
     var(--fm-surface-raised);
+  /* Shared branded shimmer (keyframe in style.css). */
+  background-size:
+    200% 100%,
+    auto;
+  animation: fm-shimmer 1.4s ease-in-out infinite;
 }
 
 .skeleton-head span:first-child {
@@ -493,11 +507,12 @@ nav {
     display: none;
   }
 
-  .switcher {
-    flex: 1;
+  /* Top bar: let the scope switcher take the room and shrink/ellipsize. */
+  .context-bar {
+    padding: var(--fm-space-3) var(--fm-space-4);
   }
-  .switcher :deep(.scope-switcher) {
-    width: 100%;
+  .ctx-scope {
+    flex: 1 1 auto;
   }
 
   /* Bottom tab bar: fixed primary navigation, comfortable touch targets. */

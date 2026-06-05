@@ -289,7 +289,9 @@ async function saveInvestor(): Promise<void> {
   const name = investorForm.name.trim()
   if (!name || panError.value) return
   const pan = investorForm.pan.trim().toUpperCase()
-  const fields = { name, relation: 'Self', is_huf: false, family_id: investorForm.familyId }
+  // relation / is_huf aren't part of v1 — let the backend apply its defaults
+  // rather than hardcoding a "Self" the UI can't actually edit.
+  const fields = { name, family_id: investorForm.familyId }
   const ok =
     investorForm.mode === 'create'
       ? await investorStore.createInvestor({ ...fields, email: '', ...(pan ? { pan } : {}) })

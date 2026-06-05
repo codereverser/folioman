@@ -895,20 +895,10 @@ export interface components {
             email: string;
             /** Family Id */
             family_id?: number | null;
-            /**
-             * Is Huf
-             * @default false
-             */
-            is_huf: boolean;
             /** Name */
             name: string;
             /** Pan */
             pan?: string | null;
-            /**
-             * Relation
-             * @default
-             */
-            relation: string;
         };
         /** InvestorOut */
         InvestorOut: {
@@ -993,14 +983,10 @@ export interface components {
             email?: string | null;
             /** Family Id */
             family_id?: number | null;
-            /** Is Huf */
-            is_huf?: boolean | null;
             /** Name */
             name?: string | null;
             /** Pan */
             pan?: string | null;
-            /** Relation */
-            relation?: string | null;
         };
         /** NavPoint */
         NavPoint: {

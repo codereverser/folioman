@@ -820,11 +820,6 @@
             ],
             "title": "Family Id"
           },
-          "is_huf": {
-            "default": false,
-            "title": "Is Huf",
-            "type": "boolean"
-          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -839,11 +834,6 @@
               }
             ],
             "title": "Pan"
-          },
-          "relation": {
-            "default": "",
-            "title": "Relation",
-            "type": "string"
           }
         },
         "required": [
@@ -1073,17 +1063,6 @@
             ],
             "title": "Family Id"
           },
-          "is_huf": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Huf"
-          },
           "name": {
             "anyOf": [
               {
@@ -1105,17 +1084,6 @@
               }
             ],
             "title": "Pan"
-          },
-          "relation": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Relation"
           }
         },
         "title": "InvestorUpdate",

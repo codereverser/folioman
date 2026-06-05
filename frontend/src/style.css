@@ -31,3 +31,36 @@ body {
     background var(--fm-dur) var(--fm-ease),
     color var(--fm-dur) var(--fm-ease);
 }
+
+/* Branded loading shimmer — a surface block with a highlight band that sweeps
+   across. Shared by the route-level skeleton (App.vue) and per-view skeletons so
+   every loading state looks the same. */
+@keyframes fm-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.fm-skeleton {
+  display: block;
+  border-radius: var(--fm-radius-sm);
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
+    var(--fm-surface-raised);
+  background-size:
+    200% 100%,
+    auto;
+  animation: fm-shimmer 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fm-skeleton {
+    animation: none;
+  }
+}

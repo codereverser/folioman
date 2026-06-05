@@ -96,7 +96,15 @@ function back(): void {
       :excluded="excluded"
       :investor-id="investorId"
     />
-    <p v-else-if="loading" class="loading-note">Computing capital gains…</p>
+    <div v-else-if="loading" class="cg-skeleton" aria-label="Computing capital gains" aria-busy="true">
+      <div class="cg-skel-cards">
+        <span class="fm-skeleton skel-card" />
+        <span class="fm-skeleton skel-card" />
+        <span class="fm-skeleton skel-card" />
+      </div>
+      <span class="fm-skeleton skel-head" />
+      <span v-for="n in 5" :key="n" class="fm-skeleton skel-row" />
+    </div>
 
     <Message v-if="gains?.disclaimer" severity="warn" :closable="false" class="disclaimer">
       {{ gains.disclaimer }}
@@ -193,8 +201,33 @@ function back(): void {
 .disclaimer {
   font-size: 0.8125rem;
 }
-.loading-note {
-  color: var(--fm-text-muted);
+/* Loading shimmer that sketches the realised-gains summary + table. */
+.cg-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-3);
+}
+.cg-skel-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--fm-space-3);
+  margin-bottom: var(--fm-space-2);
+}
+.skel-card {
+  height: 4.5rem;
+}
+.skel-head {
+  height: 2.25rem;
+  width: 100%;
+}
+.skel-row {
+  height: 2.5rem;
+  width: 100%;
+}
+@media (max-width: 600px) {
+  .cg-skel-cards {
+    grid-template-columns: 1fr;
+  }
 }
 
 .download {
