@@ -36,7 +36,11 @@ function resolveColor(raw: string | undefined, i: number): string {
 }
 
 const option = computed<EChartsOption>(() => ({
-  color: props.data.map((d, i) => resolveColor(d.color, i)),
+  // Colour is set per slice via itemStyle (below), not as a top-level `color`
+  // palette: vue-echarts builds its `replaceMerge` list from the option's
+  // top-level keys when the option object is replaced, and `color` isn't a valid
+  // component type — it throws "color is not valid component main type" and the
+  // chart freezes on the next update (e.g. the allocation grouping toggle).
   tooltip: {
     trigger: 'item',
     backgroundColor: tokens.value.surface,
@@ -67,7 +71,11 @@ const option = computed<EChartsOption>(() => ({
         label: { show: true, fontSize: 14, fontWeight: 'bold', color: tokens.value.text },
         scaleSize: 6,
       },
-      data: props.data.map((d) => ({ name: d.name, value: d.value })),
+      data: props.data.map((d, i) => ({
+        name: d.name,
+        value: d.value,
+        itemStyle: { color: resolveColor(d.color, i) },
+      })),
     },
   ],
 }))
