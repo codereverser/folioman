@@ -23,6 +23,7 @@ export function useCapitalGains(investorId: Ref<number>) {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const built = ref(false)
+  const builtAt = ref<Date | null>(null) // when the figures were last computed (freshness)
   const integrity = useIntegrityStore()
 
   async function build(): Promise<void> {
@@ -46,6 +47,7 @@ export function useCapitalGains(investorId: Ref<number>) {
       // The 112A worksheet powers the CSV download only; treat it as best-effort.
       report.value = worksheet.error ? null : (worksheet.data ?? null)
       built.value = true
+      builtAt.value = new Date()
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'unknown error'
       gains.value = null
@@ -72,6 +74,7 @@ export function useCapitalGains(investorId: Ref<number>) {
     loading,
     error,
     built,
+    builtAt,
     worksheetRowCount,
     excluded,
     build,

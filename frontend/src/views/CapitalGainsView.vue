@@ -32,6 +32,7 @@ const {
   loading,
   error,
   built,
+  builtAt,
   worksheetRowCount,
   excluded,
   build,
@@ -95,6 +96,7 @@ function back(): void {
       :gains="gains"
       :excluded="excluded"
       :investor-id="investorId"
+      :built-at="builtAt"
     />
     <div v-else-if="loading" class="cg-skeleton" aria-label="Computing capital gains" aria-busy="true">
       <div class="cg-skel-cards">

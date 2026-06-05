@@ -641,6 +641,11 @@ export interface components {
             cost: string;
             /** Gain */
             gain: string;
+            /**
+             * Grandfathering Unavailable
+             * @default false
+             */
+            grandfathering_unavailable: boolean;
             /** Isin */
             isin: string;
             /** Name */

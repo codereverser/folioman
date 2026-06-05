@@ -2,16 +2,21 @@
 import { computed } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import Column from 'primevue/column'
+import ColumnGroup from 'primevue/columngroup'
 import DataTable from 'primevue/datatable'
+import Message from 'primevue/message'
+import Row from 'primevue/row'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import type { CapitalGains } from '@/composables/useCapitalGains'
+import { integrityMeta, remediation } from '@/integrity/status'
 import type { IntegrityRow } from '@/stores/integrity'
-import { formatInr, formatUnits } from '@/utils/format'
+import { formatDate, formatInr, formatUnits } from '@/utils/format'
 
 const props = defineProps<{
   gains: CapitalGains | null
   excluded: IntegrityRow[]
   investorId: number
+  builtAt?: Date | null
 }>()
 
 const router = useRouter()
@@ -19,21 +24,56 @@ const rows = computed(() => props.gains?.rows ?? [])
 const stcg = computed(() => Number(props.gains?.stcg_total ?? 0))
 const ltcg = computed(() => Number(props.gains?.ltcg_total ?? 0))
 
+// Column tie-out totals (gain total should equal STCG + LTCG).
+const totalSale = computed(() => rows.value.reduce((s, r) => s + Number(r.sale_value), 0))
+const totalCost = computed(() => rows.value.reduce((s, r) => s + Number(r.cost), 0))
+const totalGain = computed(() => rows.value.reduce((s, r) => s + Number(r.gain), 0))
+
+// Disposals whose pre-2018 grandfathering FMV is missing — gain may be overstated.
+const grandfatheringGaps = computed(() => rows.value.filter((r) => r.grandfathering_unavailable))
+
 const integrityTo = computed(() => ({ name: 'integrity', params: { investorId: props.investorId } }))
+
+const computedAt = computed(() =>
+  props.builtAt
+    ? props.builtAt.toLocaleString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null,
+)
 
 function openScheme(securityId: number | null): void {
   if (securityId == null) return
   void router.push({ name: 'scheme-detail', params: { investorId: props.investorId, securityId } })
 }
 
-const EXCLUDED_REASON: Record<string, string> = {
-  snapshot_only: 'Snapshot only — no transaction history, so gains can’t be computed.',
-  mismatch: 'Units don’t reconcile — resolve before relying on any gain figure.',
-  user_acknowledged: 'Acknowledged gap — deliberately left out.',
-  unknown: 'Not yet reconciled.',
+// Approximate holding period for a sanity-check on the term classification.
+function holdingPeriod(acquired: string, sold: string): string {
+  const a = new Date(acquired)
+  const b = new Date(sold)
+  let months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth())
+  if (b.getDate() < a.getDate()) months -= 1
+  if (months < 1) {
+    const days = Math.max(0, Math.round((b.getTime() - a.getTime()) / 86_400_000))
+    return `${days}d`
+  }
+  const years = Math.floor(months / 12)
+  const rem = months % 12
+  if (years === 0) return `${rem}m`
+  return rem === 0 ? `${years}y` : `${years}y ${rem}m`
 }
-function reason(status: string): string {
-  return EXCLUDED_REASON[status] ?? 'Left out.'
+
+// "Left out" rows reuse the shared integrity vocabulary so the wording matches
+// the Data integrity screen exactly (incl. demat-inherent vs fixable snapshot).
+function excludedReason(row: IntegrityRow): string {
+  return integrityMeta(row.status).tooltip
+}
+function excludedFix(row: IntegrityRow): string | null {
+  return remediation(row.status, { folioType: row.folioType })
 }
 </script>
 
@@ -50,6 +90,13 @@ function reason(status: string): string {
       </div>
     </section>
 
+    <Message v-if="grandfatheringGaps.length" severity="warn" :closable="false" class="gf-note">
+      {{ grandfatheringGaps.length }} long-term
+      {{ grandfatheringGaps.length === 1 ? 'disposal is' : 'disposals are' }} missing the
+      31 Jan 2018 fair market value used for grandfathering, so their cost is understated and the
+      gain (and any tax) may be <strong>overstated</strong>. Verify these before relying on the figure.
+    </Message>
+
     <section class="included">
       <h2>Realised gains <span class="count">{{ rows.length }}</span></h2>
       <DataTable
@@ -57,7 +104,7 @@ function reason(status: string): string {
         :value="rows"
         class="gains-table"
         size="small"
-        :pt="{ table: { style: 'min-width: 44rem' } }"
+        :pt="{ table: { style: 'min-width: 52rem' } }"
       >
         <Column header="Holding">
           <template #body="{ data }">
@@ -72,6 +119,14 @@ function reason(status: string): string {
             <span class="term" :class="data.term">{{ data.term === 'long' ? 'LTCG' : 'STCG' }}</span>
           </template>
         </Column>
+        <Column header="Held">
+          <template #body="{ data }">
+            <div class="period">
+              <span class="held">{{ holdingPeriod(data.acquired_on, data.sold_on) }}</span>
+              <small>{{ formatDate(data.acquired_on) }} → {{ formatDate(data.sold_on) }}</small>
+            </div>
+          </template>
+        </Column>
         <Column header="Units" class="num">
           <template #body="{ data }">{{ formatUnits(data.units) }}</template>
         </Column>
@@ -83,13 +138,32 @@ function reason(status: string): string {
         </Column>
         <Column header="Gain" class="num">
           <template #body="{ data }">
-            <span :class="{ neg: Number(data.gain) < 0 }">{{ formatInr(data.gain) }}</span>
+            <span class="gain-cell">
+              <i
+                v-if="data.grandfathering_unavailable"
+                class="pi pi-exclamation-triangle gf-flag"
+                title="Pre-2018 grandfathering FMV missing — gain may be overstated"
+              />
+              <span :class="{ neg: Number(data.gain) < 0 }">{{ formatInr(data.gain) }}</span>
+            </span>
           </template>
         </Column>
+
+        <ColumnGroup type="footer">
+          <Row>
+            <Column footer="Total" :colspan="4" footer-class="foot-label" />
+            <Column :footer="formatInr(totalSale)" class="num" />
+            <Column :footer="formatInr(totalCost)" class="num" />
+            <Column :footer="formatInr(totalGain)" class="num" />
+          </Row>
+        </ColumnGroup>
       </DataTable>
       <p v-else class="empty">
         No realised gains in this year. Redeem a fully-reconciled holding (or pick another
         year) and they’ll appear here.
+      </p>
+      <p v-if="computedAt && rows.length" class="freshness">
+        Computed {{ computedAt }} from tax-ready folios.
       </p>
     </section>
 
@@ -104,7 +178,10 @@ function reason(status: string): string {
             <span class="ex-name">{{ row.name }}</span>
             <IntegrityBadge :status="row.status" size="sm" />
           </div>
-          <p class="ex-reason">{{ reason(row.status) }}</p>
+          <p class="ex-reason">
+            {{ excludedReason(row) }}
+            <span v-if="excludedFix(row)" class="ex-fix">{{ excludedFix(row) }}</span>
+          </p>
         </li>
       </ul>
     </section>
@@ -147,6 +224,10 @@ function reason(status: string): string {
   color: var(--fm-critical);
 }
 
+.gf-note {
+  font-size: 0.8125rem;
+}
+
 h2 {
   margin: 0 0 var(--fm-space-3);
   font-size: 1.05rem;
@@ -170,6 +251,41 @@ h2 {
 :deep(.num) {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+:deep(.foot-label) {
+  text-align: right;
+  color: var(--fm-text-muted);
+  font-weight: 600;
+}
+:deep(tfoot td) {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.period {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+.period .held {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8125rem;
+}
+.period small {
+  color: var(--fm-text-subtle);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.gain-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: flex-end;
+}
+.gf-flag {
+  color: var(--fm-warn);
+  font-size: 0.75rem;
 }
 
 .term {
@@ -214,6 +330,11 @@ h2 {
   text-align: center;
   color: var(--fm-text-muted);
 }
+.freshness {
+  margin: var(--fm-space-2) 0 0;
+  font-size: 0.75rem;
+  color: var(--fm-text-subtle);
+}
 
 .ex-head-row {
   display: flex;
@@ -256,5 +377,10 @@ h2 {
   margin: 0.3rem 0 0;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
+}
+.ex-fix {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--fm-text-subtle);
 }
 </style>
