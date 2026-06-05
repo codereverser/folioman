@@ -6,6 +6,7 @@ import DataTable from 'primevue/datatable'
 import IntegrityHealthCard from '@/components/IntegrityHealthCard.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
+import DashboardFunds from '@/views/dashboard/DashboardFunds.vue'
 import { useDashboard, type RangeKey } from '@/composables/useDashboard'
 import { useCountUp } from '@/composables/useCountUp'
 import { useRosterStore } from '@/stores/roster'
@@ -96,6 +97,15 @@ const allocationData = computed(() =>
     : summary.value.allocationByCategory,
 )
 
+// Asset-class tab from the route (deep-linkable): no segment = All, `/mf` = MF.
+const activeTab = computed<'all' | 'mf'>(() => (route.params.assetTab === 'mf' ? 'mf' : 'all'))
+function tabTo(asset?: 'mf') {
+  return {
+    name: 'dashboard',
+    params: { investorId: investorId.value, ...(asset ? { assetTab: asset } : {}) },
+  }
+}
+
 function openScheme(securityId: number): void {
   void router.push({ name: 'scheme-detail', params: { investorId: investorId.value, securityId } })
 }
@@ -122,7 +132,6 @@ function openScheme(securityId: number): void {
             <div class="ret-head">
               <span class="eyebrow">All-time return</span>
               <SelectButton
-                v-if="loadCharts"
                 class="basis-toggle"
                 :model-value="returnBasis"
                 :options="basisOptions"
@@ -157,7 +166,22 @@ function openScheme(securityId: number): void {
       </header>
 
       <IntegrityHealthCard class="span-4" :rollup="rollup" :review-to="integrityTo" />
+    </div>
 
+    <nav class="asset-tabs" aria-label="Asset class">
+      <RouterLink class="asset-tab" :class="{ active: activeTab === 'all' }" :to="tabTo()"
+        >All</RouterLink
+      >
+      <RouterLink class="asset-tab" :class="{ active: activeTab === 'mf' }" :to="tabTo('mf')"
+        >Mutual funds</RouterLink
+      >
+      <span v-tooltip.bottom="'Comes with multi-asset import'" class="asset-tab disabled">Stocks</span>
+      <span v-tooltip.bottom="'Comes with multi-asset import'" class="asset-tab disabled"
+        >US stocks</span
+      >
+    </nav>
+
+    <div v-if="activeTab === 'all'" class="bento">
       <article ref="chartRegion" class="span-4 card chart-card">
         <div class="chart-head">
           <h2>Allocation</h2>
@@ -245,6 +269,13 @@ function openScheme(securityId: number): void {
         <div v-else class="table-placeholder" aria-hidden="true" />
       </article>
     </div>
+
+    <DashboardFunds
+      v-else-if="activeTab === 'mf'"
+      :by-category="summary.allocationByCategory"
+      :by-amc="summary.allocationByAmc"
+      :total="summary.netWorth"
+    />
   </section>
 </template>
 
@@ -342,6 +373,37 @@ function openScheme(securityId: number): void {
   background:
     linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
     var(--fm-surface-raised);
+}
+
+/* ---- asset-class tab strip ---- */
+.asset-tabs {
+  display: flex;
+  gap: var(--fm-space-1, 0.25rem);
+  border-bottom: 1px solid var(--fm-border-subtle);
+  margin: var(--fm-space-5) 0 var(--fm-space-4);
+  overflow-x: auto;
+}
+.asset-tab {
+  padding: 0.6rem 0.95rem;
+  text-decoration: none;
+  white-space: nowrap;
+  color: var(--fm-text-muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--fm-dur-fast) var(--fm-ease);
+}
+.asset-tab:hover:not(.disabled) {
+  color: var(--fm-text);
+}
+.asset-tab.active {
+  color: var(--p-primary-color);
+  border-bottom-color: var(--p-primary-color);
+}
+.asset-tab.disabled {
+  color: var(--fm-text-subtle);
+  cursor: help;
 }
 
 /* ---- hero band ---- */

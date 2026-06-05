@@ -46,7 +46,11 @@ const routes: RouteRecordRaw[] = [
     redirect: (to) => ({ name: 'dashboard', params: { investorId: to.params.investorId } }),
   },
   {
-    path: '/investors/:investorId/dashboard',
+    // Optional asset-class tab in the path so each is deep-linkable: no segment =
+    // All (cross-asset), `/mf` = the mutual-fund breakdown. The `(mf)` constraint
+    // keeps the `dashboard` route name working for plain `{investorId}` links and
+    // rejects unknown asset segments. Future asset classes widen the pattern.
+    path: '/investors/:investorId/dashboard/:assetTab(mf)?',
     name: 'dashboard',
     component: DashboardView,
   },
