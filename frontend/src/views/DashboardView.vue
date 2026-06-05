@@ -84,18 +84,19 @@ const shownReturnPercent = computed<number | null>(() =>
   returnBasis.value === 'absolute' ? summary.value.totalReturnPercent : summary.value.xirr,
 )
 
-// Allocation breakdown grouping. Pre-multi-asset the asset-class view is a single
-// "Mutual funds" slice, so the donut groups by equity/debt or fund house instead.
-type AllocationGroup = 'category' | 'amc'
+// Main-dashboard allocation: the *asset-allocation* question (asset class →
+// equity/debt). Fund-house (AMC) concentration is a fund-level lens and lives on
+// the Mutual funds tab, reachable via the "View fund breakdown" link. Defaults to
+// Equity/Debt because the asset-class view is a single "Mutual funds" slice until
+// multi-asset import lands.
+type AllocationGroup = 'asset' | 'category'
 const allocationGroups: { label: string; value: AllocationGroup }[] = [
+  { label: 'Asset class', value: 'asset' },
   { label: 'Equity/Debt', value: 'category' },
-  { label: 'AMC', value: 'amc' },
 ]
 const allocationGroup = ref<AllocationGroup>('category')
 const allocationData = computed(() =>
-  allocationGroup.value === 'amc'
-    ? summary.value.allocationByAmc
-    : summary.value.allocationByCategory,
+  allocationGroup.value === 'asset' ? summary.value.allocation : summary.value.allocationByCategory,
 )
 
 // Asset-class tab from the route (deep-linkable): no segment = All, `/mf` = MF.
