@@ -20,7 +20,7 @@ from django.utils import timezone
 from folioman_app.models import ImportJob
 from folioman_app.models.jobs import ImportJobStatus
 
-# processor(job, content, password, *, confirm) -> result summary dict
+# processor(job, content, password, *, confirm, parsed) -> result summary dict
 ImportProcessor = Callable[..., dict]
 _PROCESSORS: dict[str, ImportProcessor] = {}
 
@@ -30,12 +30,19 @@ def register_processor(kind: str, processor: ImportProcessor) -> None:
 
 
 def run_import_job(
-    job: ImportJob, *, content: bytes, password: str = "", confirm: bool = False
+    job: ImportJob,
+    *,
+    content: bytes,
+    password: str = "",
+    confirm: bool = False,
+    parsed: object | None = None,
 ) -> ImportJob:
     """Run an import synchronously, recording the outcome on ``job``.
 
     ``confirm`` opts into a destructive import (an eCAS that removes securities);
     without it such an import is previewed but not applied (NEEDS_CONFIRMATION).
+    ``parsed`` hands the processor an already-parsed statement so it needn't
+    re-parse the PDF (the upload path parses once to resolve the investor).
     """
     job.source_ref = hashlib.sha256(content).hexdigest()
     job.started_at = timezone.now()
@@ -44,7 +51,7 @@ def run_import_job(
         if processor is None:
             msg = f"{job.kind} importer not implemented yet"
             raise NotImplementedError(msg)
-        job.result = processor(job, content, password, confirm=confirm) or {}
+        job.result = processor(job, content, password, confirm=confirm, parsed=parsed) or {}
         if job.result.get("requires_confirmation"):
             # Previewed a destructive import; persisted nothing. Await confirm.
             job.status = ImportJobStatus.NEEDS_CONFIRMATION

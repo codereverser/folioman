@@ -189,6 +189,28 @@
       "CasPreviewOut": {
         "description": "Owner identity parsed from an uploaded CAS, before anything is persisted.\n\nLets the UI confirm who the statement belongs to (and whether it matches an\nexisting investor) before the import creates or attaches. Only a *masked* PAN\nis returned \u2014 the full PAN is never sent back to the client.",
         "properties": {
+          "from_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Date"
+          },
+          "full_history": {
+            "default": false,
+            "title": "Full History",
+            "type": "boolean"
+          },
+          "holding_count": {
+            "default": 0,
+            "title": "Holding Count",
+            "type": "integer"
+          },
           "investor_email": {
             "title": "Investor Email",
             "type": "string"
@@ -226,6 +248,33 @@
           "pan_masked": {
             "title": "Pan Masked",
             "type": "string"
+          },
+          "scheme_count": {
+            "default": 0,
+            "title": "Scheme Count",
+            "type": "integer"
+          },
+          "snapshot_scheme_count": {
+            "default": 0,
+            "title": "Snapshot Scheme Count",
+            "type": "integer"
+          },
+          "to_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Date"
+          },
+          "transaction_count": {
+            "default": 0,
+            "title": "Transaction Count",
+            "type": "integer"
           }
         },
         "required": [
@@ -2495,7 +2544,7 @@
     },
     "/api/imports/cas/preview": {
       "post": {
-        "description": "Parse a CAS and report whose it is \u2014 without persisting anything.\n\nReturns the owner's name + masked PAN and, when the PAN already matches an\ninvestor, that investor's id/name so the UI can offer 'attach' vs 'create'.",
+        "description": "Parse a CAS and report whose it is + what's inside \u2014 persisting nothing.\n\nReturns the owner's name + masked PAN (and an existing-investor match for\n'attach' vs 'create'), plus content stats (period, counts, full-history vs\nsnapshot) so the UI can flag a Summary/partial statement before import.",
         "operationId": "folioman_app_api_imports_preview_cas",
         "parameters": [],
         "requestBody": {

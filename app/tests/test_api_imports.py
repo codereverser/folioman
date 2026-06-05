@@ -99,6 +99,55 @@ def test_csv_upload_is_disabled(client, make_investor):
     assert client.get(f"/api/investors/{inv.id}/imports").json() == []
 
 
+def test_preview_reports_content_stats_and_flags_snapshot(client, patch_cas, make_parsed_cas):
+    """The preview surfaces period + counts and whether the CAS is full-history, so
+    a Summary/partial statement is caught before import."""
+    import datetime as dt
+
+    from folioman_core.models import SecurityType
+    from folioman_core.models.cas import MfCasLineItem, MfCasSchemeBlock, MfCasStatement
+    from folioman_core.models.investor import Folio as CoreFolio
+    from folioman_core.models.security import Security as CoreSecurity
+    from folioman_core.models.transaction import TransactionType
+
+    full = MfCasSchemeBlock(
+        folio=CoreFolio(folio_type="mf", number="1/1", amc_code="X"),
+        security=CoreSecurity(type=SecurityType.MF, name="Fund A", amfi_code="100"),
+        opening_units="0",  # since inception
+        closing_units="100",
+        transactions=[
+            MfCasLineItem(
+                date=dt.date(2024, 1, 1),
+                transaction_type=TransactionType.BUY,
+                units="100",
+                nav="10",
+                amount="1000",
+            )
+        ],
+    )
+    snapshot = MfCasSchemeBlock(  # no transactions → Summary / net-worth only
+        folio=CoreFolio(folio_type="mf", number="2/2", amc_code="Y"),
+        security=CoreSecurity(type=SecurityType.MF, name="Fund B", amfi_code="200"),
+        closing_units="50",
+    )
+    mf = MfCasStatement(
+        statement_from=dt.date(2024, 1, 1),
+        statement_to=dt.date(2024, 12, 31),
+        schemes=[full, snapshot],
+    )
+    patch_cas(make_parsed_cas(mf=mf, pan="ABCDE1234F"))
+
+    upload = SimpleUploadedFile("cams.pdf", b"%PDF fake")
+    body = client.post("/api/imports/cas/preview", {"file": upload, "password": "s"}).json()
+
+    assert body["scheme_count"] == 2
+    assert body["transaction_count"] == 1
+    assert body["snapshot_scheme_count"] == 1  # the transaction-less scheme
+    assert body["full_history"] is False  # one scheme is snapshot-only
+    assert body["from_date"] == "2024-01-01"
+    assert body["to_date"] == "2024-12-31"
+
+
 def test_preview_reports_new_investor_and_masks_pan(client, patch_cas, make_parsed_cas):
     patch_cas(make_parsed_cas(mf=MfCasStatement(schemes=[]), name="Asha Rao", pan="ABCDE1234F"))
     upload = SimpleUploadedFile("cams.pdf", b"%PDF fake")

@@ -174,10 +174,11 @@ export interface paths {
         put?: never;
         /**
          * Preview Cas
-         * @description Parse a CAS and report whose it is — without persisting anything.
+         * @description Parse a CAS and report whose it is + what's inside — persisting nothing.
          *
-         *     Returns the owner's name + masked PAN and, when the PAN already matches an
-         *     investor, that investor's id/name so the UI can offer 'attach' vs 'create'.
+         *     Returns the owner's name + masked PAN (and an existing-investor match for
+         *     'attach' vs 'create'), plus content stats (period, counts, full-history vs
+         *     snapshot) so the UI can flag a Summary/partial statement before import.
          */
         post: operations["folioman_app_api_imports_preview_cas"];
         delete?: never;
@@ -665,6 +666,18 @@ export interface components {
          *     is returned — the full PAN is never sent back to the client.
          */
         CasPreviewOut: {
+            /** From Date */
+            from_date?: string | null;
+            /**
+             * Full History
+             * @default false
+             */
+            full_history: boolean;
+            /**
+             * Holding Count
+             * @default 0
+             */
+            holding_count: number;
             /** Investor Email */
             investor_email: string;
             /** Investor Name */
@@ -677,6 +690,23 @@ export interface components {
             match_investor_name?: string | null;
             /** Pan Masked */
             pan_masked: string;
+            /**
+             * Scheme Count
+             * @default 0
+             */
+            scheme_count: number;
+            /**
+             * Snapshot Scheme Count
+             * @default 0
+             */
+            snapshot_scheme_count: number;
+            /** To Date */
+            to_date?: string | null;
+            /**
+             * Transaction Count
+             * @default 0
+             */
+            transaction_count: number;
         };
         /** FamilyAggregateOut */
         FamilyAggregateOut: {

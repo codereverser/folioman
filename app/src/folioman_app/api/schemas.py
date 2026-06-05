@@ -240,6 +240,18 @@ class CasPreviewOut(Schema):
     pan_masked: str
     match_investor_id: int | None = None  # set when the PAN matches an existing investor
     match_investor_name: str | None = None
+    # Content preview (so a Summary/partial CAS is caught before importing):
+    from_date: date | None = None  # statement period (MF CAS)
+    to_date: date | None = None  # statement period / eCAS statement date
+    scheme_count: int = 0  # MF schemes, or eCAS demat accounts
+    transaction_count: int = 0  # MF transaction rows (0 for eCAS)
+    holding_count: int = 0  # eCAS holdings (0 for MF CAS)
+    # True only for a Detailed + since-inception MF CAS with no snapshot-only
+    # schemes — i.e. it can build a full cost-basis ledger. eCAS is always False.
+    full_history: bool = False
+    # MF schemes that'd land as net-worth-only (no transactions, or a non-zero
+    # opening with no earlier history) — the "re-download a complete CAS" signal.
+    snapshot_scheme_count: int = 0
 
 
 class ImportJobOut(Schema):

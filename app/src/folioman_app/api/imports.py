@@ -56,12 +56,47 @@ def _parse_cas(content: bytes, password: str):
         raise HttpError(422, str(exc)) from exc
 
 
+def _preview_stats(parsed) -> dict:
+    """Content stats for the preview, so the UI can show what's inside and flag a
+    Summary/partial CAS (net-worth only) before importing."""
+    if parsed.is_ecas:
+        ecas = parsed.ecas
+        return {
+            "from_date": None,
+            "to_date": ecas.statement_date,
+            "scheme_count": len(ecas.accounts),
+            "transaction_count": 0,
+            "holding_count": sum(len(a.holdings) for a in ecas.accounts),
+            "full_history": False,  # a depository snapshot, never a cost-basis ledger
+            "snapshot_scheme_count": 0,
+        }
+    mf = parsed.mf
+    transactions = sum(len(s.transactions) for s in mf.schemes)
+    # A scheme lands as net-worth-only if it has no transactions (a Summary CAS) or
+    # carries a non-zero opening with no earlier history (a partial-period CAS).
+    snapshot = sum(
+        1
+        for s in mf.schemes
+        if not s.transactions or not (s.opening_units is None or s.opening_units == 0)
+    )
+    return {
+        "from_date": mf.statement_from,
+        "to_date": mf.statement_to,
+        "scheme_count": len(mf.schemes),
+        "transaction_count": transactions,
+        "holding_count": 0,
+        "full_history": transactions > 0 and snapshot == 0,
+        "snapshot_scheme_count": snapshot,
+    }
+
+
 @cas_router.post("/cas/preview", response=CasPreviewOut)
 def preview_cas(request, file: UploadedFile = File(...), password: str = Form("")):
-    """Parse a CAS and report whose it is — without persisting anything.
+    """Parse a CAS and report whose it is + what's inside — persisting nothing.
 
-    Returns the owner's name + masked PAN and, when the PAN already matches an
-    investor, that investor's id/name so the UI can offer 'attach' vs 'create'.
+    Returns the owner's name + masked PAN (and an existing-investor match for
+    'attach' vs 'create'), plus content stats (period, counts, full-history vs
+    snapshot) so the UI can flag a Summary/partial statement before import.
     """
     parsed = _parse_cas(file.read(), password)
     identity = parsed.investor
@@ -75,6 +110,7 @@ def preview_cas(request, file: UploadedFile = File(...), password: str = Form(""
         pan_masked=mask_pan(identity.pan),
         match_investor_id=match.id if match else None,
         match_investor_name=match.name if match else None,
+        **_preview_stats(parsed),
     )
 
 
@@ -93,13 +129,14 @@ def import_cas(
     statement is rejected (422); nothing is created.
     """
     content = file.read()
-    # Parse once to resolve the investor; the job processor re-parses to persist.
+    # Parse once to resolve the investor, then hand that parse to the job processor
+    # so the PDF isn't parsed again to persist.
     parsed = _parse_cas(content, password)
     if not parsed.investor.pan:
         raise HttpError(422, _NO_PAN_MSG)
     investor, _created = resolve_or_create_investor(request.auth, parsed.investor)
     job = ImportJob.objects.create(investor=investor, kind=ImportKind.CAS, filename=file.name or "")
-    run_import_job(job, content=content, password=password, confirm=confirm)
+    run_import_job(job, content=content, password=password, confirm=confirm, parsed=parsed)
     return Status(201, job)
 
 

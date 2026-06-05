@@ -5,6 +5,7 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import { importCas, previewCas, type CasPreviewOut, type ImportJobOut } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
+import { formatDate } from '@/utils/format'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -78,6 +79,14 @@ const succeeded = computed(
 const kindLabel = computed(() =>
   preview.value?.kind === 'ecas' ? 'Demat eCAS (NSDL/CDSL)' : 'Mutual-fund CAS (CAMS/KFin)',
 )
+const isEcas = computed(() => preview.value?.kind === 'ecas')
+const period = computed(() => {
+  const p = preview.value
+  if (!p) return '—'
+  if (p.from_date && p.to_date) return `${formatDate(p.from_date)} – ${formatDate(p.to_date)}`
+  if (p.to_date) return `as of ${formatDate(p.to_date)}`
+  return '—'
+})
 
 function clearFrom(file_: File | null): void {
   file.value = file_
@@ -245,7 +254,31 @@ function goToDashboard(): void {
           <dd>{{ preview?.match_investor_name || preview?.investor_name || '—' }}</dd>
         </div>
         <div><dt>PAN</dt><dd class="mono">{{ preview?.pan_masked }}</dd></div>
+        <div><dt>{{ isEcas ? 'Statement date' : 'Period' }}</dt><dd>{{ period }}</dd></div>
+        <template v-if="isEcas">
+          <div><dt>Demat accounts</dt><dd class="mono">{{ preview?.scheme_count }}</dd></div>
+          <div><dt>Holdings</dt><dd class="mono">{{ preview?.holding_count }}</dd></div>
+        </template>
+        <template v-else>
+          <div><dt>Schemes</dt><dd class="mono">{{ preview?.scheme_count }}</dd></div>
+          <div><dt>Transactions</dt><dd class="mono">{{ preview?.transaction_count }}</dd></div>
+        </template>
       </dl>
+
+      <!-- Full-history vs snapshot: set expectations before importing -->
+      <Message v-if="isEcas" severity="info" :closable="false">
+        A demat snapshot — saved for net worth. Stocks, bonds and the rest need transaction history
+        before we can compute gains for them.
+      </Message>
+      <Message v-else-if="preview?.full_history" severity="success" :closable="false">
+        Full transaction history — we can build a capital-gains worksheet for these.
+      </Message>
+      <Message v-else severity="warn" :closable="false">
+        {{ preview?.snapshot_scheme_count }} of {{ preview?.scheme_count }} scheme(s) are
+        summary/partial — they'll be saved for net worth only. For complete capital gains,
+        re-download a <strong>Detailed</strong>, <strong>Since-Inception</strong> CAS that
+        <strong>includes zero-balance folios</strong>.
+      </Message>
 
       <Message v-if="errorMessage" severity="error" :closable="false">{{ errorMessage }}</Message>
 

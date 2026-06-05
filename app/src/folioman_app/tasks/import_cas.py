@@ -237,7 +237,9 @@ def persist_mf_statement(investor, statement: MfCasStatement, *, source_ref: str
     return summary
 
 
-def process_cas(job: ImportJob, content: bytes, password: str, *, confirm: bool = False) -> dict:
+def process_cas(
+    job: ImportJob, content: bytes, password: str, *, confirm: bool = False, parsed=None
+) -> dict:
     """Unified CAS import processor: auto-detect and route a single upload.
 
     A CAMS/KFin MF CAS becomes a transaction ledger (additive, never destructive).
@@ -245,8 +247,12 @@ def process_cas(job: ImportJob, content: bytes, password: str, *, confirm: bool 
     that depository's holdings — if that would *remove* securities, it returns
     ``requires_confirmation`` (with ``removals``) and persists nothing unless
     ``confirm`` is set. ``result["detected"]`` records which kind it was.
+
+    ``parsed`` reuses the upload path's parse (it parsed once to resolve the
+    investor); only re-parse when called without it (e.g. a confirm re-run).
     """
-    parsed = read_cas(io.BytesIO(content), password)
+    if parsed is None:
+        parsed = read_cas(io.BytesIO(content), password)
     if parsed.is_ecas:
         summary = persist_ecas_statement(
             job.investor, parsed.ecas, source_ref=job.source_ref, confirm=confirm
