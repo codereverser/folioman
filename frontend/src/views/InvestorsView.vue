@@ -45,12 +45,13 @@ const grouped = ref(false)
 const filterText = ref('')
 
 onMounted(async () => {
+  // One call: the roster aggregate carries the header *and* a lean row per investor
+  // (value read from the persisted InvestorValue), so there's no per-investor
+  // /summary fan-out.
   void metrics.loadRosterAggregate()
   await roster.ensureLoaded()
   grouped.value = hasFamilies.value
   for (const f of roster.families) void metrics.loadFamilyAggregate(f.id)
-  // All rows are visible (no expand-to-reveal), so load every summary up front.
-  for (const inv of roster.investors) void metrics.loadInvestorSummary(inv.id)
 })
 
 // --- rows -------------------------------------------------------------------

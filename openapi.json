@@ -919,6 +919,79 @@
         "title": "InvestorOut",
         "type": "object"
       },
+      "InvestorRowOut": {
+        "description": "One roster-list row \u2014 the lean fields the Investors page shows, computed in\nthe single bulk aggregate pass (no per-investor /summary fan-out).",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "holdings_count": {
+            "title": "Holdings Count",
+            "type": "integer"
+          },
+          "integrity_unit_count": {
+            "title": "Integrity Unit Count",
+            "type": "integer"
+          },
+          "investor_id": {
+            "title": "Investor Id",
+            "type": "integer"
+          },
+          "is_provisional": {
+            "default": false,
+            "title": "Is Provisional",
+            "type": "boolean"
+          },
+          "last_import_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Import At"
+          },
+          "needs_attention_count": {
+            "title": "Needs Attention Count",
+            "type": "integer"
+          },
+          "snapshot_count": {
+            "title": "Snapshot Count",
+            "type": "integer"
+          },
+          "tax_ready_count": {
+            "title": "Tax Ready Count",
+            "type": "integer"
+          },
+          "total_inr": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Inr",
+            "type": "string"
+          },
+          "unpriced_fund_count": {
+            "default": 0,
+            "title": "Unpriced Fund Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "investor_id",
+          "as_of",
+          "total_inr",
+          "holdings_count",
+          "integrity_unit_count",
+          "tax_ready_count",
+          "needs_attention_count",
+          "snapshot_count"
+        ],
+        "title": "InvestorRowOut",
+        "type": "object"
+      },
       "InvestorSummaryOut": {
         "description": "Per-investor headline numbers for the roster row.",
         "properties": {
@@ -1127,7 +1200,7 @@
         "type": "object"
       },
       "RosterAggregateOut": {
-        "description": "Advisor-wide roster header: net worth + counts + integrity roll-up.",
+        "description": "Advisor-wide roster header (net worth + counts + integrity roll-up) plus a\nlean per-investor row for the list \u2014 one request for the whole landing page.",
         "properties": {
           "as_of": {
             "format": "date",
@@ -1149,6 +1222,13 @@
           "needs_attention_count": {
             "title": "Needs Attention Count",
             "type": "integer"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/InvestorRowOut"
+            },
+            "title": "Rows",
+            "type": "array"
           },
           "snapshot_count": {
             "title": "Snapshot Count",

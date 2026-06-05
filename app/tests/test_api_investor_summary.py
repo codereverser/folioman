@@ -233,17 +233,31 @@ def test_summary_unknown_investor_404(client):
     assert client.get("/api/investors/999999/summary").status_code == 404
 
 
-def test_roster_aggregate_sums_value_and_counts(client, make_investor, make_security, make_holding):
-    # Advisor-wide header: value summed across all investors, plus counts. The
-    # literal /aggregate route must win over /{investor_id}.
+def test_roster_aggregate_sums_value_and_returns_rows(
+    client, make_investor, make_security, make_holding
+):
+    # The roster reads the value the scheduler already persisted (InvestorValue) —
+    # not a live re-valuation — and returns one lean row per investor in the same
+    # call. The literal /aggregate route must win over /{investor_id}.
     holder = make_investor()
-    make_investor()  # a second investor, no holdings
+    other = make_investor()  # no computed value yet
     mf = make_security(security_type=SecurityType.MF.value)
     make_holding(investor=holder, security=mf, units=Decimal("100"), as_of_date=dt.date(2025, 6, 1))
-    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("75"))
+    InvestorValue.objects.create(
+        investor=holder, date=dt.date(2025, 6, 1), value_inr=Decimal("7500")
+    )
 
     body = client.get("/api/investors/aggregate", {"as_of": "2025-06-01"}).json()
 
     assert body["investor_count"] == 2
     assert body["family_count"] == 0
-    assert Decimal(str(body["total_inr"])) == Decimal("7500")
+    assert Decimal(str(body["total_inr"])) == Decimal("7500")  # sum of persisted values
+
+    rows = {r["investor_id"]: r for r in body["rows"]}
+    assert len(rows) == 2
+    assert Decimal(str(rows[holder.id]["total_inr"])) == Decimal("7500")
+    assert rows[holder.id]["holdings_count"] == 1  # has a record → not empty
+    # No InvestorValue computed for `other` yet → ₹0 (the UI reads "pending" only
+    # when there are holdings; here there are none).
+    assert Decimal(str(rows[other.id]["total_inr"])) == Decimal("0")
+    assert rows[other.id]["holdings_count"] == 0

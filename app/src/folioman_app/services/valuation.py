@@ -15,6 +15,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.db.models import Max
 from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
 from folioman_core.models import Holding as CoreHolding
 from folioman_core.models import HoldingSource, Quote, SecurityType, TransactionType
@@ -26,13 +27,15 @@ from folioman_app.mappers import to_core_security, to_core_transaction
 from folioman_app.models import (
     Family,
     Folio,
+    Holding,
     Investor,
     InvestorValue,
     NAVHistory,
     SecurityIntegrityStatus,
+    Transaction,
     ValuationStatus,
 )
-from folioman_app.models.jobs import ImportJobStatus
+from folioman_app.models.jobs import ImportJob, ImportJobStatus
 
 _ZERO = Decimal("0")
 
@@ -354,36 +357,145 @@ def build_family_aggregate(family: Family, as_of: date) -> dict:
     }
 
 
-def build_roster_summary(investors: list[Investor], family_count: int, as_of: date) -> dict:
-    """Advisor-wide roster header: total net worth across *all* investors, the
-    investor/family counts, and an integrity roll-up (per (security, folio) units).
-    One aggregate pass so the landing page orients without N+1 per-investor fetches.
-    """
-    valuation, meta_by_security = _value_investors(investors, as_of)
-    extras = _holding_extras(investors, as_of)
-    rollup = _rollup(valuation, meta_by_security, extras)
-    statuses = (
-        list(
-            SecurityIntegrityStatus.objects.filter(investor__in=investors).values_list(
-                "status", "tax_safe"
-            )
-        )
-        if investors
-        else []
+def _integrity_counts_by_investor(investors: list[Investor]) -> dict[int, dict[str, int]]:
+    """Per-(security, folio) integrity tallies for every investor in one query —
+    the roster's "N/M tax-ready" denominators without an N+1."""
+    counts: dict[int, dict[str, int]] = defaultdict(
+        lambda: {"unit": 0, "ready": 0, "attention": 0, "snapshot": 0}
     )
+    if not investors:
+        return counts
+    rows = SecurityIntegrityStatus.objects.filter(investor__in=investors).values_list(
+        "investor_id", "status", "tax_safe"
+    )
+    for investor_id, status, tax_safe in rows:
+        c = counts[investor_id]
+        c["unit"] += 1
+        if tax_safe:
+            c["ready"] += 1
+        if status == IntegrityStatus.MISMATCH.value:
+            c["attention"] += 1
+        if status == IntegrityStatus.SNAPSHOT_ONLY.value:
+            c["snapshot"] += 1
+    return counts
+
+
+def _last_import_by_investor(investors: list[Investor]) -> dict[int, object]:
+    """Most recent committed-import timestamp per investor, in one query."""
+    last: dict[int, object] = {}
+    if not investors:
+        return last
+    jobs = (
+        ImportJob.objects.filter(
+            investor__in=investors,
+            status__in=[ImportJobStatus.SUCCESS, ImportJobStatus.COMPLETED_WITH_WARNINGS],
+        )
+        .order_by("investor_id", "-created_at")
+        .values_list("investor_id", "finished_at", "created_at")
+    )
+    for investor_id, finished_at, created_at in jobs:
+        if investor_id not in last:  # first per investor = latest (ordered desc)
+            last[investor_id] = finished_at or created_at
+    return last
+
+
+def _latest_values_by_investor(
+    investors: list[Investor], as_of: date
+) -> dict[int, tuple[Decimal, date, bool]]:
+    """Latest persisted ``InvestorValue`` (value, its date, provisional flag) per
+    investor — the value the scheduler already computed on import and rolls forward
+    daily. The roster reads this instead of re-valuing live (no NAV pricing / XIRR),
+    so it's a couple of indexed reads regardless of portfolio size."""
+    if not investors:
+        return {}
+    latest_date = dict(
+        InvestorValue.objects.filter(investor__in=investors, date__lte=as_of)
+        .values_list("investor_id")
+        .annotate(d=Max("date"))
+        .values_list("investor_id", "d")
+    )
+    if not latest_date:
+        return {}
+    # Re-fetch only the latest rows: the few distinct latest dates narrow it to ~one
+    # row per investor, then match each investor to its own latest date.
+    result: dict[int, tuple[Decimal, date, bool]] = {}
+    for investor_id, d, value_inr, is_provisional in InvestorValue.objects.filter(
+        investor__in=investors, date__in=set(latest_date.values())
+    ).values_list("investor_id", "date", "value_inr", "is_provisional"):
+        if latest_date.get(investor_id) == d:
+            result[investor_id] = (value_inr, d, is_provisional)
+    return result
+
+
+def _holding_counts_by_investor(investors: list[Investor]) -> dict[int, int]:
+    """Distinct securities each investor has any ledger/holding record for — a cheap
+    "is this portfolio non-empty" signal (drives the "Valuation pending" vs ₹0
+    distinction on the roster) without netting positions or pricing."""
+    secs: dict[int, set] = defaultdict(set)
+    if not investors:
+        return {}
+    for model in (Holding, Transaction):
+        for investor_id, security_id in model.objects.filter(investor__in=investors).values_list(
+            "investor_id", "security_id"
+        ):
+            secs[investor_id].add(security_id)
+    return {investor_id: len(ids) for investor_id, ids in secs.items()}
+
+
+def build_roster_summary(investors: list[Investor], family_count: int, as_of: date) -> dict:
+    """Advisor-wide roster: the header roll-up **plus a lean per-investor row** for
+    every investor, computed in one pass. The rows carry only what the roster list
+    shows (value, tax-ready split, unpriced gap, last import) — deliberately *not*
+    XIRR / day-change / allocation breakdowns / holdings, which made the old
+    per-investor `/summary` fan-out (one heavy request each) slow to load.
+    """
+    investors = list(investors)
+    integrity = _integrity_counts_by_investor(investors)
+    last_import = _last_import_by_investor(investors)
+    values = _latest_values_by_investor(investors, as_of)
+    holdings = _holding_counts_by_investor(investors)
+
+    rows: list[dict] = []
+    grand_total = _ZERO
+    totals = {"unit": 0, "ready": 0, "attention": 0, "snapshot": 0}
+    for investor in investors:
+        c = integrity.get(investor.id, {"unit": 0, "ready": 0, "attention": 0, "snapshot": 0})
+        value = values.get(investor.id)
+        if value is not None:
+            total_inr, row_as_of, is_provisional = value
+        else:
+            # No computed value yet (newly imported, pre-recompute): ₹0 + a non-zero
+            # holdings_count makes the UI read "Valuation pending" rather than empty.
+            total_inr, row_as_of, is_provisional = _ZERO, as_of, False
+
+        rows.append(
+            {
+                "investor_id": investor.id,
+                "as_of": row_as_of,
+                "total_inr": total_inr,
+                "is_provisional": is_provisional,
+                "holdings_count": holdings.get(investor.id, 0),
+                "integrity_unit_count": c["unit"],
+                "tax_ready_count": c["ready"],
+                "needs_attention_count": c["attention"],
+                "snapshot_count": c["snapshot"],
+                "last_import_at": last_import.get(investor.id),
+            }
+        )
+        grand_total += total_inr
+        for k in totals:
+            totals[k] += c[k]
+
     return {
         "as_of": as_of,
-        "total_inr": rollup["total_inr"],
+        "total_inr": grand_total,
         "investor_count": len(investors),
         "family_count": family_count,
-        "integrity_unit_count": len(statuses),
-        "tax_ready_count": sum(1 for _status, tax_safe in statuses if tax_safe),
-        "needs_attention_count": sum(
-            1 for status, _ in statuses if status == IntegrityStatus.MISMATCH.value
-        ),
-        "snapshot_count": sum(
-            1 for status, _ in statuses if status == IntegrityStatus.SNAPSHOT_ONLY.value
-        ),
+        "integrity_unit_count": totals["unit"],
+        "tax_ready_count": totals["ready"],
+        "needs_attention_count": totals["attention"],
+        "snapshot_count": totals["snapshot"],
+        "rows": rows,
     }
 
 

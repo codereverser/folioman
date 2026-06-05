@@ -105,8 +105,29 @@ class HoldingValueRow(Schema):
     day_change_pct: float | None = None  # (latest NAV - prior NAV) / prior NAV
 
 
+class InvestorRowOut(Schema):
+    """One roster-list row — the lean fields the Investors page shows, computed in
+    the single bulk aggregate pass (no per-investor /summary fan-out)."""
+
+    investor_id: int
+    as_of: date
+    total_inr: Decimal
+    is_provisional: bool = False
+    holdings_count: int
+    integrity_unit_count: int
+    tax_ready_count: int
+    needs_attention_count: int
+    snapshot_count: int
+    # The "⚠ N unpriced" marker needs a live valuation to know which held MF lack a
+    # NAV; the lean roster doesn't value, so it's omitted here (still shown on the
+    # dashboard). Restore by persisting the count at recompute time.
+    unpriced_fund_count: int = 0
+    last_import_at: datetime | None = None
+
+
 class RosterAggregateOut(Schema):
-    """Advisor-wide roster header: net worth + counts + integrity roll-up."""
+    """Advisor-wide roster header (net worth + counts + integrity roll-up) plus a
+    lean per-investor row for the list — one request for the whole landing page."""
 
     as_of: date
     total_inr: Decimal
@@ -116,6 +137,7 @@ class RosterAggregateOut(Schema):
     tax_ready_count: int
     needs_attention_count: int
     snapshot_count: int
+    rows: list[InvestorRowOut] = Field(default_factory=list)
 
 
 class FamilyAggregateOut(Schema):

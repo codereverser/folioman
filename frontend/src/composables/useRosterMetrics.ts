@@ -63,6 +63,23 @@ export function useRosterMetrics() {
           snapshotCount: data.snapshot_count,
           asOf: data.as_of,
         }
+        // The same call carries a lean row per investor (value read from the
+        // persisted InvestorValue, not re-valued) — populate the per-row summaries
+        // here so the roster doesn't fan out one /summary request per investor.
+        const summaries: Record<number, InvestorSummary> = {}
+        for (const row of data.rows ?? []) {
+          summaries[row.investor_id] = {
+            totalInr: row.total_inr,
+            holdingsCount: row.holdings_count,
+            integrityUnitCount: row.integrity_unit_count,
+            taxReadyCount: row.tax_ready_count,
+            needsAttentionCount: row.needs_attention_count,
+            snapshotCount: row.snapshot_count,
+            unpricedFundCount: row.unpriced_fund_count,
+            lastImportAt: row.last_import_at ?? null,
+          }
+        }
+        investorSummaries.value = summaries
       }
     } finally {
       pending.value = { ...pending.value, roster: false }

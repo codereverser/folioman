@@ -940,6 +940,44 @@ export interface components {
             updated_at: string;
         };
         /**
+         * InvestorRowOut
+         * @description One roster-list row — the lean fields the Investors page shows, computed in
+         *     the single bulk aggregate pass (no per-investor /summary fan-out).
+         */
+        InvestorRowOut: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Holdings Count */
+            holdings_count: number;
+            /** Integrity Unit Count */
+            integrity_unit_count: number;
+            /** Investor Id */
+            investor_id: number;
+            /**
+             * Is Provisional
+             * @default false
+             */
+            is_provisional: boolean;
+            /** Last Import At */
+            last_import_at?: string | null;
+            /** Needs Attention Count */
+            needs_attention_count: number;
+            /** Snapshot Count */
+            snapshot_count: number;
+            /** Tax Ready Count */
+            tax_ready_count: number;
+            /** Total Inr */
+            total_inr: string;
+            /**
+             * Unpriced Fund Count
+             * @default 0
+             */
+            unpriced_fund_count: number;
+        };
+        /**
          * InvestorSummaryOut
          * @description Per-investor headline numbers for the roster row.
          */
@@ -1012,7 +1050,8 @@ export interface components {
         };
         /**
          * RosterAggregateOut
-         * @description Advisor-wide roster header: net worth + counts + integrity roll-up.
+         * @description Advisor-wide roster header (net worth + counts + integrity roll-up) plus a
+         *     lean per-investor row for the list — one request for the whole landing page.
          */
         RosterAggregateOut: {
             /**
@@ -1028,6 +1067,8 @@ export interface components {
             investor_count: number;
             /** Needs Attention Count */
             needs_attention_count: number;
+            /** Rows */
+            rows?: components["schemas"]["InvestorRowOut"][];
             /** Snapshot Count */
             snapshot_count: number;
             /** Tax Ready Count */
