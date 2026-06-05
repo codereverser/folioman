@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, toRef 
 import { useRoute, useRouter } from 'vue-router'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
+import Popover from 'primevue/popover'
 import IntegrityHealthCard from '@/components/IntegrityHealthCard.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
@@ -99,6 +100,20 @@ const allocationData = computed(() =>
 
 // Asset-class tab from the route (deep-linkable): no segment = All, `/mf` = MF.
 const activeTab = computed<'all' | 'mf'>(() => (route.params.assetTab === 'mf' ? 'mf' : 'all'))
+
+// "More" tab → a popover listing planned asset classes + a link to vote on what's
+// next (a GitHub Discussions poll). Keeps the tab strip tidy and frames these as
+// "planned · vote" rather than promising delivery.
+const POLL_URL = 'https://github.com/codereverser/folioman/discussions/52'
+const plannedAssets: { label: string; icon: string }[] = [
+  { label: 'Stocks', icon: 'pi pi-chart-bar' },
+  { label: 'US stocks', icon: 'pi pi-globe' },
+  { label: 'Gold', icon: 'pi pi-star' },
+  { label: 'Crypto', icon: 'pi pi-bitcoin' },
+  { label: 'Fixed deposits', icon: 'pi pi-wallet' },
+  { label: 'Real estate', icon: 'pi pi-home' },
+]
+const moreOp = ref<InstanceType<typeof Popover>>()
 function tabTo(asset?: 'mf') {
   return {
     name: 'dashboard',
@@ -175,11 +190,30 @@ function openScheme(securityId: number): void {
       <RouterLink class="asset-tab" :class="{ active: activeTab === 'mf' }" :to="tabTo('mf')"
         >Mutual funds</RouterLink
       >
-      <span v-tooltip.bottom="'Comes with multi-asset import'" class="asset-tab disabled">Stocks</span>
-      <span v-tooltip.bottom="'Comes with multi-asset import'" class="asset-tab disabled"
-        >US stocks</span
+      <button
+        type="button"
+        class="asset-tab more"
+        aria-haspopup="true"
+        aria-label="More asset classes"
+        @click="(e) => moreOp?.toggle(e)"
       >
+        <i class="pi pi-ellipsis-h" /> More
+      </button>
     </nav>
+
+    <Popover ref="moreOp">
+      <div class="more-pop">
+        <p class="more-head">On the roadmap</p>
+        <ul class="more-list">
+          <li v-for="a in plannedAssets" :key="a.label">
+            <i :class="a.icon" aria-hidden="true" /><span>{{ a.label }}</span>
+          </li>
+        </ul>
+        <a class="more-vote" :href="POLL_URL" target="_blank" rel="noopener noreferrer">
+          <i class="pi pi-thumbs-up" aria-hidden="true" /> Vote for what's next →
+        </a>
+      </div>
+    </Popover>
 
     <div v-if="activeTab === 'all'" class="bento">
       <article ref="chartRegion" class="span-4 card chart-card">
@@ -401,9 +435,76 @@ function openScheme(securityId: number): void {
   color: var(--p-primary-color);
   border-bottom-color: var(--p-primary-color);
 }
-.asset-tab.disabled {
+.asset-tab.more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--fm-text-muted);
+}
+.asset-tab.more:hover {
+  color: var(--fm-text);
+}
+.asset-tab.more .pi-ellipsis-h {
+  font-size: 0.8rem;
+}
+
+/* "More" popover: planned asset classes + a vote CTA. */
+.more-pop {
+  min-width: 13rem;
+  padding: 0.25rem;
+}
+.more-head {
+  margin: 0 0 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fm-text-muted);
+}
+.more-list {
+  list-style: none;
+  margin: 0 0 0.6rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.more-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--fm-radius-sm);
+  color: var(--fm-text);
+  font-size: 0.875rem;
+}
+.more-list li i {
   color: var(--fm-text-subtle);
-  cursor: help;
+  width: 1rem;
+  text-align: center;
+}
+.more-vote {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.6rem;
+  border-top: 1px solid var(--fm-border-subtle);
+  margin-top: 0.2rem;
+  color: var(--p-primary-color);
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+.more-vote:hover {
+  color: var(--fm-accent-hover, var(--p-primary-color));
+  opacity: 0.85;
 }
 
 /* ---- hero band ---- */
