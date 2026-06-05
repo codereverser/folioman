@@ -58,7 +58,12 @@ export interface DashboardSummary {
   allocationByAmc: AllocationSlice[] // by fund house
   valueSeries: ValuePoint[]
   topHoldings: HoldingRow[]
-  funds: FundRow[] // every priced fund, for the MF breakdown's grouped list
+  funds: FundRow[] // priced mutual funds only, for the MF breakdown's grouped list
+  // MF-only allocation for the "Mutual funds" tab (excludes stocks/other assets,
+  // which we don't support yet — they stay in net worth + the All→Asset class view).
+  mfByCategory: AllocationSlice[]
+  mfByAmc: AllocationSlice[]
+  mfTotal: number
 }
 
 const EMPTY: DashboardSummary = {
@@ -77,6 +82,9 @@ const EMPTY: DashboardSummary = {
   valueSeries: [],
   topHoldings: [],
   funds: [],
+  mfByCategory: [],
+  mfByAmc: [],
+  mfTotal: 0,
 }
 
 // Map a backend allocation breakdown into donut slices. With `cap`, keep the
@@ -233,6 +241,20 @@ export function useDashboard(investorId: Ref<number>) {
     const dayChangePercent =
       dayChangeAmount != null && priorValue ? (dayChangeAmount / priorValue) * 100 : null
 
+    // The "Mutual funds" tab is fund-only: stocks/demat holdings (unsupported yet)
+    // shouldn't sit under a fund category. Derive its list + donut from MF holdings.
+    const mfHoldings = (s.holdings ?? []).filter((h) => h.security_type === 'mf')
+    const mfMix = (key: (h: (typeof mfHoldings)[number]) => string | null | undefined) => {
+      const m = new Map<string, number>()
+      for (const h of mfHoldings) {
+        if (h.value_inr == null) continue
+        m.set(key(h) || 'Other', (m.get(key(h) || 'Other') ?? 0) + num(h.value_inr))
+      }
+      return [...m.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([label, value]) => ({ label, value_inr: String(value) }))
+    }
+
     return {
       netWorth,
       invested,
@@ -262,7 +284,7 @@ export function useDashboard(investorId: Ref<number>) {
         returnPct: h.return_pct == null ? null : h.return_pct * 100,
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
-      funds: (s.holdings ?? []).map<FundRow>((h) => ({
+      funds: mfHoldings.map<FundRow>((h) => ({
         securityId: h.security_id,
         name: h.name,
         assetClass: assetLabel(h.security_type),
@@ -275,6 +297,9 @@ export function useDashboard(investorId: Ref<number>) {
         gain: h.invested_inr == null ? null : num(h.value_inr) - num(h.invested_inr),
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
+      mfByCategory: toSlices(mfMix((h) => h.category), categoryColor),
+      mfByAmc: toSlices(mfMix((h) => h.amc), (_label, i) => rampColor(i), 6, shortAmc),
+      mfTotal: mfHoldings.reduce((sum, h) => sum + num(h.value_inr), 0),
     }
   })
 

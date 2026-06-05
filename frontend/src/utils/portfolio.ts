@@ -2,7 +2,7 @@
 // security-type display labels/colours (so donut slices stay consistent across
 // both pages), and the value-series range windows.
 
-export type RangeKey = '6M' | '1Y' | 'All'
+export type RangeKey = '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'All'
 
 /** Coerce a Decimal-as-string (or number) from the API to a finite number. */
 export function num(v: string | number | null | undefined): number {
@@ -73,7 +73,10 @@ function monthsAgo(n: number): string {
 // back far enough to cover any real portfolio; leading all-zero points (before
 // the first holding) are trimmed by the consumer.
 export const RANGES: Record<RangeKey, { from: () => string; granularity: 'daily' | 'weekly' | 'monthly' }> = {
+  '3M': { from: () => monthsAgo(3), granularity: 'weekly' },
   '6M': { from: () => monthsAgo(6), granularity: 'monthly' },
   '1Y': { from: () => monthsAgo(12), granularity: 'monthly' },
+  '3Y': { from: () => monthsAgo(36), granularity: 'monthly' },
+  '5Y': { from: () => monthsAgo(60), granularity: 'monthly' },
   All: { from: () => '2000-01-01', granularity: 'monthly' },
 }

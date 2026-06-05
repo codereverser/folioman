@@ -63,8 +63,11 @@ const integrityTo = computed(() => ({
 }))
 
 const ranges: { label: string; value: RangeKey }[] = [
+  { label: '3M', value: '3M' },
   { label: '6M', value: '6M' },
   { label: '1Y', value: '1Y' },
+  { label: '3Y', value: '3Y' },
+  { label: '5Y', value: '5Y' },
   { label: 'All', value: 'All' },
 ]
 
@@ -367,10 +370,10 @@ function openScheme(securityId: number): void {
 
     <DashboardFunds
       v-else-if="activeTab === 'mf'"
-      :by-category="summary.allocationByCategory"
-      :by-amc="summary.allocationByAmc"
+      :by-category="summary.mfByCategory"
+      :by-amc="summary.mfByAmc"
       :funds="summary.funds"
-      :total="summary.netWorth"
+      :total="summary.mfTotal"
       @select="openScheme"
     />
   </section>
@@ -434,11 +437,22 @@ function openScheme(securityId: number): void {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--fm-space-3);
+  gap: var(--fm-space-2) var(--fm-space-3);
+  /* In a narrow card the toggle can't sit beside the title — let it wrap to its
+     own line rather than squeezing the segments until labels truncate. */
+  flex-wrap: wrap;
   margin-bottom: var(--fm-space-2);
 }
 .chart-head h2 {
   margin: 0;
+}
+/* Keep the toggle intact: never wrap a segment's label, never shrink it. */
+.chart-head :deep(.p-selectbutton) {
+  flex-shrink: 0;
+}
+.chart-head :deep(.p-togglebutton),
+.chart-head :deep(.p-togglebutton-label) {
+  white-space: nowrap;
 }
 .head-caption {
   display: block;
