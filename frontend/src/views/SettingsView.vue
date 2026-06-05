@@ -7,10 +7,13 @@ import { useUiStore, type ThemePreference } from '@/stores/ui'
 import { useRosterStore } from '@/stores/roster'
 import { downloadText } from '@/utils/csv'
 
-// Real support / sponsor links go here once they exist; each row renders only
-// when its value is set, so nothing fake ever ships.
-const SUPPORT_EMAIL: string = ''
-const SPONSOR_URL: string = ''
+// Support routes through the public repo (issues / discussions); each row below
+// renders only when configured.
+const SUPPORT_URL = 'https://github.com/codereverser/folioman'
+const SPONSOR_LINKS: { label: string; url: string }[] = [
+  { label: 'GitHub Sponsors', url: 'https://github.com/sponsors/codereverser' },
+  { label: 'Buy Me a Coffee', url: 'https://buymeacoffee.com/codereverser' },
+]
 
 const ui = useUiStore()
 const roster = useRosterStore()
@@ -177,12 +180,22 @@ async function exportTransactions(): Promise<void> {
       <div class="setting-text">
         <h2><i class="pi pi-info-circle" /> About</h2>
         <p class="kv"><span>Version</span><strong>{{ meta?.version ?? '—' }}</strong></p>
-        <p v-if="SUPPORT_EMAIL" class="kv">
-          <span>Support</span><a :href="`mailto:${SUPPORT_EMAIL}`">{{ SUPPORT_EMAIL }}</a>
+        <p v-if="SUPPORT_URL" class="kv">
+          <span>Help &amp; issues</span>
+          <a :href="SUPPORT_URL" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a>
         </p>
-        <p v-if="SPONSOR_URL" class="kv">
+        <p v-if="SPONSOR_LINKS.length" class="kv">
           <span>Support development</span>
-          <a :href="SPONSOR_URL" target="_blank" rel="noopener noreferrer">Sponsor Folioman ↗</a>
+          <span class="links">
+            <a
+              v-for="link in SPONSOR_LINKS"
+              :key="link.url"
+              :href="link.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              >{{ link.label }} ↗</a
+            >
+          </span>
         </p>
       </div>
     </article>
@@ -291,6 +304,15 @@ async function exportTransactions(): Promise<void> {
 .kv a {
   color: var(--p-primary-color);
   text-decoration: none;
+}
+.kv a:hover {
+  text-decoration: underline;
+}
+.links {
+  display: flex;
+  gap: var(--fm-space-4);
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 @media (max-width: 600px) {
