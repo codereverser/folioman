@@ -143,20 +143,15 @@ function goToDashboard(): void {
   <section class="import-page">
     <header class="page-head">
       <h1>Import CAS</h1>
-      <p class="muted">
-        Upload a CAMS/KFintech <strong>Mutual Fund CAS</strong> or an NSDL/CDSL <strong>eCAS</strong> — the
-        type is auto-detected. An MF CAS builds a full transaction ledger; an eCAS refreshes
-        demat holdings as a net-worth snapshot only.
-      </p>
-      <p class="scope-note">
-        Right now that's the whole story — mutual funds from a CAS and demat holdings from an
-        eCAS. Stocks, bonds and the rest still show up from your eCAS as snapshots; typing in
-        your own transactions is coming later.
+      <p class="muted lede">
+        Drop a CAMS/KFintech <strong>Mutual Fund CAS</strong> or an NSDL/CDSL <strong>eCAS</strong> —
+        we auto-detect the type and find the right investor by PAN.
       </p>
     </header>
 
     <!-- Step 1: pick the file (nothing is persisted until you confirm who it's for) -->
-    <div v-if="!preview && !job" class="card">
+    <template v-if="!preview && !job">
+    <div class="card">
       <label
         class="dropzone"
         :class="{ dragging }"
@@ -187,6 +182,52 @@ function goToDashboard(): void {
         <Button label="Continue" icon="pi pi-arrow-right" icon-pos="right" :disabled="!file || busy" :loading="busy" @click="review" />
       </div>
     </div>
+
+    <details class="help">
+      <summary>
+        <i class="pi pi-question-circle" aria-hidden="true" />
+        How to get your CAS &amp; what we import
+      </summary>
+      <div class="help-body">
+        <h2>Mutual funds — consolidated CAS</h2>
+        <p>
+          Get a <strong>Consolidated Account Statement</strong> from either
+          <a
+            href="https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement"
+            target="_blank"
+            rel="noopener noreferrer"
+            >CAMS</a
+          >
+          or
+          <a
+            href="https://mfs.kfintech.com/investor/General/ConsolidatedAccountStatement"
+            target="_blank"
+            rel="noopener noreferrer"
+            >KFintech</a
+          >
+          — both cover all your fund houses, so either is fine.
+        </p>
+        <p>For complete, tax-accurate history, request it as:</p>
+        <ul class="help-list">
+          <li><strong>Since inception</strong> — the full history.</li>
+          <li><strong>Detailed</strong> — every transaction, not a summary.</li>
+          <li>
+            <strong>Including zero-balance folios</strong> — funds you've fully sold still belong in
+            a year's gains; leaving them out can make that year's capital gains wrong.
+          </li>
+        </ul>
+
+        <h2>Demat holdings — eCAS</h2>
+        <p>
+          Your monthly eCAS from
+          <a href="https://nsdl.co.in" target="_blank" rel="noopener noreferrer">NSDL</a> or
+          <a href="https://www.cdslindia.com" target="_blank" rel="noopener noreferrer">CDSL</a>
+          lists demat holdings. We use it for net worth (a snapshot) — stocks, bonds and the rest
+          show up this way until per-transaction import lands.
+        </p>
+      </div>
+    </details>
+    </template>
 
     <!-- Step 2: confirm who the statement belongs to before importing -->
     <div v-else-if="!job" class="card">
@@ -303,7 +344,8 @@ function goToDashboard(): void {
 
 <style scoped>
 .import-page {
-  max-width: 40rem;
+  max-width: 44rem;
+  padding: var(--fm-space-6);
 }
 .page-head {
   margin-bottom: var(--fm-space-5);
@@ -316,14 +358,77 @@ function goToDashboard(): void {
 .muted {
   color: var(--fm-text-muted);
 }
-.scope-note {
-  margin: var(--fm-space-3) 0 0;
-  padding: var(--fm-space-3) var(--fm-space-4);
+.lede {
+  margin: 0;
+  max-width: 38rem;
+}
+
+/* Collapsed by default so the top stays light; expands to the how-to + scope. */
+.help {
+  margin-top: var(--fm-space-3);
+}
+.help > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  list-style: none;
   font-size: 0.8125rem;
-  color: var(--fm-text-muted);
+  font-weight: 600;
+  color: var(--p-primary-color);
+  width: fit-content;
+}
+.help > summary::-webkit-details-marker {
+  display: none;
+}
+.help > summary:hover {
+  opacity: 0.85;
+}
+.help-body {
+  margin-top: var(--fm-space-3);
+  padding: var(--fm-space-4);
   background: var(--fm-surface-raised);
   border: 1px solid var(--fm-border-subtle);
   border-radius: var(--fm-radius-md);
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.help-body h2 {
+  margin: var(--fm-space-3) 0 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fm-text);
+}
+.help-body h2:first-child {
+  margin-top: 0;
+}
+.help-body p {
+  margin: var(--fm-space-2) 0 0;
+  line-height: 1.5;
+}
+.help-body h2 + p {
+  margin-top: 0;
+}
+.help-list {
+  margin: var(--fm-space-2) 0 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  line-height: 1.5;
+}
+.help-list strong {
+  color: var(--fm-text);
+}
+.help-body .hint {
+  font-style: italic;
+}
+.help-body a {
+  color: var(--p-primary-color);
+  text-decoration: none;
+}
+.help-body a:hover {
+  text-decoration: underline;
 }
 .mono {
   font-family: var(--fm-font-mono);
