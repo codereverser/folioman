@@ -589,6 +589,59 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
     }
 
 
+def _folio_balances(investor: Investor, security, txns, price, as_of: date) -> list[dict]:
+    """Final balance per folio holding this security: net ledger units (snapshot
+    fallback for folios with no transactions) and value at the latest NAV.
+
+    Only folios with a non-zero balance are returned — a fully-exited folio isn't
+    a current holding. Ordered largest-first.
+    """
+    units_by_folio: dict[int, Decimal] = {}
+    meta: dict[int, Folio] = {}
+
+    grouped: dict[int, list] = {}
+    for t in txns:
+        if t.folio_id is None:
+            continue
+        grouped.setdefault(t.folio_id, []).append(t)
+        meta[t.folio_id] = t.folio
+    for fid, group in grouped.items():
+        units_by_folio[fid] = net_units_from_transactions([to_core_transaction(t) for t in group])
+
+    # Snapshot-only folios (a holding row but no ledger here): take the units on
+    # that folio's most recent snapshot as of the report date.
+    latest_date: dict[int, date] = {}
+    for h in investor.holdings.filter(security=security, as_of_date__lte=as_of).select_related(
+        "folio"
+    ):
+        if h.folio_id is None or h.folio_id in grouped:
+            continue  # no folio to attribute to, or a ledger folio drives its balance
+        meta.setdefault(h.folio_id, h.folio)
+        prev = latest_date.get(h.folio_id)
+        if prev is None or h.as_of_date > prev:
+            latest_date[h.folio_id] = h.as_of_date
+            units_by_folio[h.folio_id] = h.units
+        elif h.as_of_date == prev:
+            units_by_folio[h.folio_id] += h.units
+
+    rows: list[dict] = []
+    for fid, folio in meta.items():
+        units = units_by_folio.get(fid, _ZERO)
+        if units == _ZERO:
+            continue
+        rows.append(
+            {
+                "number": folio.number,
+                "broker": folio.broker,
+                "folio_type": folio.folio_type,
+                "units": units,
+                "value_inr": (units * price) if price is not None else None,
+            }
+        )
+    rows.sort(key=lambda r: r["units"], reverse=True)
+    return rows
+
+
 def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
     """Per-(investor, security) detail for the scheme page.
 
@@ -630,6 +683,7 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
         .select_related("folio")
         .order_by("date", "id")
     )
+    folios = _folio_balances(investor, security, txns, price, as_of)
     # Why the XIRR reads the way it does — so the UI can flag a provisional number
     # instead of presenting it as gospel.
     xirr = ex.get("xirr")
@@ -670,6 +724,7 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
                 "security", "folio"
             )
         ),
+        "folios": folios,
         "nav_history": list(
             NAVHistory.objects.filter(security=security, date__lte=as_of).order_by("date")
         ),

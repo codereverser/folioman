@@ -464,6 +464,49 @@
         "title": "FamilyOut",
         "type": "object"
       },
+      "FolioBalanceOut": {
+        "description": "Final balance for one folio holding a security (units + value at latest NAV).",
+        "properties": {
+          "broker": {
+            "title": "Broker",
+            "type": "string"
+          },
+          "folio_type": {
+            "title": "Folio Type",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "units": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units",
+            "type": "string"
+          },
+          "value_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Inr"
+          }
+        },
+        "required": [
+          "number",
+          "broker",
+          "folio_type",
+          "units",
+          "value_inr"
+        ],
+        "title": "FolioBalanceOut",
+        "type": "object"
+      },
       "FolioOut": {
         "properties": {
           "amc_code": {
@@ -1445,6 +1488,13 @@
             ],
             "title": "Day Change Pct"
           },
+          "folios": {
+            "items": {
+              "$ref": "#/components/schemas/FolioBalanceOut"
+            },
+            "title": "Folios",
+            "type": "array"
+          },
           "has_transactions": {
             "title": "Has Transactions",
             "type": "boolean"
@@ -1568,6 +1618,7 @@
           "latest_nav_date",
           "has_transactions",
           "integrity",
+          "folios",
           "nav_history",
           "transactions"
         ],

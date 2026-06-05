@@ -95,6 +95,62 @@ function txnLabel(t: string): string {
   return TXN_TYPE_LABELS[t] ?? t
 }
 
+// Net-units sign rule mirrors folioman_core.fifo.net_units_from_transactions:
+// inflows add, sells / transfers-out subtract, splits & dividends are unit-neutral.
+const INFLOW = new Set(['buy', 'bonus', 'transfer_in'])
+const OUTFLOW = new Set(['sell', 'transfer_out'])
+function signedUnits(type: string, units: string | number | null | undefined): number {
+  const u = num(units)
+  if (INFLOW.has(type)) return u
+  if (OUTFLOW.has(type)) return -u
+  return 0
+}
+
+const TXN_FLOW: Record<string, 'in' | 'out' | 'neutral'> = {
+  buy: 'in',
+  bonus: 'in',
+  transfer_in: 'in',
+  sell: 'out',
+  transfer_out: 'out',
+  dividend: 'neutral',
+  split: 'neutral',
+}
+function txnFlow(t: string): 'in' | 'out' | 'neutral' {
+  return TXN_FLOW[t] ?? 'neutral'
+}
+
+// Running unit balance after each row, over the full chronological ledger (the
+// backend orders by date,id asc); keyed by id so it survives table paging.
+const balanceById = computed<Record<number, number>>(() => {
+  const map: Record<number, number> = {}
+  let bal = 0
+  for (const t of detail.value?.transactions ?? []) {
+    bal += signedUnits(t.transaction_type, t.units)
+    map[t.id] = bal
+  }
+  return map
+})
+
+// Buy/sell markers overlaid on the NAV line — what you paid vs the price then.
+const navMarkers = computed(() =>
+  (detail.value?.transactions ?? [])
+    .filter(
+      (t) =>
+        (t.transaction_type === 'buy' || t.transaction_type === 'sell') && t.nav_or_price != null,
+    )
+    .map((t) => ({
+      date: t.date,
+      value: num(t.nav_or_price),
+      type: t.transaction_type as 'buy' | 'sell',
+    })),
+)
+
+// Held but unpriced: the value can't be computed because the latest NAV is stale.
+const navStale = computed(() => {
+  const d = detail.value
+  return !!d && num(d.units) > 0 && d.value_inr == null
+})
+
 function back(): void {
   void router.push({ name: 'dashboard', params: { investorId: investorId.value } })
 }
@@ -150,9 +206,41 @@ function back(): void {
         </MetricCard>
       </div>
 
+      <article v-if="(detail.folios?.length ?? 0) > 1" class="card">
+        <h2>Across folios</h2>
+        <table class="folio-table">
+          <thead>
+            <tr>
+              <th>Folio</th>
+              <th class="num">Units</th>
+              <th class="num">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="f in detail.folios" :key="`${f.number}-${f.broker}`">
+              <td>
+                <span class="folio-num">{{ f.number }}</span>
+                <small v-if="f.broker"> · {{ f.broker }}</small>
+              </td>
+              <td class="num">{{ formatUnits(f.units) }}</td>
+              <td class="num">{{ f.value_inr == null ? '—' : formatInr(f.value_inr) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </article>
+
+      <Message v-if="navStale" severity="warn" :closable="false">
+        Current value is unavailable — the latest NAV on file is stale<span v-if="detail.latest_nav_date">
+        (last priced {{ formatDate(detail.latest_nav_date) }})</span>. Invested cost still shows.
+      </Message>
+
       <article ref="chartRegion" class="card">
         <h2>NAV history</h2>
-        <NavHistoryChart v-if="loadCharts && navSeries.length" :data="navSeries" />
+        <NavHistoryChart
+          v-if="loadCharts && navSeries.length"
+          :data="navSeries"
+          :markers="navMarkers"
+        />
         <div v-else-if="navSeries.length" class="chart-placeholder nav-placeholder" aria-hidden="true" />
         <p v-else class="muted empty">No NAV history on file for this scheme yet.</p>
       </article>
@@ -173,12 +261,16 @@ function back(): void {
           paginator
           :rows="15"
           :rows-per-page-options="[15, 30, 100]"
+          sort-field="date"
+          :sort-order="-1"
         >
-          <Column field="date" header="Date">
+          <Column field="date" header="Date" sortable>
             <template #body="{ data }">{{ formatDate(data.date) }}</template>
           </Column>
           <Column field="transaction_type" header="Type">
-            <template #body="{ data }">{{ txnLabel(data.transaction_type) }}</template>
+            <template #body="{ data }">
+              <span class="flow" :class="txnFlow(data.transaction_type)">{{ txnLabel(data.transaction_type) }}</span>
+            </template>
           </Column>
           <Column header="Units" class="num">
             <template #body="{ data }">{{ formatUnits(data.units) }}</template>
@@ -188,6 +280,9 @@ function back(): void {
           </Column>
           <Column header="Amount" class="num">
             <template #body="{ data }">{{ data.amount == null ? '—' : formatInr(data.amount) }}</template>
+          </Column>
+          <Column header="Balance" class="num">
+            <template #body="{ data }">{{ formatUnits(balanceById[data.id]) }}</template>
           </Column>
         </DataTable>
         <div v-else class="table-placeholder" aria-hidden="true" />
@@ -312,6 +407,51 @@ function back(): void {
 :deep(.ledger .num) {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.folio-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+.folio-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--fm-text-muted);
+  padding: 0 0.5rem 0.5rem;
+  border-bottom: 1px solid var(--fm-border-subtle);
+}
+.folio-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--fm-border-subtle);
+}
+.folio-table tr:last-child td {
+  border-bottom: none;
+}
+.folio-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.folio-table .folio-num {
+  font-variant-numeric: tabular-nums;
+}
+.folio-table small {
+  color: var(--fm-text-subtle);
+}
+
+/* Direction of each transaction at a glance: inflow vs outflow. */
+.flow {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.flow.in {
+  color: var(--fm-gain);
+}
+.flow.out {
+  color: var(--fm-loss);
+}
+.flow.neutral {
+  color: var(--fm-text-muted);
 }
 /* On a narrow screen the ledger scrolls within its card rather than widening
    the page. */

@@ -813,6 +813,22 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * FolioBalanceOut
+         * @description Final balance for one folio holding a security (units + value at latest NAV).
+         */
+        FolioBalanceOut: {
+            /** Broker */
+            broker: string;
+            /** Folio Type */
+            folio_type: string;
+            /** Number */
+            number: string;
+            /** Units */
+            units: string;
+            /** Value Inr */
+            value_inr: string | null;
+        };
         /** FolioOut */
         FolioOut: {
             /** Amc Code */
@@ -1194,6 +1210,8 @@ export interface components {
             day_change_inr: string | null;
             /** Day Change Pct */
             day_change_pct: number | null;
+            /** Folios */
+            folios: components["schemas"]["FolioBalanceOut"][];
             /** Has Transactions */
             has_transactions: boolean;
             /** Integrity */

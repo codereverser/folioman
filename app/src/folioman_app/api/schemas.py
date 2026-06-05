@@ -361,6 +361,16 @@ class NavPoint(Schema):
     nav: Decimal
 
 
+class FolioBalanceOut(Schema):
+    """Final balance for one folio holding a security (units + value at latest NAV)."""
+
+    number: str
+    broker: str
+    folio_type: str
+    units: Decimal
+    value_inr: Decimal | None
+
+
 class SchemeDetailOut(Schema):
     """Everything one scheme page needs in a single call: identity, current
     metrics, integrity per folio, the NAV history series, and the ledger."""
@@ -382,6 +392,9 @@ class SchemeDetailOut(Schema):
     latest_nav_date: date | None
     has_transactions: bool  # false → snapshot-only (show the no-history banner)
     integrity: list[IntegrityStatusOut]  # one per folio the security is held in
+    # Final balance per folio holding this security (units + value). Empty/one-row
+    # for a single-folio holding; the UI shows it only when held across >1 folio.
+    folios: list[FolioBalanceOut]
     nav_history: list[NavPoint]
     transactions: list[TransactionOut]
 

@@ -87,6 +87,72 @@ def test_scheme_detail_flags_short_holding_xirr(
     assert body["xirr_status"] == "less_than_1_year"
 
 
+def test_scheme_detail_reports_per_folio_balances(
+    client, make_investor, make_security, make_folio, make_transaction
+):
+    # The same fund held across two folios: the breakdown reports each folio's
+    # net units and value at the latest NAV, largest first.
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value, name="Acme Flexi Cap")
+    f1 = make_folio(investor=inv, number="F-AAA")
+    f2 = make_folio(investor=inv, number="F-BBB")
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=f1,
+        date=dt.date(2024, 6, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=f2,
+        date=dt.date(2024, 6, 1),
+        units=Decimal("30"),
+        nav_or_price=Decimal("10"),
+    )
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("20"))
+
+    body = client.get(f"/api/investors/{inv.id}/holdings/{mf.id}", {"as_of": "2025-06-01"}).json()
+    folios = body["folios"]
+    assert [f["number"] for f in folios] == ["F-AAA", "F-BBB"]  # largest first
+    assert Decimal(str(folios[0]["units"])) == Decimal("100")
+    assert Decimal(str(folios[0]["value_inr"])) == Decimal("2000")  # 100 * 20
+    assert Decimal(str(folios[1]["units"])) == Decimal("30")
+
+
+def test_scheme_detail_excludes_fully_exited_folio(
+    client, make_investor, make_security, make_folio, make_transaction
+):
+    # A folio bought and fully sold has a zero balance — it isn't a current holding,
+    # so it's left out of the breakdown.
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    folio = make_folio(investor=inv, number="F-GONE")
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        date=dt.date(2024, 1, 1),
+        units=Decimal("50"),
+        nav_or_price=Decimal("10"),
+    )
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        transaction_type="sell",
+        date=dt.date(2024, 9, 1),
+        units=Decimal("50"),
+        nav_or_price=Decimal("15"),
+    )
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("20"))
+
+    body = client.get(f"/api/investors/{inv.id}/holdings/{mf.id}", {"as_of": "2025-06-01"}).json()
+    assert body["folios"] == []
+
+
 def test_scheme_detail_unheld_security_404s(client, make_investor, make_security):
     inv = make_investor()
     other = make_security(security_type=SecurityType.MF.value)
