@@ -467,6 +467,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/unacknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unacknowledge
+         * @description Undo an acknowledgement: the row reverts to its real status (an unresolved
+         *     gap reappears as a mismatch). Lets the user take back a mis-click.
+         */
+        post: operations["folioman_app_api_integrity_unacknowledge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/summary": {
         parameters: {
             query?: never;
@@ -885,7 +906,11 @@ export interface components {
             }[];
             /** Last Reconciled At */
             last_reconciled_at: string | null;
+            /** Ledger Through */
+            ledger_through: string | null;
             security: components["schemas"]["SecurityRef"];
+            /** Snapshot As Of */
+            snapshot_as_of: string | null;
             /** Status */
             status: string;
             /** Tax Safe */
@@ -2137,6 +2162,30 @@ export interface operations {
         };
     };
     folioman_app_api_integrity_acknowledge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrityStatusOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_unacknowledge: {
         parameters: {
             query?: never;
             header?: never;

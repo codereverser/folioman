@@ -2,12 +2,11 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
-import Column from 'primevue/column'
-import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
 import SelectButton from 'primevue/selectbutton'
 import { useConfirm } from 'primevue/useconfirm'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
+import { remediation } from '@/integrity/status'
 import { useIntegrityStore, type IntegrityRow } from '@/stores/integrity'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
@@ -31,6 +30,7 @@ watch(investorId, (id) => void integrity.load(id), { immediate: true })
 
 const rows = computed<IntegrityRow[]>(() => integrity.rowsFor(investorId.value))
 const rollup = computed(() => integrity.rollupFor(investorId.value))
+const showShimmer = computed(() => integrity.loading && rows.value.length === 0)
 
 type FilterKey = 'all' | 'ready' | 'snapshot' | 'mismatch'
 const filter = ref<FilterKey>('all')
@@ -54,7 +54,29 @@ const visibleRows = computed<IntegrityRow[]>(() => {
   }
 })
 
-// Delta = snapshot-observed units − ledger units. Non-zero is what a mismatch is.
+interface SecurityGroup {
+  securityId: number
+  name: string
+  isin: string
+  rows: IntegrityRow[]
+}
+
+// One section per security, folios listed under it — a scheme can sit in several
+// folios/demat accounts and reconcile differently in each.
+const groups = computed<SecurityGroup[]>(() => {
+  const byId = new Map<number, SecurityGroup>()
+  for (const r of visibleRows.value) {
+    let g = byId.get(r.securityId)
+    if (!g) {
+      g = { securityId: r.securityId, name: r.name, isin: r.isin, rows: [] }
+      byId.set(r.securityId, g)
+    }
+    g.rows.push(r)
+  }
+  return [...byId.values()]
+})
+
+// Delta = snapshot-observed units − ledger units. Non-zero is the mismatch.
 function delta(row: IntegrityRow): number | null {
   if (row.unitsFromHoldings == null || row.unitsFromTransactions == null) return null
   return toNumber(row.unitsFromHoldings) - toNumber(row.unitsFromTransactions)
@@ -62,8 +84,34 @@ function delta(row: IntegrityRow): number | null {
 function deltaLabel(row: IntegrityRow): string {
   const d = delta(row)
   if (d == null) return '—'
-  const sign = d > 0 ? '+' : d < 0 ? '−' : ''
-  return `${sign}${formatUnits(Math.abs(d))}`
+  return formatUnits(Math.abs(d))
+}
+
+// The always-visible explanation under each row: what the evidence says, in words.
+function reasonFor(row: IntegrityRow): string {
+  const ledger = formatUnits(row.unitsFromTransactions)
+  const snap = formatUnits(row.unitsFromHoldings)
+  const through = row.ledgerThrough ? ` through ${formatDate(row.ledgerThrough)}` : ''
+  const asOf = row.snapshotAsOf ? formatDate(row.snapshotAsOf) : 'the latest statement'
+  switch (row.status) {
+    case 'full_history':
+      return `Full transaction history${through} — every unit is accounted for.`
+    case 'reconciled':
+      return `Ledger of ${ledger} units matches the ${asOf} holdings.`
+    case 'snapshot_only':
+      return row.snapshotAsOf
+        ? `Net worth tracked from the ${asOf} snapshot — no transaction history on file.`
+        : 'Net worth tracked from a statement snapshot — no transaction history on file.'
+    case 'mismatch':
+      return `Ledger has ${ledger} units${through}; the ${asOf} holdings show ${snap} — off by ${deltaLabel(row)}.`
+    case 'user_acknowledged':
+      return `Known gap of ${deltaLabel(row)} units — kept out of the capital-gains worksheet.`
+    default:
+      return 'Integrity not yet computed for this holding.'
+  }
+}
+function fixFor(row: IntegrityRow): string | null {
+  return remediation(row.status, { folioType: row.folioType })
 }
 
 const lastChecked = computed(() => {
@@ -87,7 +135,7 @@ function askAcknowledge(row: IntegrityRow): void {
   confirm.require({
     header: 'Acknowledge this gap?',
     message:
-      `Mark the mismatch on "${row.name}" as known. ` +
+      `Mark the reconcile gap on "${row.name}" as known. ` +
       'It stays out of the capital-gains worksheet — this dismisses the flag, it does not fix the units. ' +
       'To actually resolve it, re-import a since-inception CAS.',
     icon: 'pi pi-minus-circle',
@@ -97,11 +145,20 @@ function askAcknowledge(row: IntegrityRow): void {
       const ok = await integrity.acknowledge(investorId.value, row.securityId, row.folioId)
       ui.notify(
         ok
-          ? { severity: 'success', summary: 'Mismatch acknowledged' }
+          ? { severity: 'success', summary: 'Gap acknowledged' }
           : { severity: 'error', summary: 'Could not acknowledge', detail: integrity.error ?? '' },
       )
     },
   })
+}
+
+async function unacknowledge(row: IntegrityRow): Promise<void> {
+  const ok = await integrity.unacknowledge(investorId.value, row.securityId, row.folioId)
+  ui.notify(
+    ok
+      ? { severity: 'success', summary: 'Acknowledgement removed', detail: 'The gap is tracked again.' }
+      : { severity: 'error', summary: 'Could not undo', detail: integrity.error ?? '' },
+  )
 }
 
 function openScheme(securityId: number): void {
@@ -151,59 +208,67 @@ function back(): void {
       />
     </div>
 
-    <DataTable
-      :value="visibleRows"
-      data-key="folioId"
-      class="integrity-table"
-      size="small"
-      :pt="{ table: { style: 'min-width: 40rem' } }"
-    >
-      <template #empty>
-        <p class="empty">No holdings to reconcile yet.</p>
-      </template>
+    <!-- Loading shimmer: a couple of group sketches while the first load runs. -->
+    <div v-if="showShimmer" class="integrity-skeleton" aria-label="Checking integrity" aria-busy="true">
+      <div v-for="n in 3" :key="n" class="skel-group">
+        <span class="fm-skeleton skel-head" />
+        <span class="fm-skeleton skel-row" />
+        <span class="fm-skeleton skel-detail" />
+      </div>
+    </div>
 
-      <Column header="Holding">
-        <template #body="{ data }">
-          <button class="holding-name" type="button" @click="openScheme(data.securityId)">
-            <span>{{ data.name }}</span>
-            <small>{{ [data.folioNumber, data.broker].filter(Boolean).join(' · ') || data.isin }}</small>
+    <p v-else-if="!groups.length" class="empty">
+      <i class="pi pi-inbox" />
+      No holdings to reconcile yet. Import a CAS to get started.
+    </p>
+
+    <div v-else class="groups">
+      <section v-for="g in groups" :key="g.securityId" class="sec-group">
+        <header class="sec-head">
+          <button class="sec-name" type="button" @click="openScheme(g.securityId)">
+            {{ g.name }}
           </button>
-        </template>
-      </Column>
-      <Column header="Status">
-        <template #body="{ data }">
-          <IntegrityBadge :status="data.status" size="sm" />
-        </template>
-      </Column>
-      <Column header="Ledger units" class="num">
-        <template #body="{ data }">
-          {{ data.unitsFromTransactions == null ? '—' : formatUnits(data.unitsFromTransactions) }}
-        </template>
-      </Column>
-      <Column header="Snapshot units" class="num">
-        <template #body="{ data }">
-          {{ data.unitsFromHoldings == null ? '—' : formatUnits(data.unitsFromHoldings) }}
-        </template>
-      </Column>
-      <Column header="Delta" class="num">
-        <template #body="{ data }">
-          <span :class="{ 'delta-off': delta(data) !== null && delta(data) !== 0 }">{{ deltaLabel(data) }}</span>
-        </template>
-      </Column>
-      <Column header="" class="action-col">
-        <template #body="{ data }">
-          <Button
-            v-if="data.status === 'mismatch'"
-            label="Acknowledge"
-            icon="pi pi-minus-circle"
-            size="small"
-            text
-            :loading="integrity.acknowledging"
-            @click="askAcknowledge(data)"
-          />
-        </template>
-      </Column>
-    </DataTable>
+          <small v-if="g.isin">{{ g.isin }}</small>
+        </header>
+
+        <ul class="folio-rows">
+          <li v-for="row in g.rows" :key="row.folioId" class="folio-row" :class="row.status">
+            <div class="row-main">
+              <div class="folio-id">
+                <span class="folio-num">{{ row.folioNumber || '—' }}</span>
+                <small v-if="row.broker">{{ row.broker }}</small>
+              </div>
+              <IntegrityBadge :status="row.status" size="sm" />
+              <div class="row-action">
+                <Button
+                  v-if="row.status === 'mismatch'"
+                  label="Acknowledge"
+                  icon="pi pi-minus-circle"
+                  size="small"
+                  text
+                  :loading="integrity.acknowledging"
+                  @click="askAcknowledge(row)"
+                />
+                <Button
+                  v-else-if="row.status === 'user_acknowledged'"
+                  label="Un-acknowledge"
+                  icon="pi pi-undo"
+                  size="small"
+                  text
+                  severity="secondary"
+                  :loading="integrity.acknowledging"
+                  @click="unacknowledge(row)"
+                />
+              </div>
+            </div>
+            <p class="row-detail">
+              <span class="reason">{{ reasonFor(row) }}</span>
+              <span v-if="fixFor(row)" class="fix">{{ fixFor(row) }}</span>
+            </p>
+          </li>
+        </ul>
+      </section>
+    </div>
   </section>
 </template>
 
@@ -268,50 +333,146 @@ function back(): void {
   display: flex;
 }
 
-/* Let the table scroll within its own box on narrow screens rather than
-   widening the page. */
-.integrity-table {
-  overflow-x: auto;
-}
-
-.holding-name {
+.groups {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.1rem;
+  gap: var(--fm-space-4);
+}
+
+.sec-group {
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-lg);
+  overflow: hidden;
+  background: var(--fm-surface);
+}
+
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: var(--fm-space-3) var(--fm-space-4);
+  background: var(--fm-surface-raised);
+  border-bottom: 1px solid var(--fm-border-subtle);
+}
+.sec-name {
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
-  text-align: left;
+  font-weight: 600;
+  font-size: 0.9375rem;
   color: var(--fm-text);
+  text-align: left;
 }
-.holding-name:hover span {
+.sec-name:hover {
   color: var(--p-primary-color);
   text-decoration: underline;
 }
-.holding-name small {
+.sec-head small {
+  color: var(--fm-text-subtle);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.folio-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.folio-row {
+  padding: var(--fm-space-3) var(--fm-space-4);
+  border-top: 1px solid var(--fm-border-subtle);
+}
+.folio-row:first-child {
+  border-top: none;
+}
+/* A faint left accent keys the row to its severity without shouting. */
+.folio-row.mismatch {
+  box-shadow: inset 3px 0 0 var(--fm-critical);
+}
+.folio-row.snapshot_only {
+  box-shadow: inset 3px 0 0 var(--fm-warn);
+}
+
+.row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-3);
+}
+.folio-id {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+.folio-num {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+  color: var(--fm-text);
+}
+.folio-id small {
   color: var(--fm-text-subtle);
   font-size: 0.75rem;
 }
+.row-action {
+  margin-left: auto;
+}
 
-:deep(.num) {
-  text-align: right;
+.row-detail {
+  margin: 0.4rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--fm-text-muted);
+}
+.row-detail .reason {
   font-variant-numeric: tabular-nums;
 }
-:deep(.action-col) {
-  text-align: right;
-}
-
-.delta-off {
-  color: var(--fm-critical);
-  font-weight: 600;
+.row-detail .fix {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--fm-text-subtle);
 }
 
 .empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
   margin: 0;
-  padding: var(--fm-space-4);
+  padding: var(--fm-space-6);
   text-align: center;
   color: var(--fm-text-muted);
+}
+.empty .pi {
+  font-size: 1.5rem;
+  color: var(--fm-text-subtle);
+}
+
+/* Loading shimmer that sketches the grouped sections. */
+.integrity-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-4);
+}
+.skel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: var(--fm-space-4);
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-lg);
+}
+.skel-head {
+  height: 1rem;
+  width: 40%;
+}
+.skel-row {
+  height: 1.25rem;
+  width: 60%;
+}
+.skel-detail {
+  height: 0.75rem;
+  width: 85%;
 }
 </style>

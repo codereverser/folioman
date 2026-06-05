@@ -47,7 +47,7 @@ const META: Record<IntegrityStatus, IntegrityMeta> = {
     icon: 'pi pi-exclamation-triangle',
     label: 'Snapshot only',
     tooltip:
-      'Net-worth tracked, but no transaction history — no capital-gains worksheet. Add via CSV or manual entry to enable it.',
+      'Net worth is tracked from the statement, but there’s no transaction history — so no capital-gains worksheet.',
     severity: 'warn',
     taxReady: false,
   },
@@ -56,7 +56,7 @@ const META: Record<IntegrityStatus, IntegrityMeta> = {
     icon: 'pi pi-times-circle',
     label: 'Reconcile needed',
     tooltip:
-      'Units in transactions differ from the eCAS observation. The capital-gains worksheet skips this until it’s resolved.',
+      'Ledger units differ from the latest statement’s holdings. The capital-gains worksheet skips this until it’s resolved.',
     severity: 'critical',
     taxReady: false,
   },
@@ -94,6 +94,35 @@ export function toIntegrityStatus(raw: string | null | undefined): IntegrityStat
 
 export function integrityMeta(status: IntegrityStatus): IntegrityMeta {
   return META[status]
+}
+
+// One canonical remediation for an incomplete mutual-fund ledger — the same advice
+// the Import screen gives, so guidance never contradicts itself.
+const REIMPORT_FIX =
+  'Re-import a since-inception (Detailed) CAS that includes zero-balance folios.'
+
+/**
+ * The concrete next step for a status, or null when none is needed (already
+ * tax-ready). A demat/eCAS snapshot is inherent — the depository statement
+ * carries no transaction history — so re-importing it changes nothing; we say so
+ * rather than send the user on a futile errand.
+ */
+export function remediation(
+  status: IntegrityStatus,
+  { folioType = '' }: { folioType?: string } = {},
+): string | null {
+  switch (status) {
+    case 'mismatch':
+      return REIMPORT_FIX
+    case 'snapshot_only':
+      return folioType === 'demat'
+        ? 'Demat statements carry no transaction history, so there’s no capital-gains worksheet for this holding yet.'
+        : REIMPORT_FIX
+    case 'user_acknowledged':
+      return 'Marked as a known gap — left out of the worksheet. Un-acknowledge to track it again.'
+    default:
+      return null
+  }
 }
 
 export interface IntegrityRollup {
