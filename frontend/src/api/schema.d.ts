@@ -785,6 +785,16 @@ export interface components {
         };
         /** HoldingValueRow */
         HoldingValueRow: {
+            /**
+             * Amc
+             * @default
+             */
+            amc: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
             /** Day Change Inr */
             day_change_inr?: string | null;
             /** Day Change Pct */
@@ -947,6 +957,8 @@ export interface components {
             category_mix?: components["schemas"]["AllocationBucket"][];
             /** Day Change Inr */
             day_change_inr?: string | null;
+            /** Holdings */
+            holdings?: components["schemas"]["HoldingValueRow"][];
             /** Holdings Count */
             holdings_count: number;
             /** Integrity Unit Count */

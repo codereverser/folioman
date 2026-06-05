@@ -92,6 +92,8 @@ class HoldingValueRow(Schema):
     security_id: int
     name: str
     security_type: str
+    amc: str = ""  # fund house — groups the per-fund breakdown
+    category: str = ""  # equity / debt — groups the per-fund breakdown
     units: Decimal
     value_inr: Decimal | None
     invested_inr: Decimal | None = None  # FIFO cost basis of the units still held
@@ -165,7 +167,8 @@ class InvestorSummaryOut(Schema):
     # while everything is still mutual funds (value-desc, unpriced rows excluded).
     amc_mix: list[AllocationBucket] = Field(default_factory=list)  # INR by fund house
     category_mix: list[AllocationBucket] = Field(default_factory=list)  # INR by equity/debt
-    top_holdings: list[HoldingValueRow] = Field(default_factory=list)  # largest, value-desc
+    top_holdings: list[HoldingValueRow] = Field(default_factory=list)  # largest 10, value-desc
+    holdings: list[HoldingValueRow] = Field(default_factory=list)  # all priced, value-desc
 
 
 class ValueSeriesPoint(Schema):

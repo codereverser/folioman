@@ -41,6 +41,19 @@ const SUMMARY = {
       return_pct: 0.65,
     },
   ],
+  holdings: [
+    {
+      security_id: 1,
+      name: 'Fund A',
+      security_type: 'mf',
+      amc: 'HDFC Mutual Fund',
+      category: 'Equity',
+      units: '100',
+      value_inr: '7500',
+      return_pct: 0.65,
+      xirr: 0.21,
+    },
+  ],
 }
 // A leading all-zero point (before the first holding) that must be trimmed.
 const SERIES = [
@@ -116,6 +129,20 @@ describe('useDashboard', () => {
     expect(top).toMatchObject({ securityId: 1, name: 'Fund A', assetClass: 'Mutual funds', units: 100 })
     expect(top.integrity).toBe('full_history')
     expect(top.returnPct).toBeCloseTo(65) // 0.65 fraction → percent
+  })
+
+  it('maps the per-fund list for the MF breakdown (grouping keys, XIRR, integrity)', async () => {
+    const { summary } = useDashboard(ref(1))
+    await flush()
+    await flush()
+
+    expect(summary.value.funds).toHaveLength(1)
+    const fund = summary.value.funds[0]
+    expect(fund).toMatchObject({ securityId: 1, name: 'Fund A', category: 'Equity' })
+    expect(fund.amc).toBe('HDFC') // AMC boilerplate trimmed
+    expect(fund.xirr).toBeCloseTo(21) // 0.21 fraction → percent
+    expect(fund.returnPct).toBeCloseTo(65)
+    expect(fund.integrity).toBe('full_history') // joined from the integrity store
   })
 
   it('maps category + AMC allocation breakdowns into coloured slices', async () => {

@@ -308,7 +308,9 @@ function openScheme(securityId: number): void {
       v-else-if="activeTab === 'mf'"
       :by-category="summary.allocationByCategory"
       :by-amc="summary.allocationByAmc"
+      :funds="summary.funds"
       :total="summary.netWorth"
+      @select="openScheme"
     />
   </section>
 </template>

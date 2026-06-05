@@ -210,6 +210,8 @@ def _rollup(valuation, meta_by_security: dict, extras: dict[int, dict] | None = 
                 "security_id": sec_id,
                 "name": name,
                 "security_type": sec_type,
+                "amc": amc_name or "Other",
+                "category": category or "Other",
                 "units": row.units,
                 "value_inr": row.value_inr,
                 "invested_inr": invested,
@@ -234,7 +236,8 @@ def _rollup(valuation, meta_by_security: dict, extras: dict[int, dict] | None = 
         ],
         "amc_mix": _buckets(amc_mix),
         "category_mix": _buckets(category_mix),
-        "top_holdings": top_holdings[:10],
+        "top_holdings": top_holdings[:10],  # the dashboard "Top holdings" card
+        "holdings": top_holdings,  # every priced holding, for the per-fund breakdown
         "stale_count": len(valuation.stale_rows),
         "holdings_count": len(valuation.rows),
     }
@@ -470,6 +473,7 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
         "amc_mix": rollup["amc_mix"],
         "category_mix": rollup["category_mix"],
         "top_holdings": rollup["top_holdings"],
+        "holdings": rollup["holdings"],
     }
 
 

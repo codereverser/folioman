@@ -57,6 +57,14 @@ def test_summary_breaks_allocation_down_by_amc_and_category(
     assert body["category_mix"][0]["label"] == "Equity"
     assert body["amc_mix"][0]["label"] == "HDFC MF"
 
+    # Every priced fund is returned (not just the top 10) with its grouping keys,
+    # so the MF page can group the per-fund list by AMC / equity-debt.
+    assert len(body["holdings"]) == 2
+    assert {(h["amc"], h["category"]) for h in body["holdings"]} == {
+        ("HDFC MF", "Equity"),
+        ("Axis MF", "Debt"),
+    }
+
 
 def test_summary_values_full_history_ledger_without_snapshot(
     client, make_investor, make_security, make_transaction

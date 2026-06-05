@@ -478,6 +478,16 @@
       },
       "HoldingValueRow": {
         "properties": {
+          "amc": {
+            "default": "",
+            "title": "Amc",
+            "type": "string"
+          },
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
           "day_change_inr": {
             "anyOf": [
               {
@@ -949,6 +959,13 @@
               }
             ],
             "title": "Day Change Inr"
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingValueRow"
+            },
+            "title": "Holdings",
+            "type": "array"
           },
           "holdings_count": {
             "title": "Holdings Count",

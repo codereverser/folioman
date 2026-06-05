@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref } from 'vue'
+import Column from 'primevue/column'
+import DataTable from 'primevue/datatable'
 import AllocationDonut from '@/components/charts/AllocationDonut.vue'
 import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
-import { formatInr } from '@/utils/format'
+import DeltaChip from '@/components/DeltaChip.vue'
+import IntegrityBadge from '@/components/IntegrityBadge.vue'
+import type { FundRow } from '@/composables/useDashboard'
+import { formatInr, formatPercent } from '@/utils/format'
 
 const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
 const props = defineProps<{
   byCategory: AllocationSlice[]
   byAmc: AllocationSlice[]
+  funds: FundRow[]
   total: number
 }>()
+const emit = defineEmits<{ (e: 'select', securityId: number): void }>()
 
 type Grouping = 'category' | 'amc'
 const grouping = ref<Grouping>('category')
@@ -28,7 +35,25 @@ const rows = computed(() => {
   const sum = slices.value.reduce((s, x) => s + x.value, 0) || 1
   return slices.value.map((s) => ({ ...s, pct: (s.value / sum) * 100 }))
 })
-const empty = computed(() => slices.value.length === 0)
+const empty = computed(() => props.funds.length === 0)
+
+// Per-fund list grouped by the active dimension. Group totals drive both the
+// subheader value and the group ordering (largest group first; largest fund
+// first within a group) — the order PrimeVue's subheader grouping renders.
+const groupField = computed<'amc' | 'category'>(() => (grouping.value === 'amc' ? 'amc' : 'category'))
+const groupTotals = computed(() => {
+  const totals = new Map<string, number>()
+  for (const f of props.funds) totals.set(f[groupField.value], (totals.get(f[groupField.value]) ?? 0) + f.value)
+  return totals
+})
+const sortedFunds = computed(() => {
+  const key = groupField.value
+  const totals = groupTotals.value
+  return [...props.funds].sort((a, b) => {
+    const diff = (totals.get(b[key]) ?? 0) - (totals.get(a[key]) ?? 0)
+    return diff !== 0 ? diff : b.value - a.value
+  })
+})
 </script>
 
 <template>
@@ -56,21 +81,66 @@ const empty = computed(() => slices.value.length === 0)
     </div>
 
     <p v-if="empty" class="empty">No priced mutual funds yet.</p>
-    <div v-else class="funds-grid">
-      <article class="card donut-card">
-        <AllocationDonut :data="slices" :center-label="formatInr(total)" />
+    <template v-else>
+      <div class="funds-grid">
+        <article class="card donut-card">
+          <AllocationDonut :data="slices" :center-label="formatInr(total)" />
+        </article>
+        <article class="card breakdown-card">
+          <ul class="breakdown">
+            <li v-for="r in rows" :key="r.name">
+              <span class="dot" :style="{ background: r.color }" aria-hidden="true" />
+              <span class="b-name">{{ r.name }}</span>
+              <span class="b-pct">{{ r.pct.toFixed(1) }}%</span>
+              <span class="b-val">{{ formatInr(r.value) }}</span>
+            </li>
+          </ul>
+        </article>
+      </div>
+
+      <article class="card fund-list">
+        <DataTable
+          :value="sortedFunds"
+          data-key="securityId"
+          row-group-mode="subheader"
+          :group-rows-by="groupField"
+          size="small"
+          class="funds-table clickable-rows"
+          @row-click="(e) => emit('select', e.data.securityId)"
+        >
+          <template #groupheader="{ data }">
+            <span class="grp">{{ data[groupField] }}</span>
+            <span class="grp-total">{{ formatInr(groupTotals.get(data[groupField]) ?? 0) }}</span>
+          </template>
+          <Column field="name" header="Fund" />
+          <Column header="Value" class="num">
+            <template #body="{ data }">{{ formatInr(data.value) }}</template>
+          </Column>
+          <Column header="Return" class="num">
+            <template #body="{ data }">
+              <DeltaChip
+                v-if="data.returnPct !== null"
+                :percent="data.returnPct"
+                :value="data.returnPct"
+                size="sm"
+              />
+              <span v-else class="muted">—</span>
+            </template>
+          </Column>
+          <Column header="XIRR" class="num">
+            <template #body="{ data }">
+              <span v-if="data.xirr !== null" class="xirr">{{ formatPercent(data.xirr) }}</span>
+              <span v-else class="muted">—</span>
+            </template>
+          </Column>
+          <Column header="Integrity">
+            <template #body="{ data }">
+              <IntegrityBadge :status="data.integrity" size="sm" />
+            </template>
+          </Column>
+        </DataTable>
       </article>
-      <article class="card breakdown-card">
-        <ul class="breakdown">
-          <li v-for="r in rows" :key="r.name">
-            <span class="dot" :style="{ background: r.color }" aria-hidden="true" />
-            <span class="b-name">{{ r.name }}</span>
-            <span class="b-pct">{{ r.pct.toFixed(1) }}%</span>
-            <span class="b-val">{{ formatInr(r.value) }}</span>
-          </li>
-        </ul>
-      </article>
-    </div>
+    </template>
   </section>
 </template>
 
@@ -107,6 +177,7 @@ const empty = computed(() => slices.value.length === 0)
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--fm-space-5);
+  margin-bottom: var(--fm-space-5);
 }
 .card {
   padding: var(--fm-space-5);
@@ -154,6 +225,36 @@ const empty = computed(() => slices.value.length === 0)
   font-weight: 600;
 }
 .empty {
+  color: var(--fm-text-muted);
+}
+
+/* Per-fund grouped table. */
+.fund-list :deep(.num) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.fund-list :deep(.clickable-rows .p-datatable-tbody > tr) {
+  cursor: pointer;
+}
+.fund-list :deep(.p-datatable-row-group-header) {
+  background: var(--fm-surface-raised);
+}
+.fund-list :deep(.p-datatable-row-group-header > td) {
+  padding: 0.5rem 0.75rem;
+}
+.grp {
+  font-weight: 600;
+}
+.grp-total {
+  margin-left: var(--fm-space-3);
+  color: var(--fm-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.xirr {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.muted {
   color: var(--fm-text-muted);
 }
 

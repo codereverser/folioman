@@ -32,6 +32,13 @@ export interface HoldingRow {
   integrity: IntegrityStatus
 }
 
+// A fund on the MF breakdown page: a holding plus its grouping keys and XIRR.
+export interface FundRow extends HoldingRow {
+  amc: string
+  category: string
+  xirr: number | null // percent; null when not computable
+}
+
 export interface DashboardSummary {
   netWorth: number
   invested: number
@@ -49,6 +56,7 @@ export interface DashboardSummary {
   allocationByAmc: AllocationSlice[] // by fund house
   valueSeries: ValuePoint[]
   topHoldings: HoldingRow[]
+  funds: FundRow[] // every priced fund, for the MF breakdown's grouped list
 }
 
 const EMPTY: DashboardSummary = {
@@ -66,6 +74,7 @@ const EMPTY: DashboardSummary = {
   allocationByAmc: [],
   valueSeries: [],
   topHoldings: [],
+  funds: [],
 }
 
 // Map a backend allocation breakdown into donut slices. With `cap`, keep the
@@ -249,6 +258,18 @@ export function useDashboard(investorId: Ref<number>) {
         value: num(h.value_inr),
         units: num(h.units),
         returnPct: h.return_pct == null ? null : h.return_pct * 100,
+        integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
+      })),
+      funds: (s.holdings ?? []).map<FundRow>((h) => ({
+        securityId: h.security_id,
+        name: h.name,
+        assetClass: assetLabel(h.security_type),
+        amc: shortAmc(h.amc || 'Other'),
+        category: h.category || 'Other',
+        value: num(h.value_inr),
+        units: num(h.units),
+        returnPct: h.return_pct == null ? null : h.return_pct * 100,
+        xirr: h.xirr == null ? null : h.xirr * 100,
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
     }
