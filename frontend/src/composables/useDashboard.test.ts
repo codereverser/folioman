@@ -50,6 +50,7 @@ const SUMMARY = {
       category: 'Equity',
       units: '100',
       value_inr: '7500',
+      invested_inr: '5000',
       return_pct: 0.65,
       xirr: 0.21,
     },
@@ -142,6 +143,7 @@ describe('useDashboard', () => {
     expect(fund.amc).toBe('HDFC') // AMC boilerplate trimmed
     expect(fund.xirr).toBeCloseTo(21) // 0.21 fraction → percent
     expect(fund.returnPct).toBeCloseTo(65)
+    expect(fund.gain).toBe(2500) // value 7500 − invested 5000, for the movers strip
     expect(fund.integrity).toBe('full_history') // joined from the integrity store
   })
 

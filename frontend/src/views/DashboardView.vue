@@ -121,6 +121,21 @@ function tabTo(asset?: 'mf') {
   }
 }
 
+// Contribution to returns: which funds added (or shed) the most rupees. Purely
+// descriptive — no ranking-as-advice.
+const topContributors = computed(() =>
+  summary.value.funds
+    .filter((f) => f.gain !== null && f.gain > 0)
+    .sort((a, b) => (b.gain ?? 0) - (a.gain ?? 0))
+    .slice(0, 5),
+)
+const detractors = computed(() =>
+  summary.value.funds
+    .filter((f) => f.gain !== null && f.gain < 0)
+    .sort((a, b) => (a.gain ?? 0) - (b.gain ?? 0))
+    .slice(0, 3),
+)
+
 function openScheme(securityId: number): void {
   void router.push({ name: 'scheme-detail', params: { investorId: investorId.value, securityId } })
 }
@@ -240,7 +255,10 @@ function openScheme(securityId: number): void {
 
       <article class="span-8 card chart-card">
         <div class="chart-head">
-          <h2>Portfolio value</h2>
+          <div class="head-titles">
+            <h2>Value over time</h2>
+            <span class="head-caption">Mutual funds · current value vs invested</span>
+          </div>
           <SelectButton
             v-if="valuationReady && loadCharts"
             :model-value="range"
@@ -262,6 +280,48 @@ function openScheme(securityId: number): void {
         </template>
         <PortfolioValueChart v-else-if="loadCharts" :data="summary.valueSeries" />
         <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
+      </article>
+
+      <article v-if="topContributors.length" class="span-12 card movers">
+        <h2>Contribution to returns</h2>
+        <p class="movers-sub">Funds that have added the most to your portfolio so far.</p>
+        <div class="movers-row">
+          <button
+            v-for="f in topContributors"
+            :key="f.securityId"
+            type="button"
+            class="mover"
+            @click="openScheme(f.securityId)"
+          >
+            <span class="mover-name">{{ f.name }}</span>
+            <DeltaChip
+              :amount="f.gain ?? undefined"
+              :percent="f.returnPct ?? undefined"
+              :value="f.gain ?? undefined"
+              size="sm"
+            />
+          </button>
+        </div>
+        <template v-if="detractors.length">
+          <p class="movers-sub detractor-label">Held back returns</p>
+          <div class="movers-row">
+            <button
+              v-for="f in detractors"
+              :key="f.securityId"
+              type="button"
+              class="mover"
+              @click="openScheme(f.securityId)"
+            >
+              <span class="mover-name">{{ f.name }}</span>
+              <DeltaChip
+                :amount="f.gain ?? undefined"
+                :percent="f.returnPct ?? undefined"
+                :value="f.gain ?? undefined"
+                size="sm"
+              />
+            </button>
+          </div>
+        </template>
       </article>
 
       <article class="span-12 card">
@@ -371,12 +431,61 @@ function openScheme(securityId: number): void {
 
 .chart-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: var(--fm-space-3);
   margin-bottom: var(--fm-space-2);
 }
 .chart-head h2 {
   margin: 0;
+}
+.head-caption {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--fm-text-muted);
+}
+
+/* Contribution-to-returns strip. */
+.movers .movers-sub {
+  margin: 0 0 var(--fm-space-3);
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.movers .detractor-label {
+  margin-top: var(--fm-space-4);
+}
+.movers-row {
+  display: flex;
+  gap: var(--fm-space-3);
+  flex-wrap: wrap;
+}
+.mover {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 16rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-lg, 0.75rem);
+  background: var(--fm-surface-raised);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: border-color var(--fm-dur-fast) var(--fm-ease);
+}
+.mover:hover {
+  border-color: var(--fm-border);
+}
+.mover-name {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 .range-placeholder {
   display: block;

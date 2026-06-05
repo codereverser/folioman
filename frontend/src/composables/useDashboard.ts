@@ -32,11 +32,13 @@ export interface HoldingRow {
   integrity: IntegrityStatus
 }
 
-// A fund on the MF breakdown page: a holding plus its grouping keys and XIRR.
+// A fund on the MF breakdown page: a holding plus its grouping keys, XIRR, and
+// absolute ₹ contribution (for the "contribution to returns" strip).
 export interface FundRow extends HoldingRow {
   amc: string
   category: string
   xirr: number | null // percent; null when not computable
+  gain: number | null // value − invested, in ₹; null when cost basis is unknown
 }
 
 export interface DashboardSummary {
@@ -270,6 +272,7 @@ export function useDashboard(investorId: Ref<number>) {
         units: num(h.units),
         returnPct: h.return_pct == null ? null : h.return_pct * 100,
         xirr: h.xirr == null ? null : h.xirr * 100,
+        gain: h.invested_inr == null ? null : num(h.value_inr) - num(h.invested_inr),
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
     }
