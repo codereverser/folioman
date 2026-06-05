@@ -66,6 +66,20 @@ const ranges: { label: string; value: RangeKey }[] = [
   { label: 'All', value: 'All' },
 ]
 
+// Allocation breakdown grouping. Pre-multi-asset the asset-class view is a single
+// "Mutual funds" slice, so the donut groups by equity/debt or fund house instead.
+type AllocationGroup = 'category' | 'amc'
+const allocationGroups: { label: string; value: AllocationGroup }[] = [
+  { label: 'Equity/Debt', value: 'category' },
+  { label: 'AMC', value: 'amc' },
+]
+const allocationGroup = ref<AllocationGroup>('category')
+const allocationData = computed(() =>
+  allocationGroup.value === 'amc'
+    ? summary.value.allocationByAmc
+    : summary.value.allocationByCategory,
+)
+
 function openScheme(securityId: number): void {
   void router.push({ name: 'scheme-detail', params: { investorId: investorId.value, securityId } })
 }
@@ -110,10 +124,22 @@ function openScheme(securityId: number): void {
       <IntegrityHealthCard class="span-3" :rollup="rollup" :review-to="integrityTo" />
 
       <article ref="chartRegion" class="span-4 card chart-card">
-        <h2>Allocation</h2>
+        <div class="chart-head">
+          <h2>Allocation</h2>
+          <SelectButton
+            v-if="loadCharts && allocationData.length > 0"
+            :model-value="allocationGroup"
+            :options="allocationGroups"
+            option-label="label"
+            option-value="value"
+            :allow-empty="false"
+            size="small"
+            @update:model-value="(v: AllocationGroup | null) => v && (allocationGroup = v)"
+          />
+        </div>
         <AllocationDonut
           v-if="loadCharts"
-          :data="summary.allocation"
+          :data="allocationData"
           :center-label="formatInr(summary.netWorth)"
         />
         <div v-else class="chart-placeholder donut-placeholder" aria-hidden="true" />

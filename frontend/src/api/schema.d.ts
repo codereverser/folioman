@@ -562,6 +562,16 @@ export interface components {
             /** Access */
             access: string;
         };
+        /**
+         * AllocationBucket
+         * @description One slice of a sub-asset-class allocation breakdown (by AMC, by category).
+         */
+        AllocationBucket: {
+            /** Label */
+            label: string;
+            /** Value Inr */
+            value_inr: string;
+        };
         /** AssetMixRow */
         AssetMixRow: {
             /** Security Type */
@@ -908,6 +918,8 @@ export interface components {
          * @description Per-investor headline numbers for the roster row.
          */
         InvestorSummaryOut: {
+            /** Amc Mix */
+            amc_mix?: components["schemas"]["AllocationBucket"][];
             /**
              * As Of
              * Format: date
@@ -915,6 +927,8 @@ export interface components {
             as_of: string;
             /** Asset Mix */
             asset_mix?: components["schemas"]["AssetMixRow"][];
+            /** Category Mix */
+            category_mix?: components["schemas"]["AllocationBucket"][];
             /** Day Change Inr */
             day_change_inr?: string | null;
             /** Holdings Count */

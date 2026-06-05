@@ -9,7 +9,16 @@ import { formatDate } from '@/utils/format'
 
 const POLL_MS = 5000
 const POLL_MAX_TICKS = 120 // ~10 min cap
-import { ASSET_META, RANGES, assetLabel, num, type RangeKey } from '@/utils/portfolio'
+import {
+  ASSET_META,
+  RANGES,
+  assetLabel,
+  categoryColor,
+  num,
+  rampColor,
+  shortAmc,
+  type RangeKey,
+} from '@/utils/portfolio'
 
 export type { RangeKey }
 
@@ -35,7 +44,9 @@ export interface DashboardSummary {
   // total_inr is a last-known value (statement close / last computed day), not a
   // live valuation at as_of — e.g. NAVs not fetched yet. as_of is that value's date.
   isProvisional: boolean
-  allocation: AllocationSlice[]
+  allocation: AllocationSlice[] // by asset class (the "All" view; MF-only for now)
+  allocationByCategory: AllocationSlice[] // equity vs debt
+  allocationByAmc: AllocationSlice[] // by fund house
   valueSeries: ValuePoint[]
   topHoldings: HoldingRow[]
 }
@@ -51,8 +62,32 @@ const EMPTY: DashboardSummary = {
   asOf: '—',
   isProvisional: false,
   allocation: [],
+  allocationByCategory: [],
+  allocationByAmc: [],
   valueSeries: [],
   topHoldings: [],
+}
+
+// Map a backend allocation breakdown into donut slices. With `cap`, keep the
+// largest `cap` buckets and fold the remainder into a neutral "Others" slice so
+// a long tail (many AMCs) doesn't overflow the legend.
+function toSlices(
+  rows: { label: string; value_inr: string }[],
+  color: (label: string, index: number) => string,
+  cap?: number,
+  label: (raw: string) => string = (raw) => raw,
+): AllocationSlice[] {
+  const head = cap ? rows.slice(0, cap) : rows
+  const slices = head.map<AllocationSlice>((r, i) => ({
+    name: label(r.label),
+    value: num(r.value_inr),
+    color: color(r.label, i),
+  }))
+  if (cap && rows.length > cap) {
+    const rest = rows.slice(cap).reduce((sum, r) => sum + num(r.value_inr), 0)
+    if (rest > 0) slices.push({ name: 'Others', value: rest, color: 'var(--fm-asset-cash)' })
+  }
+  return slices
 }
 
 /**
@@ -202,6 +237,10 @@ export function useDashboard(investorId: Ref<number>) {
         value: num(row.value_inr),
         color: ASSET_META[row.security_type]?.color,
       })),
+      allocationByCategory: toSlices(s.category_mix ?? [], categoryColor),
+      // Cap fund-house slices so the donut legend stays readable; the tail rolls
+      // into a neutral "Others" slice (backend already orders buckets value-desc).
+      allocationByAmc: toSlices(s.amc_mix ?? [], (_label, i) => rampColor(i), 6, shortAmc),
       valueSeries: valueSeries.value,
       topHoldings: (s.top_holdings ?? []).map<HoldingRow>((h) => ({
         securityId: h.security_id,

@@ -23,6 +23,14 @@ const SUMMARY = {
   xirr: 0.1849,
   as_of: '2025-06-01',
   asset_mix: [{ security_type: 'mf', value_inr: '7500' }],
+  category_mix: [
+    { label: 'Equity', value_inr: '6000' },
+    { label: 'Debt', value_inr: '1500' },
+  ],
+  amc_mix: [
+    { label: 'HDFC MF', value_inr: '4000' },
+    { label: 'Axis MF', value_inr: '3500' },
+  ],
   top_holdings: [
     {
       security_id: 1,
@@ -108,6 +116,42 @@ describe('useDashboard', () => {
     expect(top).toMatchObject({ securityId: 1, name: 'Fund A', assetClass: 'Mutual funds', units: 100 })
     expect(top.integrity).toBe('full_history')
     expect(top.returnPct).toBeCloseTo(65) // 0.65 fraction → percent
+  })
+
+  it('maps category + AMC allocation breakdowns into coloured slices', async () => {
+    const { summary } = useDashboard(ref(1))
+    await flush()
+    await flush()
+
+    const byCat = summary.value.allocationByCategory
+    expect(byCat.map((s) => s.name)).toEqual(['Equity', 'Debt'])
+    expect(byCat[0]).toMatchObject({ value: 6000 })
+    expect(byCat.every((s) => !!s.color)).toBe(true)
+
+    const byAmc = summary.value.allocationByAmc
+    // AMC boilerplate suffixes are trimmed for the legend ("HDFC MF" → "HDFC").
+    expect(byAmc.map((s) => s.name)).toEqual(['HDFC', 'Axis'])
+    expect(byAmc.every((s) => !!s.color)).toBe(true)
+  })
+
+  it('caps the AMC breakdown to the top 6 and folds the tail into "Others"', async () => {
+    // 9 buckets, value-desc 900..100; top 6 kept, tail (300+200+100) → Others.
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      label: `AMC ${i}`,
+      value_inr: String(900 - i * 100),
+    }))
+    get.mockImplementation((path: string) =>
+      path.endsWith('/summary')
+        ? Promise.resolve({ data: { ...SUMMARY, amc_mix: many } })
+        : routeGet(path),
+    )
+    const { summary } = useDashboard(ref(1))
+    await flush()
+    await flush()
+
+    const byAmc = summary.value.allocationByAmc
+    expect(byAmc).toHaveLength(7)
+    expect(byAmc[6]).toMatchObject({ name: 'Others', value: 600 })
   })
 
   it('shows null xirr (not 0) when the backend has no rate', async () => {

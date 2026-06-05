@@ -82,6 +82,13 @@ class AssetMixRow(Schema):
     value_inr: Decimal
 
 
+class AllocationBucket(Schema):
+    """One slice of a sub-asset-class allocation breakdown (by AMC, by category)."""
+
+    label: str
+    value_inr: Decimal
+
+
 class HoldingValueRow(Schema):
     security_id: int
     name: str
@@ -155,6 +162,10 @@ class InvestorSummaryOut(Schema):
     # over all cashflows incl. sold-out positions. Per-fund XIRR is on each holding.
     xirr: float | None = None
     asset_mix: list[AssetMixRow] = Field(default_factory=list)  # INR by security type
+    # Sub-breakdowns of the priced value so the allocation donut is informative
+    # while everything is still mutual funds (value-desc, unpriced rows excluded).
+    amc_mix: list[AllocationBucket] = Field(default_factory=list)  # INR by fund house
+    category_mix: list[AllocationBucket] = Field(default_factory=list)  # INR by equity/debt
     top_holdings: list[HoldingValueRow] = Field(default_factory=list)  # largest, value-desc
 
 

@@ -51,6 +51,28 @@ def _latest_price(security_id: int, as_of: date) -> Decimal | None:
     )
 
 
+def _amc_label(security) -> str:
+    """Fund house for the allocation breakdown — the AMC FK, else the parser's
+    ``metadata['amc']`` string, else empty (bucketed as "Other" by the rollup)."""
+    if security.amc_id:
+        return security.amc.name
+    return (security.metadata or {}).get("amc") or ""
+
+
+def _category_label(security) -> str:
+    """Equity vs Debt for the allocation breakdown. ``equity_oriented`` is the
+    reliable signal (it drives 112A tax treatment); fall back to a titled
+    ``fund_type`` when older imports lack it, else "Other"."""
+    meta = security.metadata or {}
+    equity_oriented = meta.get("equity_oriented")
+    if equity_oriented is True:
+        return "Equity"
+    if equity_oriented is False:
+        return "Debt"
+    fund_type = (meta.get("fund_type") or "").strip()
+    return fund_type.title() if fund_type else "Other"
+
+
 def _current_positions(investor: Investor):
     """Yield (django_security, units, as_of_date, source) — current units per security.
 
@@ -68,10 +90,10 @@ def _current_positions(investor: Investor):
     current-units table updated on import) with no change to callers.
     """
     txns_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
-    for txn in investor.transactions.select_related("security", "folio"):
+    for txn in investor.transactions.select_related("security", "security__amc", "folio"):
         txns_by_key[(txn.security_id, txn.folio_id)].append(txn)
     holdings_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
-    for holding in investor.holdings.select_related("security", "folio"):
+    for holding in investor.holdings.select_related("security", "security__amc", "folio"):
         holdings_by_key[(holding.security_id, holding.folio_id)].append(holding)
 
     # security_id -> [django_security, units, latest_as_of, source]
@@ -107,12 +129,14 @@ def _current_positions(investor: Investor):
 def _value_investors(investors: list[Investor], as_of: date):
     """Value the latest holding snapshot per (investor, security) across the set.
 
-    Returns the core valuation plus a map from core Security → (id, name, type)
-    so Django metadata can be reattached to the priced rows.
+    Returns the core valuation plus a map from core Security →
+    (id, name, type, amc_name, category) so Django metadata can be reattached to
+    the priced rows for the rollup's allocation breakdowns.
     """
     core_holdings: list[CoreHolding] = []
     price_by_security: dict = {}
-    meta_by_security: dict = {}  # core Security -> (id, name, security_type)
+    # core Security -> (id, name, security_type, amc_name, category)
+    meta_by_security: dict = {}
 
     for investor in investors:
         for django_security, units, snapshot_date, source in _current_positions(investor):
@@ -129,6 +153,8 @@ def _value_investors(investors: list[Investor], as_of: date):
                 django_security.id,
                 django_security.name,
                 django_security.security_type,
+                _amc_label(django_security),
+                _category_label(django_security),
             )
             price = _latest_price(django_security.id, as_of)
             if price is not None:
@@ -162,11 +188,18 @@ def _rollup(valuation, meta_by_security: dict, extras: dict[int, dict] | None = 
     """
     extras = extras or {}
     asset_mix: dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    # Sub-asset-class breakdowns of the priced value, so the allocation donut is
+    # informative pre-multi-asset (otherwise it's a single "Mutual funds 100%"
+    # slice): by fund house and by equity/debt. Unpriced rows (no NAV) are excluded.
+    amc_mix: dict[str, Decimal] = defaultdict(lambda: _ZERO)
+    category_mix: dict[str, Decimal] = defaultdict(lambda: _ZERO)
     top_holdings = []
     for row in valuation.rows:
-        sec_id, name, sec_type = meta_by_security[row.security]
+        sec_id, name, sec_type, amc_name, category = meta_by_security[row.security]
         if row.value_inr is not None:
             asset_mix[sec_type] += row.value_inr
+            amc_mix[amc_name or "Other"] += row.value_inr
+            category_mix[category or "Other"] += row.value_inr
         extra = extras.get(sec_id, {})
         invested = extra.get("invested_inr")
         return_pct = None
@@ -187,11 +220,20 @@ def _rollup(valuation, meta_by_security: dict, extras: dict[int, dict] | None = 
             }
         )
     top_holdings.sort(key=lambda r: r["value_inr"] or _ZERO, reverse=True)
+
+    def _buckets(mix: dict[str, Decimal]) -> list[dict]:
+        return [
+            {"label": label, "value_inr": value}
+            for label, value in sorted(mix.items(), key=lambda kv: kv[1], reverse=True)
+        ]
+
     return {
         "total_inr": valuation.total_inr,
         "asset_mix": [
             {"security_type": stype, "value_inr": value} for stype, value in asset_mix.items()
         ],
+        "amc_mix": _buckets(amc_mix),
+        "category_mix": _buckets(category_mix),
         "top_holdings": top_holdings[:10],
         "stale_count": len(valuation.stale_rows),
         "holdings_count": len(valuation.rows),
@@ -360,7 +402,7 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
     unpriced_fund_count = sum(
         1
         for row in valuation.stale_rows
-        if meta_by_security.get(row.security, (None, None, None))[2] == SecurityType.MF.value
+        if meta_by_security.get(row.security, (None,) * 5)[2] == SecurityType.MF.value
     )
 
     statuses = list(investor.integrity_statuses.values_list("status", "tax_safe"))
@@ -425,6 +467,8 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
         "day_change_inr": _day_change_total(extras),
         "xirr": compute_portfolio_xirr([investor], as_of),
         "asset_mix": rollup["asset_mix"],
+        "amc_mix": rollup["amc_mix"],
+        "category_mix": rollup["category_mix"],
         "top_holdings": rollup["top_holdings"],
     }
 

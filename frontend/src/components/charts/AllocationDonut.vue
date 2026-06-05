@@ -46,8 +46,14 @@ const option = computed<EChartsOption>(() => ({
   },
   legend: {
     bottom: 0,
+    // One scrollable row so a long tail of slices (e.g. many AMCs) never wraps up
+    // over the ring / center label; ‹ › page through the rest.
+    type: 'scroll',
     icon: 'circle',
     textStyle: { color: tokens.value.muted },
+    pageIconColor: tokens.value.muted,
+    pageIconInactiveColor: tokens.value.border,
+    pageTextStyle: { color: tokens.value.muted },
   },
   series: [
     {

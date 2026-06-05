@@ -25,6 +25,44 @@ export function assetLabel(securityType: string): string {
   return ASSET_META[securityType]?.label ?? securityType
 }
 
+// Equity vs Debt slices reuse the semantic asset-class colours (equity = brand
+// teal, debt = blue); anything else falls back to neutral slate.
+const CATEGORY_COLOR: Record<string, string> = {
+  Equity: 'var(--fm-asset-equity)',
+  Debt: 'var(--fm-asset-debt)',
+  Hybrid: 'var(--fm-asset-gold)',
+}
+export function categoryColor(label: string): string {
+  return CATEGORY_COLOR[label] ?? 'var(--fm-asset-cash)'
+}
+
+// Ordered, max-separation ramp (DESIGN-SYSTEM §2.6) for many-series sub-category
+// breakdowns like per-AMC slices. Excludes pure gain-green / loss-red.
+export const SEQUENTIAL_RAMP = [
+  '#2DD4BF',
+  '#38BDF8',
+  '#818CF8',
+  '#C084FC',
+  '#FBBF24',
+  '#E879F9',
+  '#67E8F9',
+  '#A3E635',
+  '#FB7185',
+] as const
+/** Cycle the ramp for an arbitrary number of sub-category (e.g. AMC) slices. */
+export function rampColor(index: number): string {
+  return SEQUENTIAL_RAMP[index % SEQUENTIAL_RAMP.length]
+}
+
+// Trim boilerplate AMC suffixes ("HDFC Mutual Fund" → "HDFC") so the donut legend
+// stays compact. Falls back to the full name if trimming would empty it.
+export function shortAmc(name: string): string {
+  const trimmed = name
+    .replace(/\s+(mutual fund|mf|asset management company|asset management|amc)\s*$/i, '')
+    .trim()
+  return trimmed || name
+}
+
 function monthsAgo(n: number): string {
   const d = new Date()
   d.setMonth(d.getMonth() - n)

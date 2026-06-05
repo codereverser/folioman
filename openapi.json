@@ -14,6 +14,26 @@
         "title": "AccessOut",
         "type": "object"
       },
+      "AllocationBucket": {
+        "description": "One slice of a sub-asset-class allocation breakdown (by AMC, by category).",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value_inr": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Value Inr",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value_inr"
+        ],
+        "title": "AllocationBucket",
+        "type": "object"
+      },
       "AssetMixRow": {
         "properties": {
           "security_type": {
@@ -879,6 +899,13 @@
       "InvestorSummaryOut": {
         "description": "Per-investor headline numbers for the roster row.",
         "properties": {
+          "amc_mix": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationBucket"
+            },
+            "title": "Amc Mix",
+            "type": "array"
+          },
           "as_of": {
             "format": "date",
             "title": "As Of",
@@ -889,6 +916,13 @@
               "$ref": "#/components/schemas/AssetMixRow"
             },
             "title": "Asset Mix",
+            "type": "array"
+          },
+          "category_mix": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationBucket"
+            },
+            "title": "Category Mix",
             "type": "array"
           },
           "day_change_inr": {

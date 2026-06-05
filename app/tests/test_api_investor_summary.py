@@ -28,6 +28,36 @@ def test_summary_values_holdings_in_inr(client, make_investor, make_security, ma
     assert body["last_import_at"] is None
 
 
+def test_summary_breaks_allocation_down_by_amc_and_category(
+    client, make_investor, make_security, make_holding
+):
+    """The donut groups mutual funds by fund house and equity/debt — value-desc,
+    derived from Security.amc / metadata.equity_oriented."""
+    inv = make_investor()
+    eq = make_security(
+        security_type=SecurityType.MF.value,
+        metadata={"amc": "HDFC MF", "equity_oriented": True},
+    )
+    debt = make_security(
+        security_type=SecurityType.MF.value,
+        metadata={"amc": "Axis MF", "equity_oriented": False},
+    )
+    make_holding(investor=inv, security=eq, units=Decimal("100"), as_of_date=dt.date(2025, 6, 1))
+    make_holding(investor=inv, security=debt, units=Decimal("50"), as_of_date=dt.date(2025, 6, 1))
+    NAVHistory.objects.create(security=eq, date=dt.date(2025, 6, 1), nav=Decimal("60"))  # 6000
+    NAVHistory.objects.create(security=debt, date=dt.date(2025, 6, 1), nav=Decimal("30"))  # 1500
+
+    body = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-01"}).json()
+
+    category = {r["label"]: Decimal(str(r["value_inr"])) for r in body["category_mix"]}
+    assert category == {"Equity": Decimal("6000"), "Debt": Decimal("1500")}
+    amc = {r["label"]: Decimal(str(r["value_inr"])) for r in body["amc_mix"]}
+    assert amc == {"HDFC MF": Decimal("6000"), "Axis MF": Decimal("1500")}
+    # Largest bucket first (value-desc) so the donut + legend read top-down.
+    assert body["category_mix"][0]["label"] == "Equity"
+    assert body["amc_mix"][0]["label"] == "HDFC MF"
+
+
 def test_summary_values_full_history_ledger_without_snapshot(
     client, make_investor, make_security, make_transaction
 ):
