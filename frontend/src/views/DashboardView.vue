@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, toRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
-import MetricCard from '@/components/MetricCard.vue'
 import IntegrityHealthCard from '@/components/IntegrityHealthCard.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import { useDashboard, type RangeKey } from '@/composables/useDashboard'
+import { useCountUp } from '@/composables/useCountUp'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { formatInr, formatUnits } from '@/utils/format'
@@ -66,6 +66,22 @@ const ranges: { label: string; value: RangeKey }[] = [
   { label: 'All', value: 'All' },
 ]
 
+// Hero: net worth counts up; the all-time return % switches between the simple
+// absolute return and XIRR (money-weighted annualized, the headline default).
+// (No CAGR: it assumes a single lump sum and a known holding period — wrong for a
+// multi-cashflow SIP portfolio, where XIRR is the correct annualized figure.)
+const heroNetWorth = useCountUp(toRef(() => summary.value.netWorth))
+
+type ReturnBasis = 'absolute' | 'xirr'
+const returnBasis = ref<ReturnBasis>('xirr')
+const basisOptions: { label: string; value: ReturnBasis }[] = [
+  { label: 'Absolute', value: 'absolute' },
+  { label: 'XIRR', value: 'xirr' },
+]
+const shownReturnPercent = computed<number | null>(() =>
+  returnBasis.value === 'absolute' ? summary.value.totalReturnPercent : summary.value.xirr,
+)
+
 // Allocation breakdown grouping. Pre-multi-asset the asset-class view is a single
 // "Mutual funds" slice, so the donut groups by equity/debt or fund house instead.
 type AllocationGroup = 'category' | 'amc'
@@ -95,33 +111,52 @@ function openScheme(securityId: number): void {
     </header>
 
     <div class="bento">
-      <MetricCard
-        class="span-6 hero-card"
-        label="Net worth"
-        :value="summary.netWorth"
-        :delta-amount="summary.dayChangeAmount ?? undefined"
-        :delta-percent="summary.dayChangePercent ?? undefined"
-        hero
-        count-up
-      >
-        <p class="hero-note">
-          Invested {{ formatInr(summary.invested) }} ·
-          <span class="total-return">
-            Total return
-            <DeltaChip :amount="summary.totalReturnAmount" :percent="summary.totalReturnPercent" size="sm" />
-          </span>
-        </p>
-      </MetricCard>
+      <header class="hero span-8 card">
+        <div class="hero-net">
+          <p class="eyebrow">Net worth</p>
+          <p class="hero-value">{{ formatInr(heroNetWorth) }}</p>
+          <p class="hero-invested">Invested {{ formatInr(summary.invested) }}</p>
+        </div>
+        <div class="hero-returns">
+          <div class="ret">
+            <div class="ret-head">
+              <span class="eyebrow">All-time return</span>
+              <SelectButton
+                v-if="loadCharts"
+                class="basis-toggle"
+                :model-value="returnBasis"
+                :options="basisOptions"
+                option-label="label"
+                option-value="value"
+                :allow-empty="false"
+                size="small"
+                @update:model-value="(v: ReturnBasis | null) => v && (returnBasis = v)"
+              />
+            </div>
+            <DeltaChip
+              :amount="summary.totalReturnAmount"
+              :percent="shownReturnPercent ?? undefined"
+              :value="summary.totalReturnAmount"
+              size="md"
+            />
+            <span v-if="returnBasis === 'xirr' && shownReturnPercent === null" class="ret-na"
+              >XIRR needs more history</span
+            >
+          </div>
+          <div class="ret ret-1d">
+            <span class="eyebrow">1D return</span>
+            <DeltaChip
+              v-if="summary.dayChangeAmount !== null"
+              :amount="summary.dayChangeAmount"
+              :percent="summary.dayChangePercent ?? undefined"
+              size="sm"
+            />
+            <span v-else class="muted">—</span>
+          </div>
+        </div>
+      </header>
 
-      <MetricCard
-        class="span-3"
-        label="XIRR (annualised)"
-        :value="summary.xirr"
-        format="percent"
-        :display="summary.xirr === null ? '—' : undefined"
-      />
-
-      <IntegrityHealthCard class="span-3" :rollup="rollup" :review-to="integrityTo" />
+      <IntegrityHealthCard class="span-4" :rollup="rollup" :review-to="integrityTo" />
 
       <article ref="chartRegion" class="span-4 card chart-card">
         <div class="chart-head">
@@ -309,15 +344,73 @@ function openScheme(securityId: number): void {
     var(--fm-surface-raised);
 }
 
-.hero-card .hero-note {
-  margin: 0.5rem 0 0;
-  font-size: 0.875rem;
+/* ---- hero band ---- */
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fm-space-5);
+  flex-wrap: wrap;
+}
+.eyebrow {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--fm-text-muted);
 }
-.total-return {
-  display: inline-flex;
-  align-items: center;
+.hero-net {
+  min-width: 0;
+}
+.hero-value {
+  margin: 0.25rem 0 0;
+  font-size: 2.4rem;
+  line-height: 1.05;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.hero-invested {
+  margin: 0.4rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.hero-returns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-4);
+  align-items: flex-end;
+  text-align: right;
+}
+.ret {
+  display: flex;
+  flex-direction: column;
   gap: 0.35rem;
+  align-items: flex-end;
+}
+.ret-head {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-3);
+}
+.ret-1d {
+  opacity: 0.9;
+}
+.ret-na {
+  font-size: 0.6875rem;
+  color: var(--fm-text-subtle);
+}
+/* When the hero wraps to a narrow column, left-align the returns under the value. */
+@media (max-width: 1024px) {
+  .hero-returns {
+    align-items: flex-start;
+    text-align: left;
+    width: 100%;
+  }
+  .ret {
+    align-items: flex-start;
+  }
 }
 
 .holding-name {
