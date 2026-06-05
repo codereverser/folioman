@@ -34,6 +34,29 @@
         "title": "AllocationBucket",
         "type": "object"
       },
+      "AppMetaOut": {
+        "properties": {
+          "data_location": {
+            "title": "Data Location",
+            "type": "string"
+          },
+          "storage": {
+            "title": "Storage",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "storage",
+          "data_location"
+        ],
+        "title": "AppMetaOut",
+        "type": "object"
+      },
       "AssetMixRow": {
         "properties": {
           "security_type": {
@@ -3406,6 +3429,28 @@
         "summary": "Investor Value Series",
         "tags": [
           "investors"
+        ]
+      }
+    },
+    "/api/meta": {
+      "get": {
+        "operationId": "folioman_app_api_meta_app_meta",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppMetaOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "App Meta",
+        "tags": [
+          "meta"
         ]
       }
     }

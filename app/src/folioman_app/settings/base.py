@@ -83,6 +83,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "folioman_app.wsgi.application"
 
+# Product version surfaced in the UI (Settings → About). Single source of truth;
+# the desktop/server shells can override via the FOLIOMAN_VERSION env var.
+FOLIOMAN_VERSION = os.environ.get("FOLIOMAN_VERSION", "2.0.0-dev")
+
 # Placeholder database. desktop.py points NAME at a user-data SQLite file;
 # server.py switches to Postgres. Tests use the in-memory SQLite test DB.
 DATABASES = {
