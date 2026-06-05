@@ -6,8 +6,15 @@ import { useUiStore } from './ui'
 describe('ui store', () => {
   beforeEach(() => {
     localStorage.clear()
+    Object.defineProperty(window, 'innerWidth', { value: 1024, configurable: true })
     setActivePinia(createPinia())
   })
+
+  function freshStore(width: number) {
+    Object.defineProperty(window, 'innerWidth', { value: width, configurable: true })
+    setActivePinia(createPinia())
+    return useUiStore()
+  }
 
   it('scope is mutually exclusive — selecting an investor clears the family', () => {
     const ui = useUiStore()
@@ -44,6 +51,30 @@ describe('ui store', () => {
     const ui = useUiStore()
     expect(ui.selectedFamilyId).toBe(9)
     expect(ui.selectedInvestorId).toBeNull()
+  })
+
+  it('sidebar defaults to expanded on desktop width (no saved pref)', () => {
+    const ui = freshStore(1280)
+    expect(ui.sidebarCollapsed).toBe(false)
+  })
+
+  it('sidebar defaults to the icon rail on tablet width (768–1024)', () => {
+    const ui = freshStore(900)
+    expect(ui.sidebarCollapsed).toBe(true)
+  })
+
+  it('toggleSidebar pins and persists the choice, overriding the viewport default', () => {
+    const ui = freshStore(900) // tablet → defaults collapsed
+    expect(ui.sidebarCollapsed).toBe(true)
+    ui.toggleSidebar() // explicit expand sticks
+    expect(ui.sidebarCollapsed).toBe(false)
+    expect(localStorage.getItem('folioman.sidebar')).toBe('expanded')
+  })
+
+  it('restores a persisted collapsed sidebar on init regardless of width', () => {
+    localStorage.setItem('folioman.sidebar', 'collapsed')
+    const ui = freshStore(1440) // wide desktop would otherwise expand
+    expect(ui.sidebarCollapsed).toBe(true)
   })
 
   it('queues and drains toasts', () => {

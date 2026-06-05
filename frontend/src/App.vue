@@ -79,6 +79,12 @@ const navLinks = computed<NavLink[]>(() => {
 const MOBILE_TABS = new Set(['Investors', 'Dashboard', 'Integrity', 'Capital Gains', 'Family', 'Settings'])
 const mobileTabs = computed<NavLink[]>(() => navLinks.value.filter((l) => MOBILE_TABS.has(l.label)))
 
+// In the collapsed icon rail, the label lives in a hover tooltip; an empty string
+// renders no tooltip (so the full sidebar and mobile rows stay tooltip-free).
+function railTooltip(label: string): string {
+  return ui.sidebarCollapsed && !ui.isMobile ? label : ''
+}
+
 // Drain the ui store's toast queue into PrimeVue's Toast service.
 watch(
   () => ui.toasts.length,
@@ -104,11 +110,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-mobile': ui.isMobile }">
+  <div class="app-shell" :class="{ 'is-mobile': ui.isMobile, 'is-collapsed': ui.sidebarCollapsed && !ui.isMobile }">
     <aside class="app-nav">
       <div class="brand">
         <img src="/logo.svg" alt="" width="28" height="28" />
         <span class="brand-name">Folioman</span>
+        <button
+          v-tooltip.right="railTooltip('Expand')"
+          type="button"
+          class="collapse-toggle"
+          :aria-label="ui.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+          :aria-pressed="ui.sidebarCollapsed"
+          @click="ui.toggleSidebar()"
+        >
+          <i :class="ui.sidebarCollapsed ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'" />
+        </button>
       </div>
       <div class="switcher">
         <ScopeSwitcher />
@@ -117,6 +133,7 @@ onBeforeUnmount(() => {
         <RouterLink
           v-for="link in navLinks"
           :key="link.label"
+          v-tooltip.right="railTooltip(link.label)"
           :to="link.to"
           class="nav-link"
           active-class="is-active"
@@ -204,6 +221,12 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: 16rem 1fr;
   min-height: 100vh;
+  transition: grid-template-columns var(--fm-dur, 0.18s) var(--fm-ease, ease);
+}
+
+/* Collapsed: the sidebar becomes a 4.5rem icon rail (DESIGN-SYSTEM §5). */
+.app-shell.is-collapsed {
+  grid-template-columns: 4.5rem 1fr;
 }
 
 .app-nav {
@@ -273,6 +296,60 @@ nav {
   font-weight: 700;
   line-height: 1.1rem;
   text-align: center;
+}
+
+/* Collapse / expand control — a compact icon button on the brand line. */
+.collapse-toggle {
+  margin-left: auto; /* push to the far end of the brand line */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--fm-radius-sm);
+  color: var(--fm-text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition:
+    background var(--fm-dur-fast) var(--fm-ease),
+    color var(--fm-dur-fast) var(--fm-ease);
+}
+.collapse-toggle:hover {
+  background: var(--fm-surface-raised);
+  color: var(--fm-text);
+}
+
+/* ---- collapsed icon rail ---- */
+.is-collapsed .app-nav {
+  padding: 1rem 0.5rem;
+  align-items: stretch;
+}
+/* Stack logo + toggle so the control stays at the top of the rail. */
+.is-collapsed .brand {
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.is-collapsed .collapse-toggle {
+  margin-left: 0;
+}
+.is-collapsed .brand-name,
+.is-collapsed .switcher,
+.is-collapsed .nav-label {
+  display: none;
+}
+.is-collapsed .nav-link {
+  position: relative;
+  justify-content: center;
+  gap: 0;
+  padding: 0.6rem 0;
+}
+/* With the label hidden, float the attention badge over the icon. */
+.is-collapsed .nav-badge {
+  position: absolute;
+  top: 0.1rem;
+  right: 0.55rem;
 }
 
 /* Bottom tab bar — mobile only (shown via the media query below). */
@@ -409,8 +486,10 @@ nav {
     padding: var(--fm-space-3) var(--fm-space-4);
   }
 
-  /* The sidebar link list moves to the bottom tab bar on mobile. */
-  .side-nav {
+  /* The sidebar link list moves to the bottom tab bar on mobile; the
+     collapse control is desktop/tablet-only. */
+  .side-nav,
+  .collapse-toggle {
     display: none;
   }
 

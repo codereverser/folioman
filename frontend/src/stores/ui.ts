@@ -3,7 +3,9 @@ import { defineStore } from 'pinia'
 
 const SCOPE_STORAGE_KEY = 'folioman.scope'
 const THEME_STORAGE_KEY = 'folioman.theme'
+const SIDEBAR_STORAGE_KEY = 'folioman.sidebar'
 const MOBILE_BREAKPOINT = 768
+const TABLET_MAX = 1024
 
 export type ToastSeverity = 'success' | 'info' | 'warn' | 'error'
 export type ThemePreference = 'light' | 'dark' | 'system'
@@ -12,6 +14,13 @@ function loadThemePreference(): ThemePreference {
   if (typeof localStorage === 'undefined') return 'system'
   const raw = localStorage.getItem(THEME_STORAGE_KEY)
   return raw === 'light' || raw === 'dark' || raw === 'system' ? raw : 'system'
+}
+
+/** Persisted sidebar preference: `null` = follow the viewport (no explicit choice). */
+function loadSidebarPref(): boolean | null {
+  if (typeof localStorage === 'undefined') return null
+  const raw = localStorage.getItem(SIDEBAR_STORAGE_KEY)
+  return raw === 'collapsed' ? true : raw === 'expanded' ? false : null
 }
 
 function systemPrefersDark(): boolean {
@@ -156,6 +165,28 @@ export const useUiStore = defineStore('ui', () => {
     return () => window.removeEventListener('resize', onResize)
   }
 
+  // --- sidebar collapse (icon rail) -----------------------------------------
+  // Tri-state: an explicit user toggle pins `collapsed`/`expanded` (persisted);
+  // with no choice yet (`null`) the rail follows the viewport — the 768–1024
+  // tablet band defaults to the icon rail, wider desktops to the full sidebar
+  // (DESIGN-SYSTEM §5). Mobile (<768) ignores this entirely (drawer + bottom tabs).
+  const sidebarPref = ref<boolean | null>(loadSidebarPref())
+  const isTablet = computed(
+    () => viewportWidth.value >= MOBILE_BREAKPOINT && viewportWidth.value < TABLET_MAX,
+  )
+  const sidebarCollapsed = computed(() =>
+    sidebarPref.value === null ? isTablet.value : sidebarPref.value,
+  )
+  function setSidebarCollapsed(value: boolean): void {
+    sidebarPref.value = value
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, value ? 'collapsed' : 'expanded')
+    }
+  }
+  function toggleSidebar(): void {
+    setSidebarCollapsed(!sidebarCollapsed.value)
+  }
+
   return {
     loading: readonly(loading),
     setLoading,
@@ -175,5 +206,8 @@ export const useUiStore = defineStore('ui', () => {
     startThemeTracking,
     isMobile,
     startViewportTracking,
+    sidebarCollapsed,
+    toggleSidebar,
+    setSidebarCollapsed,
   }
 })

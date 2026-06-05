@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import ToastService from 'primevue/toastservice'
 import ConfirmationService from 'primevue/confirmationservice'
+import Tooltip from 'primevue/tooltip'
 
 // Bundled fonts (privacy: no CDN — assets ship with the desktop build). Loaded
 // with `font-display: optional` (see the Vite transform in vite.config.ts) so the
@@ -42,6 +43,8 @@ app.use(PrimeVue, {
 })
 app.use(ToastService)
 app.use(ConfirmationService)
+// Tooltip directive — used for nav labels when the sidebar collapses to the rail.
+app.directive('tooltip', Tooltip)
 
 app.mount('#app')
 
