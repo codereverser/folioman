@@ -138,6 +138,12 @@ const sortedFunds = computed(() => {
               <IntegrityBadge :status="data.integrity" size="sm" />
             </template>
           </Column>
+          <!-- Spacer column: in subheader row-group mode PrimeVue renders the group
+               header cell with colspan = (columns − 1), so the family band stops one
+               column short of the table edge. This hidden throwaway column absorbs
+               that offset so the band spans the full visible width. Do not remove.
+               See: https://github.com/primefaces/primevue/issues/3685#issuecomment-2107187144 -->
+          <Column style="display: none" />
         </DataTable>
       </article>
     </template>
