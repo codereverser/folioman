@@ -418,6 +418,8 @@ class CapitalGainRow(Schema):
     term: str  # "short" | "long"
     acquired_on: date
     sold_on: date
+    # Pre-2018 LTCG lot whose 31-Jan-2018 FMV is missing — gain may be overstated.
+    grandfathering_unavailable: bool = False
 
 
 class CapitalGainsOut(Schema):

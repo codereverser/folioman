@@ -70,6 +70,37 @@ def test_other_fy_disposal_excluded(make_investor):
     assert cg["ltcg_total"] == Decimal("0.00")
 
 
+def test_grandfathering_unavailable_flagged_when_fmv_missing(make_investor):
+    # A pre-2018 lot sold long-term: without a 31-Jan-2018 FMV, the grandfathering
+    # benefit can't be applied, so the gain is overstated — the row must say so.
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="10", price="100", on=dt.date(2017, 1, 1))
+    _equity_txn(inv, txn_type="sell", units="10", price="300", on=dt.date(2024, 8, 1))
+
+    cg = build_capital_gains(inv, "2024-25", fmv_lookup=lambda *_: None)
+    assert cg["rows"][0]["grandfathering_unavailable"] is True
+
+
+def test_grandfathering_available_not_flagged(make_investor):
+    # Same lot, but a FMV is available → benefit applies, no warning.
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="10", price="100", on=dt.date(2017, 1, 1))
+    _equity_txn(inv, txn_type="sell", units="10", price="300", on=dt.date(2024, 8, 1))
+
+    cg = build_capital_gains(inv, "2024-25", fmv_lookup=lambda *_: Decimal("150"))
+    assert cg["rows"][0]["grandfathering_unavailable"] is False
+
+
+def test_post_2018_lot_never_flagged(make_investor):
+    # A post-2018 lot is never grandfathered, so the flag is irrelevant (False).
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="10", price="100", on=dt.date(2020, 1, 1))
+    _equity_txn(inv, txn_type="sell", units="10", price="200", on=dt.date(2024, 8, 1))
+
+    cg = build_capital_gains(inv, "2024-25", fmv_lookup=lambda *_: None)
+    assert cg["rows"][0]["grandfathering_unavailable"] is False
+
+
 def test_capital_gains_via_api(client, make_investor):
     inv = make_investor()
     _equity_txn(inv, txn_type="buy", units="10", price="100", on=dt.date(2020, 1, 1))

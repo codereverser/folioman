@@ -94,6 +94,11 @@
             "title": "Gain",
             "type": "string"
           },
+          "grandfathering_unavailable": {
+            "default": false,
+            "title": "Grandfathering Unavailable",
+            "type": "boolean"
+          },
           "isin": {
             "title": "Isin",
             "type": "string"

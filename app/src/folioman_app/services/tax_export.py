@@ -104,6 +104,10 @@ def build_capital_gains(
                 "term": line.term.value,
                 "acquired_on": d.acquired_on,
                 "sold_on": d.sold_on,
+                # A pre-2018 LTCG lot whose 31-Jan-2018 FMV couldn't be fetched: the
+                # grandfathering benefit is missing, so cost is understated and the
+                # gain (and any tax) is overstated. Surfaced so the user can tell.
+                "grandfathering_unavailable": bool(line.metadata.get("grandfathering_unavailable")),
             }
         )
 
