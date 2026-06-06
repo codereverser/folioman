@@ -121,10 +121,13 @@ function txnFlow(t: string): 'in' | 'out' | 'neutral' {
 
 // Running unit balance after each row, over the full chronological ledger (the
 // backend orders by date,id asc); keyed by id so it survives table paging.
+// Partial-history rows are skipped: without the missing opening balance their
+// running total is meaningless, so they render "—" (see the Balance column).
 const balanceById = computed<Record<number, number>>(() => {
   const map: Record<number, number> = {}
   let bal = 0
   for (const t of detail.value?.transactions ?? []) {
+    if (!t.cost_basis_complete) continue
     bal += signedUnits(t.transaction_type, t.units)
     map[t.id] = bal
   }
@@ -252,40 +255,59 @@ function back(): void {
           capital-gains worksheet. Upload a <strong>since-inception (Detailed) CAS</strong> — or add
           the transactions manually — and we'll build them.
         </Message>
-        <DataTable
-          v-else-if="loadCharts"
-          :value="detail.transactions"
-          data-key="id"
-          size="small"
-          class="ledger"
-          paginator
-          :rows="15"
-          :rows-per-page-options="[15, 30, 100]"
-          sort-field="date"
-          :sort-order="-1"
-        >
-          <Column field="date" header="Date" sortable>
-            <template #body="{ data }">{{ formatDate(data.date) }}</template>
-          </Column>
-          <Column field="transaction_type" header="Type">
-            <template #body="{ data }">
-              <span class="flow" :class="txnFlow(data.transaction_type)">{{ txnLabel(data.transaction_type) }}</span>
-            </template>
-          </Column>
-          <Column header="Units" class="num">
-            <template #body="{ data }">{{ formatUnits(data.units) }}</template>
-          </Column>
-          <Column header="NAV / Price" class="num">
-            <template #body="{ data }">{{ formatInrPaise(data.nav_or_price) }}</template>
-          </Column>
-          <Column header="Amount" class="num">
-            <template #body="{ data }">{{ data.amount == null ? '—' : formatInr(data.amount) }}</template>
-          </Column>
-          <Column header="Balance" class="num">
-            <template #body="{ data }">{{ formatUnits(balanceById[data.id]) }}</template>
-          </Column>
-        </DataTable>
-        <div v-else class="table-placeholder" aria-hidden="true" />
+        <template v-else>
+          <Message v-if="detail.partial_history" severity="warn" :closable="false">
+            History before
+            <strong>{{
+              detail.partial_history_from
+                ? formatDate(detail.partial_history_from)
+                : 'this statement'
+            }}</strong>
+            is missing, so cost basis and capital gains aren't computed for this scheme — its value
+            uses the statement's reported balance. The partial-statement rows are shown below,
+            marked <span class="partial-pill">partial</span>. Import a
+            <strong>since-inception (Detailed) CAS</strong> to enable gains.
+          </Message>
+          <DataTable
+            v-if="loadCharts"
+            :value="detail.transactions"
+            data-key="id"
+            size="small"
+            class="ledger"
+            paginator
+            :rows="15"
+            :rows-per-page-options="[15, 30, 100]"
+            sort-field="date"
+            :sort-order="-1"
+          >
+            <Column field="date" header="Date" sortable>
+              <template #body="{ data }">
+                {{ formatDate(data.date) }}
+                <span v-if="!data.cost_basis_complete" class="partial-pill">partial</span>
+              </template>
+            </Column>
+            <Column field="transaction_type" header="Type">
+              <template #body="{ data }">
+                <span class="flow" :class="txnFlow(data.transaction_type)">{{ txnLabel(data.transaction_type) }}</span>
+              </template>
+            </Column>
+            <Column header="Units" class="num">
+              <template #body="{ data }">{{ formatUnits(data.units) }}</template>
+            </Column>
+            <Column header="NAV / Price" class="num">
+              <template #body="{ data }">{{ formatInrPaise(data.nav_or_price) }}</template>
+            </Column>
+            <Column header="Amount" class="num">
+              <template #body="{ data }">{{ data.amount == null ? '—' : formatInr(data.amount) }}</template>
+            </Column>
+            <Column header="Balance" class="num">
+              <template #body="{ data }">{{
+                data.cost_basis_complete ? formatUnits(balanceById[data.id]) : '—'
+              }}</template>
+            </Column>
+          </DataTable>
+          <div v-else class="table-placeholder" aria-hidden="true" />
+        </template>
       </article>
     </template>
   </section>
@@ -452,6 +474,20 @@ function back(): void {
 }
 .flow.neutral {
   color: var(--fm-text-muted);
+}
+/* Marks a partial-history row (kept for display, excluded from cost basis). */
+.partial-pill {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--p-amber-600, #d97706);
+  background: color-mix(in srgb, var(--p-amber-500, #f59e0b) 16%, transparent);
+  border-radius: 999px;
+  vertical-align: middle;
 }
 /* On a narrow screen the ledger scrolls within its card rather than widening
    the page. */

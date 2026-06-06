@@ -190,6 +190,16 @@ class Folio(TimeStampedModel):
         return f"{self.number} ({self.folio_type})"
 
 
+class TransactionQuerySet(models.QuerySet):
+    def cost_basis(self):
+        """Rows that carry a verified cost basis. Excludes partial-history imports
+        (``cost_basis_complete=False``) — those are kept for display only and must
+        never feed units, cost basis, gains, XIRR, reconcile, or the import gap
+        check (they'd leak a wrong cost basis). Every cost-basis consumer funnels
+        through this; the scheme-detail ledger is the one path that shows all rows."""
+        return self.filter(cost_basis_complete=True)
+
+
 class Transaction(TimeStampedModel):
     """A single ledger event — input to FIFO and XIRR. Mirrors core Transaction.
 
@@ -224,6 +234,16 @@ class Transaction(TimeStampedModel):
     # Content hash set by the import service for idempotent re-imports; blank for
     # manual / corporate-action entries (no dedup). Set by the import service.
     dedup_key = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    # False for rows from a partial-period statement that doesn't chain onto the
+    # ledger (non-zero opening with no prior history). Such rows are kept so the
+    # scheme page can show them, but they carry no usable cost basis — every
+    # cost-basis path excludes them via ``TransactionQuerySet.cost_basis()`` and the
+    # scheme's units/value fall back to its holding snapshot. Set True once an
+    # earlier statement supplies the missing history (see the order-independent
+    # convergence work).
+    cost_basis_complete = models.BooleanField(default=True)
+
+    objects = TransactionQuerySet.as_manager()
 
     class Meta:
         ordering = ["investor", "date", "id"]

@@ -1643,6 +1643,23 @@
             "title": "Nav History",
             "type": "array"
           },
+          "partial_history": {
+            "default": false,
+            "title": "Partial History",
+            "type": "boolean"
+          },
+          "partial_history_from": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Partial History From"
+          },
           "return_pct": {
             "anyOf": [
               {
@@ -2035,6 +2052,11 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Brokerage",
             "type": "string"
+          },
+          "cost_basis_complete": {
+            "default": true,
+            "title": "Cost Basis Complete",
+            "type": "boolean"
           },
           "currency": {
             "title": "Currency",

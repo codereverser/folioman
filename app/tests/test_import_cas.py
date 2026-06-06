@@ -112,15 +112,20 @@ def _partial_statement() -> MfCasStatement:
 def test_incomplete_history_scheme_snapshotted_not_ledgered(make_investor):
     inv = make_investor()
     summary = persist_mf_statement(inv, _partial_statement(), source_ref="p1")
-    # No (partial) ledger written; closing balance kept as a net-worth snapshot.
-    assert summary["transactions_created"] == 0
+    # The partial rows are kept (display-only), NOT counted as complete history; the
+    # closing balance is still kept as a net-worth snapshot.
+    assert summary["transactions_created"] == 0  # no complete-history rows
+    assert summary["partial_transactions"] == 1  # the one partial row, kept flagged
     assert summary["holdings_snapshotted"] == 1
     assert len(summary["incomplete_history"]) == 1
     assert summary["incomplete_history"][0]["opening_units"] == "50"
     assert summary["incomplete_history"][0]["reason"] == "opening_nonzero"
 
     sec = Security.objects.get(amfi_code="118989")
-    assert Transaction.objects.filter(investor=inv, security=sec).count() == 0
+    # Row persisted but flagged incomplete, so it's invisible to cost basis.
+    assert Transaction.objects.filter(investor=inv, security=sec).count() == 1
+    assert Transaction.objects.cost_basis().filter(investor=inv, security=sec).count() == 0
+    assert Transaction.objects.get(investor=inv, security=sec).cost_basis_complete is False
     snap = Holding.objects.get(investor=inv, security=sec, source="cas-pdf")
     assert snap.units == Decimal("70")
     assert snap.as_of_date == dt.date(2024, 12, 31)
@@ -139,7 +144,9 @@ def test_incomplete_history_marks_job_completed_with_warnings(client, patch_cas,
     body = resp.json()
     assert body["status"] == "completed_with_warnings"
     assert body["result"]["incomplete_history"]
-    assert Transaction.objects.filter(investor_id=body["investor_id"]).count() == 0
+    # The partial rows are kept but none count toward cost basis.
+    assert Transaction.objects.filter(investor_id=body["investor_id"]).count() == 1
+    assert Transaction.objects.cost_basis().filter(investor_id=body["investor_id"]).count() == 0
 
 
 def _full_statement_for_partial() -> MfCasStatement:
@@ -197,6 +204,7 @@ def test_mixed_statement_full_and_incomplete_handled_independently(make_investor
     inv = make_investor()
     summary = persist_mf_statement(inv, _mixed_statement(), source_ref="mix")
     assert summary["transactions_created"] == 2  # the full scheme's two rows
+    assert summary["partial_transactions"] == 1  # the incomplete scheme's one row
     assert summary["holdings_snapshotted"] == 1  # the incomplete scheme
     assert len(summary["incomplete_history"]) == 1
 
@@ -210,7 +218,9 @@ def test_mixed_statement_full_and_incomplete_handled_independently(make_investor
         SecurityIntegrityStatus.objects.get(investor=inv, security=partial_sec).status
         == "snapshot_only"
     )
-    assert Transaction.objects.filter(investor=inv, security=partial_sec).count() == 0
+    # Partial scheme's row is kept but flagged; the full scheme ledgers normally.
+    assert Transaction.objects.filter(investor=inv, security=partial_sec).count() == 1
+    assert Transaction.objects.cost_basis().filter(investor=inv, security=partial_sec).count() == 0
     assert Transaction.objects.filter(investor=inv, security=full_sec).count() == 2
 
 
@@ -248,11 +258,40 @@ def test_open_zero_but_unreconciled_rows_snapshotted_with_reason(make_investor):
     inv = make_investor()
     summary = persist_mf_statement(inv, _unreconciled_statement(), source_ref="u")
     assert summary["transactions_created"] == 0
+    assert summary["partial_transactions"] == 1  # kept, flagged incomplete
     assert summary["incomplete_history"][0]["reason"] == "rows_unreconciled"
 
     sec = Security.objects.get(amfi_code="103504")
-    assert Transaction.objects.filter(investor=inv, security=sec).count() == 0
+    assert Transaction.objects.filter(investor=inv, security=sec).count() == 1
+    assert Transaction.objects.cost_basis().filter(investor=inv, security=sec).count() == 0
     assert SecurityIntegrityStatus.objects.get(investor=inv, security=sec).status == "snapshot_only"
+
+
+def test_partial_rows_visible_but_excluded_from_cost_basis_units_and_gap(make_investor):
+    """A partial-period scheme's rows are shown (badged) but feed nothing: units come
+    from the snapshot, not the partial rows, and they don't corrupt the gap check —
+    a later since-inception statement still chains onto an empty prior ledger."""
+    from folioman_app.services.valuation import build_scheme_detail
+
+    inv = make_investor()
+    persist_mf_statement(inv, _partial_statement(), source_ref="p")
+    sec = Security.objects.get(amfi_code="118989")
+
+    detail = build_scheme_detail(inv, sec, dt.date(2025, 1, 31))
+    # Visible + badged, with the "history before <date>" marker set...
+    assert len(detail["transactions"]) == 1
+    assert detail["transactions"][0].cost_basis_complete is False
+    assert detail["partial_history"] is True
+    assert detail["partial_history_from"] == dt.date(2024, 6, 1)
+    # ...but units come from the snapshot (70), not the partial row's net (20).
+    assert detail["units"] == Decimal("70")
+
+    # The partial row must not corrupt the gap check: a later since-inception
+    # statement for the same scheme/folio still chains (prior balance ignores it).
+    summary = persist_mf_statement(inv, _full_statement_for_partial(), source_ref="full")
+    assert summary["transactions_created"] == 2  # chained → ledgered as complete history
+    assert summary["incomplete_history"] == []
+    assert Transaction.objects.cost_basis().filter(investor=inv, security=sec).count() == 2
 
 
 def test_partial_then_full_import_upgrades_to_full_history(make_investor):
@@ -380,10 +419,13 @@ def test_chained_statement_with_gap_is_not_ledgered(make_investor):
     assert SecurityIntegrityStatus.objects.get(investor=inv, security=sec).status == "full_history"
 
     summary = persist_mf_statement(inv, _chain_gap_second(), source_ref="B")
-    assert summary["transactions_created"] == 0  # the gappy statement's row is NOT added
+    assert summary["transactions_created"] == 0  # the gappy row isn't complete history
+    assert summary["partial_transactions"] == 1  # but it's kept, flagged incomplete
     assert summary["incomplete_history"][0]["reason"] == "history_gap"
-    # Ledger is untouched (still just A's two rows)...
-    assert Transaction.objects.filter(investor=inv, security=sec).count() == 2
+    # The cost-basis ledger is untouched (still just A's two complete rows); B's row
+    # is persisted for display but excluded.
+    assert Transaction.objects.cost_basis().filter(investor=inv, security=sec).count() == 2
+    assert Transaction.objects.filter(investor=inv, security=sec).count() == 3
     # ...but the contradiction between the ledger (50) and the newer close (30) shows.
     status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec)
     assert status.status == "mismatch"

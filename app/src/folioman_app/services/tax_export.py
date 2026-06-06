@@ -50,7 +50,9 @@ def _tax_ready_transactions(investor: Investor, *, include_unreconciled: bool) -
     }
     return [
         to_core_transaction(t)
-        for t in investor.transactions.select_related("security", "folio").all()
+        # Cost-basis rows only — a partial-history bucket is SNAPSHOT_ONLY (never
+        # tax-ready) anyway, but exclude its rows explicitly so they can't reach FIFO.
+        for t in investor.transactions.cost_basis().select_related("security", "folio").all()
         if (t.security_id, t.folio.number if t.folio else "") in ready_keys
     ]
 

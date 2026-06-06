@@ -111,7 +111,10 @@ def _held_security_ids(investor: Investor) -> set[int]:
 
 
 def _earliest_activity(investor: Investor) -> dt.date | None:
-    txn = investor.transactions.aggregate(d=Min("date"))["d"]
+    # Cost-basis rows only — partial-history rows don't drive value (they fall back
+    # to the snapshot), so the series should start from the snapshot, not the
+    # earlier, value-less partial rows.
+    txn = investor.transactions.cost_basis().aggregate(d=Min("date"))["d"]
     hold = investor.holdings.aggregate(d=Min("as_of_date"))["d"]
     dates = [d for d in (txn, hold) if d is not None]
     return min(dates) if dates else None

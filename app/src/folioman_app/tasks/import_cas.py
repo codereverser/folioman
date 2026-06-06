@@ -46,7 +46,9 @@ def _prior_ledger_balance(
     """
     if before is None:
         return _ZERO
-    qs = investor.transactions.filter(security=security, folio=folio, date__lt=before)
+    # Only complete-history rows count toward the prior balance — partial rows carry
+    # no usable cost basis and would corrupt the next statement's gap check.
+    qs = investor.transactions.cost_basis().filter(security=security, folio=folio, date__lt=before)
     return net_units_from_transactions(
         [to_core_transaction(t) for t in qs.select_related("security", "folio")]
     )
@@ -82,10 +84,22 @@ def _dedup_key(security: Security, folio_number: str, line: MfCasLineItem) -> st
     return hashlib.sha256("|".join(parts).encode()).hexdigest()
 
 
-def _persist_full_history_block(
-    investor, security: Security, folio, block: MfCasSchemeBlock, *, source_ref: str
+def _persist_block(
+    investor,
+    security: Security,
+    folio,
+    block: MfCasSchemeBlock,
+    *,
+    source_ref: str,
+    cost_basis_complete: bool = True,
 ) -> tuple[int, int]:
-    """Persist a complete scheme block as a ledger. Returns (created, skipped)."""
+    """Persist a scheme block's rows as ledger transactions. Returns (created, skipped).
+
+    ``cost_basis_complete=False`` marks the rows of a partial-period block that
+    doesn't chain onto the ledger: they're kept so the scheme page can show them, but
+    every cost-basis path excludes them and the scheme's units/value fall back to its
+    holding snapshot (persisted separately). The dedup key is content-only, so a
+    re-import of the same row is idempotent regardless of this flag."""
     created_n = skipped_n = 0
     for line in block.transactions:
         _, created = Transaction.objects.get_or_create(
@@ -104,6 +118,7 @@ def _persist_full_history_block(
                 "source": TransactionSource.CAS_PDF.value,
                 "source_ref": source_ref,
                 "narration": line.description,
+                "cost_basis_complete": cost_basis_complete,
             },
         )
         if created:
@@ -124,8 +139,9 @@ def _snapshot_incomplete_block(
 ) -> bool:
     """Record an incomplete scheme's closing balance as a net-worth snapshot.
 
-    Its (partial) transactions are intentionally NOT persisted — they would give
-    FIFO the wrong cost basis. Returns True if a snapshot row was written.
+    The block's rows are persisted separately as ``cost_basis_complete=False`` (kept
+    for display, excluded from FIFO); this snapshot is what actually drives the
+    scheme's units/value. Returns True if a snapshot row was written.
     """
     as_of = statement.statement_to or (
         max((line.date for line in block.transactions), default=None)
@@ -160,6 +176,9 @@ def persist_mf_statement(investor, statement: MfCasStatement, *, source_ref: str
         "schemes": 0,
         "transactions_created": 0,
         "transactions_skipped": 0,
+        # Rows kept from partial-period blocks (shown on the scheme page, excluded
+        # from cost basis). Distinct from transactions_created (complete history).
+        "partial_transactions": 0,
         "holdings_snapshotted": 0,
         "securities": 0,
         "incomplete_history": [],
@@ -180,12 +199,23 @@ def persist_mf_statement(investor, statement: MfCasStatement, *, source_ref: str
             )
             gap = scheme_history_gap(block, prior_balance=prior_balance)
             if gap is None:
-                created_n, skipped_n = _persist_full_history_block(
+                created_n, skipped_n = _persist_block(
                     investor, security, folio, block, source_ref=source_ref
                 )
                 summary["transactions_created"] += created_n
                 summary["transactions_skipped"] += skipped_n
             else:
+                # Doesn't chain — keep the rows (display-only, no cost basis) AND the
+                # closing-balance snapshot that drives this scheme's net worth.
+                created_n, _ = _persist_block(
+                    investor,
+                    security,
+                    folio,
+                    block,
+                    source_ref=source_ref,
+                    cost_basis_complete=False,
+                )
+                summary["partial_transactions"] += created_n
                 if _snapshot_incomplete_block(
                     investor, security, folio, block, statement=statement, source_ref=source_ref
                 ):

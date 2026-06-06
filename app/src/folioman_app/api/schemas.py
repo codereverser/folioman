@@ -358,6 +358,9 @@ class TransactionOut(Schema):
     currency: str
     source: str
     narration: str  # verbatim source-statement narration (audit trail)
+    # False for a partial-history row: shown for context but excluded from cost
+    # basis / units / gains. The scheme page badges these.
+    cost_basis_complete: bool = True
 
 
 class SecurityRef(Schema):
@@ -436,6 +439,11 @@ class SchemeDetailOut(Schema):
     latest_nav: Decimal | None
     latest_nav_date: date | None
     has_transactions: bool  # false → snapshot-only (show the no-history banner)
+    # True when some ledger rows are partial-history (kept for display, no cost
+    # basis); the UI badges those rows and shows a "history before … is missing"
+    # banner. ``partial_history_from`` is the earliest such row's date.
+    partial_history: bool = False
+    partial_history_from: date | None = None
     integrity: list[IntegrityStatusOut]  # one per folio the security is held in
     # Final balance per folio holding this security (units + value). Empty/one-row
     # for a single-folio holding; the UI shows it only when held across >1 folio.

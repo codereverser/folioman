@@ -36,11 +36,14 @@ def reconcile_security_folio(
     still-unresolved gap reappears as a mismatch). The two are mutually
     exclusive; ``clear_acknowledgement`` wins if both are set.
     """
+    # Cost-basis rows only: a partial-history folio has none here, so it reconciles
+    # as snapshot-only (its closing-balance holding vs an empty ledger) — never a
+    # spurious MISMATCH from partial units.
     txns = [
         to_core_transaction(t)
-        for t in investor.transactions.filter(security=security, folio=folio).select_related(
-            "security", "folio"
-        )
+        for t in investor.transactions.cost_basis()
+        .filter(security=security, folio=folio)
+        .select_related("security", "folio")
     ]
     holdings = [
         to_core_holding(h)

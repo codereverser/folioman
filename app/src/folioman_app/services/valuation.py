@@ -93,7 +93,11 @@ def _current_positions(investor: Investor):
     current-units table updated on import) with no change to callers.
     """
     txns_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
-    for txn in investor.transactions.select_related("security", "security__amc", "folio"):
+    # Cost-basis rows only — a partial scheme then has no ledger here and falls back
+    # to its holding snapshot below (units/value unchanged from the pre-V7 behaviour).
+    for txn in investor.transactions.cost_basis().select_related(
+        "security", "security__amc", "folio"
+    ):
         txns_by_key[(txn.security_id, txn.folio_id)].append(txn)
     holdings_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
     for holding in investor.holdings.select_related("security", "security__amc", "folio"):
@@ -678,20 +682,23 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
     )
     latest_nav_date, latest_nav = latest if latest else (None, None)
 
+    # The scheme page shows the *whole* ledger (incl. partial-history rows, badged);
+    # cost-basis numbers (folio balances, XIRR window) use complete rows only.
     txns = list(
         investor.transactions.filter(security=security)
         .select_related("folio")
         .order_by("date", "id")
     )
-    folios = _folio_balances(investor, security, txns, price, as_of)
+    complete_txns = [t for t in txns if t.cost_basis_complete]
+    folios = _folio_balances(investor, security, complete_txns, price, as_of)
     # Why the XIRR reads the way it does — so the UI can flag a provisional number
     # instead of presenting it as gospel.
     xirr = ex.get("xirr")
-    if not txns:
-        xirr_status = "estimated"  # snapshot-only: no cashflows, value is observed
+    if not complete_txns:
+        xirr_status = "estimated"  # snapshot-only (or partial-history): value is observed
     elif xirr is None:
         xirr_status = "estimated"  # held but unpriced — can't value the terminal leg
-    elif (as_of - txns[0].date).days < 365:
+    elif (as_of - complete_txns[0].date).days < 365:
         xirr_status = "less_than_1_year"  # annualized over a short period — indicative
     else:
         xirr_status = "valid"
@@ -719,6 +726,10 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
         "latest_nav": latest_nav,
         "latest_nav_date": latest_nav_date,
         "has_transactions": bool(txns),
+        "partial_history": len(complete_txns) < len(txns),
+        "partial_history_from": min(
+            (t.date for t in txns if not t.cost_basis_complete), default=None
+        ),
         "integrity": list(
             investor.integrity_statuses.filter(security=security).select_related(
                 "security", "folio"
@@ -756,7 +767,9 @@ def _ledger_index(investors: list[Investor]):
     """
     txn_keys: dict[tuple[int, int | None], dict] = {}
     for investor in investors:
-        for txn in investor.transactions.select_related("security", "folio"):
+        # Cost-basis rows only — partial-history rows are display-only and would skew
+        # FIFO units / invested / XIRR; a partial scheme falls back to its snapshot.
+        for txn in investor.transactions.cost_basis().select_related("security", "folio"):
             key = (txn.security_id, txn.folio_id)
             rec = txn_keys.setdefault(key, {"security": txn.security, "core": [], "cash": []})
             rec["core"].append((txn.date, to_core_transaction(txn)))

@@ -1285,6 +1285,13 @@ export interface components {
             latest_nav_date: string | null;
             /** Nav History */
             nav_history: components["schemas"]["NavPoint"][];
+            /**
+             * Partial History
+             * @default false
+             */
+            partial_history: boolean;
+            /** Partial History From */
+            partial_history_from?: string | null;
             /** Return Pct */
             return_pct: number | null;
             security: components["schemas"]["SchemeRef"];
@@ -1439,6 +1446,11 @@ export interface components {
             amount: string | null;
             /** Brokerage */
             brokerage: string;
+            /**
+             * Cost Basis Complete
+             * @default true
+             */
+            cost_basis_complete: boolean;
             /** Currency */
             currency: string;
             /**
