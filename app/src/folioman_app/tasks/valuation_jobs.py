@@ -247,10 +247,13 @@ def recompute_investor_valuation(
         sec_ids = _held_security_ids(inv)
         securities = Security.objects.filter(id__in=sec_ids)
         if prime_navs:
-            refresh_navs(securities=securities)  # current NAV per security
-            backfill_missing_history(  # MF history (mfapi); equities keep latest only
+            # Backfill BEFORE the latest-point refresh: it must see the true contiguous
+            # tail (the last stored date), not a fresh point refresh just wrote ahead of
+            # an interior gap — else the gap-fill is skipped as "already current".
+            backfill_missing_history(  # MF history (mfapi) — fills any gap to today
                 securities=securities.filter(security_type=SecurityType.MF.value)
             )
+            refresh_navs(securities=securities)  # current point per security (equities too)
         # Only MF securities have a history feed. An unpriced MF splits three ways:
         #  - **feed-pending** (has an amfi_code, feed not yet confirmed dead): a slow
         #    or transient feed; keep erroring + retrying with backoff so it recovers.
@@ -310,8 +313,10 @@ def process_pending_valuations() -> int:
         sec_ids.update(_held_security_ids(inv))
     if sec_ids:
         securities = Security.objects.filter(id__in=sec_ids)
-        refresh_navs(securities=securities)
+        # Backfill first (fills any gap to today), then the latest-point refresh —
+        # see recompute_investor_valuation for why the order matters.
         backfill_missing_history(securities=securities.filter(security_type=SecurityType.MF.value))
+        refresh_navs(securities=securities)
     processed = 0
     for investor_id, recompute_from in due:
         recompute_investor_valuation(investor_id, recompute_from, prime_navs=False)

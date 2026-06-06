@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from django.core.management import call_command
 from folioman_app.models import NAVHistory, Security
+from folioman_app.services.trading_calendar import last_trading_day
 from folioman_app.tasks import refresh_navs as refresh_navs_mod
 from folioman_app.tasks.import_csv import create_manual_transaction
 from folioman_app.tasks.refresh_navs import backfill_missing_history, refresh_navs
@@ -97,6 +98,49 @@ def test_refresh_records_feed_errors(monkeypatch):
     summary = refresh_navs()
     assert summary["errors"] == 1
     assert NAVHistory.objects.count() == 0
+
+
+def test_backfill_fills_a_multi_day_gap(monkeypatch):
+    """A fund days behind is brought fully current — every missing date is inserted,
+    not just the newest point. This is what keeps a fortnight-old desktop gapless."""
+    today = dt.date.today()
+    old = today - dt.timedelta(days=10)
+    points = []
+    d = old
+    while d <= today:
+        points.append(NAVPoint(date=d, nav=Decimal("11")))
+        d += dt.timedelta(days=1)
+    monkeypatch.setattr(
+        mfapi, "fetch_nav_history", lambda code, **_: SimpleNamespace(points=points)
+    )
+    mf = Security.objects.create(security_type=SecurityType.MF.value, name="F", amfi_code="100001")
+    NAVHistory.objects.create(security=mf, date=old, nav=Decimal("10"))  # only old point on file
+
+    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+
+    assert summary["skipped"] == 0  # behind by >1 trading day → not skipped
+    assert NAVHistory.objects.filter(security=mf).count() == len(points)  # gap filled to today
+    assert NAVHistory.objects.filter(security=mf, date=today).exists()
+
+
+def test_backfill_skips_a_fund_current_to_last_trading_day(monkeypatch):
+    """A fund already current (within the trading-day grace) isn't re-fetched."""
+    calls = {"n": 0}
+
+    def _spy(code, **_):
+        calls["n"] += 1
+        return SimpleNamespace(points=[])
+
+    monkeypatch.setattr(mfapi, "fetch_nav_history", _spy)
+    mf = Security.objects.create(security_type=SecurityType.MF.value, name="F", amfi_code="100002")
+    NAVHistory.objects.create(
+        security=mf, date=last_trading_day(dt.date.today()), nav=Decimal("10")
+    )
+
+    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+
+    assert summary["skipped"] == 1
+    assert calls["n"] == 0  # current → no network call
 
 
 def test_backfill_flags_dead_code_as_closed(monkeypatch):

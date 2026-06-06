@@ -25,6 +25,7 @@ from folioman_core.price_feeds.mfapi import NAVFetchError
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
 from folioman_app.models import NAVHistory, Security, Transaction
+from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
 
 _QUOTE_TYPES = {
     SecurityType.EQUITY.value,
@@ -37,7 +38,11 @@ _QUOTE_TYPES = {
 # backfill doesn't hammer a free public API. Indirected through ``_SLEEP`` so
 # tests stub it; ``_REQUEST_SPACING`` is module-level so a caller can tune it.
 _REQUEST_SPACING = 0.15  # seconds between live fetches
-_HISTORY_FRESH_DAYS = 5  # skip a backfill whose latest point is this recent
+# Backfill grace: skip a fund whose latest NAV is within this many *trading* days of
+# the last trading day (today's NAV may not be out yet / a fund can declare late).
+# Beyond it we re-pull the full history and fill every missing date — so a desktop
+# opened once a fortnight catches up gaplessly instead of leaving weeks of holes.
+_HISTORY_FRESH_TRADING_DAYS = 1
 _SLEEP = time.sleep
 
 
@@ -111,7 +116,13 @@ def backfill_nav_history(security: Security, *, since: date_cls | None = None) -
 
 
 def backfill_missing_history(*, securities: Iterable[Security] | None = None) -> dict:
-    """Backfill history for MF securities, each bounded by its earliest transaction."""
+    """Backfill history for MF securities, each bounded by its earliest transaction.
+
+    Whenever a fund's latest NAV is more than a trading day behind the last trading
+    day, re-pull the full history (mfapi serves it all) and insert every missing date
+    — so the series stays gap-free from the last stored date to today even if the app
+    only ran days or weeks ago. A fund already current (within the grace) is skipped
+    to avoid re-downloading; the cheap latest-point refresh keeps it warm meanwhile."""
     qs = (
         securities
         if securities is not None
@@ -119,13 +130,16 @@ def backfill_missing_history(*, securities: Iterable[Security] | None = None) ->
     )
     summary = {"securities": 0, "points": 0, "errors": 0, "skipped": 0, "closed": 0}
     today = timezone.localdate()
+    cutoff = last_trading_day(today)
     fetched = False
     for security in qs:
-        # Skip if the series is already current — mfapi returns the *whole* history
-        # on every call, so refetching a fund we already hold is pure waste (the
-        # main cause of feed hammering when many investors share schemes).
+        # Skip only when the series already reaches (within a grace of) the last
+        # trading day — otherwise re-pull and fill the gap. Business-day aware so we
+        # don't refetch every weekend or for a not-yet-published same-day NAV; gap
+        # aware so a fortnight-old series is brought fully current, not just nudged.
         latest = NAVHistory.objects.filter(security=security).aggregate(m=Max("date"))["m"]
-        if latest is not None and (today - latest).days <= _HISTORY_FRESH_DAYS:
+        behind = trading_days_between(latest, cutoff) if latest is not None else None
+        if behind is not None and behind <= _HISTORY_FRESH_TRADING_DAYS:
             summary["skipped"] += 1
             continue
         if fetched:

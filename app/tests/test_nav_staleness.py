@@ -12,7 +12,8 @@ from decimal import Decimal
 
 import pytest
 from folioman_app.models import NAVHistory
-from folioman_app.services.valuation import _last_trading_day, _navs_stale
+from folioman_app.services.trading_calendar import last_trading_day
+from folioman_app.services.valuation import _navs_stale
 from folioman_core.models import SecurityType
 
 # A reference week: Mon 2025-06-02 … Fri 06-06, Sat 06-07, Sun 06-08, next Mon 06-09.
@@ -21,9 +22,9 @@ SAT, SUN, NEXT_MON = dt.date(2025, 6, 7), dt.date(2025, 6, 8), dt.date(2025, 6, 
 
 
 def test_last_trading_day_rolls_back_over_the_weekend():
-    assert _last_trading_day(SAT) == FRI
-    assert _last_trading_day(SUN) == FRI
-    assert _last_trading_day(WED) == WED
+    assert last_trading_day(SAT) == FRI
+    assert last_trading_day(SUN) == FRI
+    assert last_trading_day(WED) == WED
 
 
 @pytest.mark.parametrize(

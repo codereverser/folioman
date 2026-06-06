@@ -36,6 +36,7 @@ from folioman_app.models import (
     ValuationStatus,
 )
 from folioman_app.models.jobs import ImportJob, ImportJobStatus
+from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
 
 _ZERO = Decimal("0")
 
@@ -459,25 +460,6 @@ def _holding_counts_by_investor(investors: list[Investor]) -> dict[int, int]:
 _NAV_STALE_GRACE_TRADING_DAYS = 1
 
 
-def _last_trading_day(d: date) -> date:
-    """Most recent weekday on/before ``d`` (Sat/Sun roll back to Friday). Public
-    holidays aren't modelled — the one-day grace absorbs the common late-declare case."""
-    while d.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
-        d -= timedelta(days=1)
-    return d
-
-
-def _trading_days_between(start: date, end: date) -> int:
-    """Count weekdays in ``(start, end]`` — 0 when ``end <= start``."""
-    days = 0
-    cur = start + timedelta(days=1)
-    while cur <= end:
-        if cur.weekday() < 5:
-            days += 1
-        cur += timedelta(days=1)
-    return days
-
-
 def _book_navs_as_of(investors: list[Investor], as_of: date) -> date | None:
     """Freshest NAV date on/before ``as_of`` among securities these investors hold or
     have transacted — how recently the price feed actually ran for the book. ``None``
@@ -500,7 +482,7 @@ def _navs_stale(navs_as_of: date | None, as_of: date) -> bool:
     handled elsewhere."""
     if navs_as_of is None:
         return False
-    behind = _trading_days_between(navs_as_of, _last_trading_day(as_of))
+    behind = trading_days_between(navs_as_of, last_trading_day(as_of))
     return behind > _NAV_STALE_GRACE_TRADING_DAYS
 
 
