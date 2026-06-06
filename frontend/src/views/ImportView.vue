@@ -14,6 +14,7 @@ import {
 import { useUiStore } from '@/stores/ui'
 import { formatDate } from '@/utils/format'
 import { importSummary } from '@/utils/jobs'
+import { isDesktopShell, pickCasFile } from '@/utils/desktop'
 import JobStatusBadge from '@/components/JobStatusBadge.vue'
 
 const router = useRouter()
@@ -116,6 +117,15 @@ function clearFrom(file_: File | null): void {
 function pickFile(event: Event): void {
   clearFrom((event.target as HTMLInputElement).files?.[0] ?? null)
 }
+// In the desktop shell, the dropzone opens a native OS file dialog (via the
+// PyWebView bridge) instead of the in-page picker; in a browser this is inert and
+// the underlying <input type=file> handles the click as usual.
+async function onBrowse(event: Event): Promise<void> {
+  if (!isDesktopShell()) return
+  event.preventDefault()
+  const picked = await pickCasFile()
+  if (picked) clearFrom(picked)
+}
 function onDrop(event: DragEvent): void {
   dragging.value = false
   const dropped = event.dataTransfer?.files?.[0]
@@ -184,6 +194,7 @@ function goToDashboard(): void {
       <label
         class="dropzone"
         :class="{ dragging }"
+        @click="onBrowse"
         @dragover.prevent="dragging = true"
         @dragleave.prevent="dragging = false"
         @drop.prevent="onDrop"

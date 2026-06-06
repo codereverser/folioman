@@ -36,13 +36,18 @@ def main() -> None:
 
     import webview
 
+    from folioman_desktop.webview_api import WebviewApi
+
+    bridge = WebviewApi()
     window = webview.create_window(
         _WINDOW_TITLE,
         url=server.url,
         width=1280,
         height=860,
         min_size=_MIN_SIZE,
+        js_api=bridge,  # exposed to the SPA as window.pywebview.api
     )
+    bridge.bind_window(window)  # so the native file dialog parents to this window
 
     def _shutdown() -> None:
         # Fired when the window is closing — stop background work before the
