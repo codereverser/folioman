@@ -6,10 +6,16 @@
 - Node 20+ (pnpm via corepack — `corepack pnpm`, no standalone install needed)
 - Git
 - `uv` (recommended) or `pip`
-- For the **desktop binary**: a C toolchain Nuitka can drive — Xcode Command Line
-  Tools on macOS (`xcode-select --install`), `build-essential` + `patchelf` on
-  Linux, or MSVC Build Tools on Windows. Nuitka downloads anything else it needs
-  on first run (`--assume-yes-for-downloads`).
+- For the **desktop binary**:
+  - A C toolchain Nuitka can drive — Xcode Command Line Tools on macOS
+    (`xcode-select --install`), `build-essential` + `patchelf` on Linux, or MSVC
+    Build Tools on Windows. Nuitka downloads anything else it needs on first run
+    (`--assume-yes-for-downloads`).
+  - A **standard CPython**, not uv's bundled python-build-standalone (PBS): the PBS
+    interpreter deadlocks Nuitka's import-detection step on macOS. The workspace sets
+    `tool.uv.python-preference = "system"` so `uv` uses a Homebrew/system CPython
+    (`brew install python@3.13`); recreate the venv with `uv venv --clear` if it was
+    created on a managed PBS interpreter.
 
 ## Run modes & configuration
 
