@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import SelectButton from 'primevue/selectbutton'
 import Button from 'primevue/button'
 import { api, type Schemas } from '@/api/client'
 import { useUiStore, type ThemePreference } from '@/stores/ui'
 import { useRosterStore } from '@/stores/roster'
 import { downloadText } from '@/utils/csv'
+import { formatDate } from '@/utils/format'
+
+const route = useRoute()
+// Settings is split into tabs (route param ":tab"); bare /settings = general.
+const activeTab = computed<'general' | 'jobs'>(() =>
+  route.params.tab === 'jobs' ? 'jobs' : 'general',
+)
 
 // Support routes through the public repo (issues / discussions); each row below
 // renders only when configured.
@@ -29,6 +37,70 @@ onMounted(async () => {
   const res = await api.GET('/api/meta')
   if (res.data) meta.value = res.data
 })
+
+// Jobs & valuation activity (advisor-wide): recent imports + per-investor valuation
+// status with the real per-security cause of any failure.
+type ImportRow = Schemas['ImportJobSummaryOut']
+type Diagnostics = Schemas['ValuationDiagnosticsOut']
+
+const jobs = ref<Schemas['JobsOverviewOut'] | null>(null)
+const jobsLoading = ref(false)
+let jobsRequested = false
+// Lazy: only hit /api/jobs once the Jobs tab is actually opened (it can get big).
+async function loadJobs(): Promise<void> {
+  if (jobsRequested) return
+  jobsRequested = true
+  jobsLoading.value = true
+  try {
+    const res = await api.GET('/api/jobs')
+    if (res.data) jobs.value = res.data
+  } finally {
+    jobsLoading.value = false
+  }
+}
+watch(activeTab, (tab) => tab === 'jobs' && void loadJobs(), { immediate: true })
+
+// Only investors that need attention (not ready, or ready-but-degraded with issues).
+const problemValuations = computed<Diagnostics[]>(() =>
+  (jobs.value?.valuations ?? []).filter((v) => v.status !== 'ready' || (v.issues?.length ?? 0) > 0),
+)
+
+type Tone = 'ok' | 'warn' | 'bad' | 'busy'
+const STATUS_TONE: Record<string, Tone> = {
+  success: 'ok',
+  ready: 'ok',
+  failed: 'bad',
+  error: 'bad',
+  completed_with_warnings: 'warn',
+  needs_confirmation: 'warn',
+  pending: 'busy',
+  running: 'busy',
+  computing: 'busy',
+}
+const STATUS_LABEL: Record<string, string> = {
+  success: 'Success',
+  failed: 'Failed',
+  completed_with_warnings: 'Warnings',
+  needs_confirmation: 'Needs confirmation',
+  pending: 'Pending',
+  running: 'Running',
+  ready: 'Ready',
+  computing: 'Computing',
+  error: 'Error',
+}
+const statusTone = (s: string): Tone => STATUS_TONE[s] ?? 'busy'
+const statusLabel = (s: string): string => STATUS_LABEL[s] ?? s
+
+/** A one-line outcome for an import row: the error if it failed, else what landed. */
+function importSummary(job: ImportRow): string {
+  if (job.error) return job.error
+  const r = (job.result ?? {}) as Record<string, number | undefined>
+  const parts: string[] = []
+  if (r.transactions_created) parts.push(`${r.transactions_created} transactions`)
+  if (r.holdings_snapshotted) parts.push(`${r.holdings_snapshotted} snapshots`)
+  if (r.securities) parts.push(`${r.securities} securities`)
+  return parts.join(' · ') || '—'
+}
 
 const isLocal = computed(() => meta.value?.storage === 'local')
 
@@ -86,119 +158,194 @@ async function exportTransactions(): Promise<void> {
       <p class="sub">Appearance, your data, and privacy — all on this device.</p>
     </header>
 
-    <!-- Appearance -->
-    <article class="card setting">
-      <div class="setting-text">
-        <h2>Appearance</h2>
-        <p>Choose a theme, or follow your system.</p>
-      </div>
-      <SelectButton
-        :model-value="ui.themePreference"
-        :options="themeOptions"
-        option-label="label"
-        option-value="value"
-        :allow-empty="false"
-        @update:model-value="(v: ThemePreference | null) => v && ui.setTheme(v)"
+    <nav class="tabs" aria-label="Settings sections">
+      <RouterLink
+        class="tab"
+        :class="{ active: activeTab === 'general' }"
+        :to="{ name: 'settings' }"
+        >General</RouterLink
       >
-        <template #option="{ option }">
-          <i :class="option.icon" />
-          <span class="opt-label">{{ option.label }}</span>
-        </template>
-      </SelectButton>
-    </article>
+      <RouterLink
+        class="tab"
+        :class="{ active: activeTab === 'jobs' }"
+        :to="{ name: 'settings', params: { tab: 'jobs' } }"
+        >Jobs &amp; valuation</RouterLink
+      >
+    </nav>
 
-    <!-- Privacy -->
-    <article class="card setting block">
-      <div class="setting-text">
-        <h2><i class="pi pi-lock" /> Privacy</h2>
-        <p>
-          Folioman is local-first. Your CAS statements and portfolio data live only where this app
-          runs — there's no account, no cloud sync, and no analytics or tracking. PAN numbers are
-          encrypted at rest and are never shown in full.
-        </p>
-      </div>
-    </article>
+    <!-- General settings -->
+    <template v-if="activeTab === 'general'">
+      <!-- Appearance -->
+      <article class="card setting">
+        <div class="setting-text">
+          <h2>Appearance</h2>
+          <p>Choose a theme, or follow your system.</p>
+        </div>
+        <SelectButton
+          :model-value="ui.themePreference"
+          :options="themeOptions"
+          option-label="label"
+          option-value="value"
+          :allow-empty="false"
+          @update:model-value="(v: ThemePreference | null) => v && ui.setTheme(v)"
+        >
+          <template #option="{ option }">
+            <i :class="option.icon" />
+            <span class="opt-label">{{ option.label }}</span>
+          </template>
+        </SelectButton>
+      </article>
 
-    <!-- Data location + backup -->
-    <article class="card setting block">
-      <div class="setting-text">
-        <h2><i class="pi pi-database" /> Your data</h2>
-        <template v-if="meta">
-          <p v-if="isLocal">
-            Stored locally on this device. Your entire portfolio is a single database file:
+      <!-- Privacy -->
+      <article class="card setting block">
+        <div class="setting-text">
+          <h2><i class="pi pi-lock" /> Privacy</h2>
+          <p>
+            Folioman is local-first. Your CAS statements and portfolio data live only where this
+            app runs — there's no account, no cloud sync, and no analytics or tracking. PAN numbers
+            are encrypted at rest and are never shown in full.
           </p>
-          <p v-else>
-            Stored in the hosted Folioman database (managed and backed up on the server).
-          </p>
-          <code v-if="isLocal && meta.data_location" class="path">{{ meta.data_location }}</code>
-          <p v-if="isLocal" class="hint">
-            <strong>Backup:</strong> copy that file somewhere safe. To restore, put it back before
-            launching Folioman. That one file is your whole portfolio.
-          </p>
-        </template>
-        <p v-else class="hint">Loading…</p>
-      </div>
-    </article>
+        </div>
+      </article>
 
-    <!-- Export -->
-    <article class="card setting">
-      <div class="setting-text">
-        <h2><i class="pi pi-download" /> Export</h2>
-        <p v-if="investorName">
-          Download <strong>{{ investorName }}</strong
-          >'s data as CSV. (Capital-gains &amp; Schedule 112A exports live on the Capital Gains
-          screen.)
-        </p>
-        <p v-else class="hint">Pick an investor from the switcher to export their data.</p>
-      </div>
-      <div class="actions">
-        <Button
-          label="Holdings"
-          icon="pi pi-file"
-          severity="secondary"
-          outlined
-          size="small"
-          :disabled="investorId == null"
-          :loading="exporting === 'holdings'"
-          @click="exportHoldings"
-        />
-        <Button
-          label="Transactions"
-          icon="pi pi-list"
-          severity="secondary"
-          outlined
-          size="small"
-          :disabled="investorId == null"
-          :loading="exporting === 'transactions'"
-          @click="exportTransactions"
-        />
-      </div>
-    </article>
+      <!-- Data location + backup -->
+      <article class="card setting block">
+        <div class="setting-text">
+          <h2><i class="pi pi-database" /> Your data</h2>
+          <template v-if="meta">
+            <p v-if="isLocal">
+              Stored locally on this device. Your entire portfolio is a single database file:
+            </p>
+            <p v-else>
+              Stored in the hosted Folioman database (managed and backed up on the server).
+            </p>
+            <code v-if="isLocal && meta.data_location" class="path">{{ meta.data_location }}</code>
+            <p v-if="isLocal" class="hint">
+              <strong>Backup:</strong> copy that file somewhere safe. To restore, put it back before
+              launching Folioman. That one file is your whole portfolio.
+            </p>
+          </template>
+          <p v-else class="hint">Loading…</p>
+        </div>
+      </article>
 
-    <!-- About / support -->
-    <article class="card setting block">
-      <div class="setting-text">
-        <h2><i class="pi pi-info-circle" /> About</h2>
-        <p class="kv"><span>Version</span><strong>{{ meta?.version ?? '—' }}</strong></p>
-        <p v-if="SUPPORT_URL" class="kv">
-          <span>Help &amp; issues</span>
-          <a :href="SUPPORT_URL" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a>
-        </p>
-        <p v-if="SPONSOR_LINKS.length" class="kv">
-          <span>Support development</span>
-          <span class="links">
-            <a
-              v-for="link in SPONSOR_LINKS"
-              :key="link.url"
-              :href="link.url"
-              target="_blank"
-              rel="noopener noreferrer"
-              >{{ link.label }} ↗</a
-            >
-          </span>
-        </p>
-      </div>
-    </article>
+      <!-- Export -->
+      <article class="card setting">
+        <div class="setting-text">
+          <h2><i class="pi pi-download" /> Export</h2>
+          <p v-if="investorName">
+            Download <strong>{{ investorName }}</strong
+            >'s data as CSV. (Capital-gains &amp; Schedule 112A exports live on the Capital Gains
+            screen.)
+          </p>
+          <p v-else class="hint">Pick an investor from the switcher to export their data.</p>
+        </div>
+        <div class="actions">
+          <Button
+            label="Holdings"
+            icon="pi pi-file"
+            severity="secondary"
+            outlined
+            size="small"
+            :disabled="investorId == null"
+            :loading="exporting === 'holdings'"
+            @click="exportHoldings"
+          />
+          <Button
+            label="Transactions"
+            icon="pi pi-list"
+            severity="secondary"
+            outlined
+            size="small"
+            :disabled="investorId == null"
+            :loading="exporting === 'transactions'"
+            @click="exportTransactions"
+          />
+        </div>
+      </article>
+
+      <!-- About / support -->
+      <article class="card setting block">
+        <div class="setting-text">
+          <h2><i class="pi pi-info-circle" /> About</h2>
+          <p class="kv"><span>Version</span><strong>{{ meta?.version ?? '—' }}</strong></p>
+          <p v-if="SUPPORT_URL" class="kv">
+            <span>Help &amp; issues</span>
+            <a :href="SUPPORT_URL" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a>
+          </p>
+          <p v-if="SPONSOR_LINKS.length" class="kv">
+            <span>Support development</span>
+            <span class="links">
+              <a
+                v-for="link in SPONSOR_LINKS"
+                :key="link.url"
+                :href="link.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                >{{ link.label }} ↗</a
+              >
+            </span>
+          </p>
+        </div>
+      </article>
+    </template>
+
+    <!-- Jobs & valuation activity -->
+    <template v-else>
+      <p v-if="jobsLoading" class="hint">Loading…</p>
+      <template v-else-if="jobs">
+        <article class="card setting block">
+          <div class="setting-text">
+            <h2><i class="pi pi-inbox" /> Recent imports</h2>
+            <p>What's been imported across all your investors, newest first.</p>
+          </div>
+          <p v-if="!jobs.imports.length" class="hint">Nothing imported yet.</p>
+          <ul v-else class="jobs-list">
+            <li v-for="job in jobs.imports" :key="job.id" class="job-row">
+              <span class="job-main">
+                <span class="job-name">{{ job.filename || job.kind.toUpperCase() }}</span>
+                <span class="job-sub"
+                  >{{ job.investor_name }} · {{ formatDate(job.created_at) }}</span
+                >
+              </span>
+              <span class="job-detail" :class="{ 'is-error': !!job.error }">{{
+                importSummary(job)
+              }}</span>
+              <span class="badge" :class="statusTone(job.status)">{{
+                statusLabel(job.status)
+              }}</span>
+            </li>
+          </ul>
+        </article>
+
+        <article class="card setting block">
+          <div class="setting-text">
+            <h2><i class="pi pi-chart-line" /> Valuation status</h2>
+            <p>Whether each portfolio's day-wise valuation is current, and why if not.</p>
+          </div>
+          <p v-if="!problemValuations.length" class="hint">
+            All portfolios are valued and up to date.
+          </p>
+          <ul v-else class="jobs-list">
+            <li v-for="v in problemValuations" :key="v.investor_id" class="job-row val">
+              <span class="job-main">
+                <span class="job-name">{{ v.investor_name }}</span>
+                <span v-if="v.computed_through" class="job-sub"
+                  >valued through {{ formatDate(v.computed_through) }}</span
+                >
+              </span>
+              <span class="badge" :class="statusTone(v.status)">{{ statusLabel(v.status) }}</span>
+              <ul v-if="v.issues?.length" class="issues">
+                <li v-for="iss in v.issues ?? []" :key="iss.security_id">
+                  <span class="cause" :class="iss.cause">{{ iss.security_name }}</span>
+                  <span class="cause-detail">{{ iss.detail }}</span>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </article>
+      </template>
+    </template>
   </section>
 </template>
 
@@ -221,6 +368,33 @@ async function exportTransactions(): Promise<void> {
 .page-head .sub {
   margin: 0.25rem 0 0;
   color: var(--fm-text-muted);
+}
+
+/* Sub-tab strip (General / Jobs & valuation) */
+.tabs {
+  display: flex;
+  gap: var(--fm-space-1, 0.25rem);
+  border-bottom: 1px solid var(--fm-border-subtle);
+  margin-bottom: var(--fm-space-2);
+  overflow-x: auto;
+}
+.tab {
+  padding: 0.6rem 0.95rem;
+  text-decoration: none;
+  white-space: nowrap;
+  color: var(--fm-text-muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--fm-dur-fast) var(--fm-ease);
+}
+.tab:hover {
+  color: var(--fm-text);
+}
+.tab.active {
+  color: var(--p-primary-color);
+  border-bottom-color: var(--p-primary-color);
 }
 
 .card {
@@ -313,6 +487,123 @@ async function exportTransactions(): Promise<void> {
   gap: var(--fm-space-4);
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+/* Jobs & valuation activity */
+.jobs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.job-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fm-space-3);
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--fm-border-subtle);
+}
+.job-row:first-child {
+  border-top: none;
+}
+.job-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+.job-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--fm-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.job-sub {
+  font-size: 0.75rem;
+  color: var(--fm-text-muted);
+}
+.job-detail {
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+  text-align: right;
+  flex: 1 1 8rem;
+}
+.job-detail.is-error {
+  color: var(--p-red-500, #ef4444);
+}
+
+/* Status pill */
+.badge {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+.badge.ok {
+  color: var(--p-green-600, #16a34a);
+  background: color-mix(in srgb, var(--p-green-500, #22c55e) 14%, transparent);
+}
+.badge.bad {
+  color: var(--p-red-600, #dc2626);
+  background: color-mix(in srgb, var(--p-red-500, #ef4444) 14%, transparent);
+}
+.badge.warn {
+  color: var(--p-amber-600, #d97706);
+  background: color-mix(in srgb, var(--p-amber-500, #f59e0b) 16%, transparent);
+}
+.badge.busy {
+  color: var(--fm-text-muted);
+  background: var(--fm-surface-raised);
+  border-color: var(--fm-border-subtle);
+}
+
+/* Per-security valuation issues (the real cause), full-width under the row */
+.issues {
+  flex-basis: 100%;
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.issues li {
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.issues .cause {
+  font-weight: 600;
+  color: var(--fm-text);
+  margin-right: 0.4rem;
+}
+.issues .cause::before {
+  content: '';
+  display: inline-block;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  background: var(--fm-text-muted);
+}
+.issues .cause.closed::before {
+  background: var(--p-amber-500, #f59e0b);
+}
+.issues .cause.unmapped::before {
+  background: var(--p-red-500, #ef4444);
+}
+.issues .cause.feed_pending::before {
+  background: var(--p-blue-500, #3b82f6);
+}
+.issues .cause-detail {
+  color: var(--fm-text-muted);
 }
 
 @media (max-width: 600px) {

@@ -268,6 +268,51 @@ class ImportJobOut(Schema):
     created_at: datetime
 
 
+class ImportJobSummaryOut(Schema):
+    """A recent import job for the advisor-wide Settings activity list."""
+
+    id: int
+    investor_id: int
+    investor_name: str
+    kind: str
+    status: str
+    filename: str
+    error: str
+    result: dict  # summary counts (schemes/transactions/holdings, reconcile_errors, …)
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class ValuationIssueOut(Schema):
+    """The real, per-security cause behind a generic valuation error."""
+
+    security_id: int
+    security_name: str
+    identifier: str  # ISIN / AMFI code / symbol — whatever the security is keyed by
+    cause: str  # "closed" | "unmapped" | "feed_pending"
+    detail: str  # human-readable, actionable explanation
+
+
+class ValuationDiagnosticsOut(Schema):
+    """One investor's valuation status + the actionable cause of any failure."""
+
+    investor_id: int
+    investor_name: str
+    status: str  # pending | computing | ready | error
+    computed_through: date | None = None
+    error: str = ""
+    attempts: int = 0
+    next_attempt_at: datetime | None = None
+    issues: list[ValuationIssueOut] = Field(default_factory=list)
+
+
+class JobsOverviewOut(Schema):
+    """Settings 'Jobs & valuation' panel: recent imports + per-investor valuation."""
+
+    imports: list[ImportJobSummaryOut]
+    valuations: list[ValuationDiagnosticsOut]
+
+
 class TransactionIn(Schema):
     """A single manually-entered transaction (security identified inline)."""
 

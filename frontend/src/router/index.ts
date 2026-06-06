@@ -89,7 +89,9 @@ const routes: RouteRecordRaw[] = [
     component: FamilyView,
   },
   {
-    path: '/settings',
+    // Optional ":tab" selects a Settings sub-tab (only "jobs" today); bare /settings
+    // is the general tab. Deep-linkable so other screens can point at /settings/jobs.
+    path: '/settings/:tab(jobs)?',
     name: 'settings',
     component: () => import('@/views/SettingsView.vue'),
   },

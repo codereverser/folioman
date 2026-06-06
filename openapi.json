@@ -763,6 +763,75 @@
         "title": "ImportJobOut",
         "type": "object"
       },
+      "ImportJobSummaryOut": {
+        "description": "A recent import job for the advisor-wide Settings activity list.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "investor_id": {
+            "title": "Investor Id",
+            "type": "integer"
+          },
+          "investor_name": {
+            "title": "Investor Name",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "result": {
+            "additionalProperties": true,
+            "title": "Result",
+            "type": "object"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "investor_id",
+          "investor_name",
+          "kind",
+          "status",
+          "filename",
+          "error",
+          "result",
+          "created_at",
+          "finished_at"
+        ],
+        "title": "ImportJobSummaryOut",
+        "type": "object"
+      },
       "IntegrityStatusOut": {
         "properties": {
           "folio": {
@@ -1300,6 +1369,31 @@
           }
         },
         "title": "InvestorUpdate",
+        "type": "object"
+      },
+      "JobsOverviewOut": {
+        "description": "Settings 'Jobs & valuation' panel: recent imports + per-investor valuation.",
+        "properties": {
+          "imports": {
+            "items": {
+              "$ref": "#/components/schemas/ImportJobSummaryOut"
+            },
+            "title": "Imports",
+            "type": "array"
+          },
+          "valuations": {
+            "items": {
+              "$ref": "#/components/schemas/ValuationDiagnosticsOut"
+            },
+            "title": "Valuations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "imports",
+          "valuations"
+        ],
+        "title": "JobsOverviewOut",
         "type": "object"
       },
       "NavPoint": {
@@ -2025,6 +2119,105 @@
           "narration"
         ],
         "title": "TransactionOut",
+        "type": "object"
+      },
+      "ValuationDiagnosticsOut": {
+        "description": "One investor's valuation status + the actionable cause of any failure.",
+        "properties": {
+          "attempts": {
+            "default": 0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "computed_through": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Computed Through"
+          },
+          "error": {
+            "default": "",
+            "title": "Error",
+            "type": "string"
+          },
+          "investor_id": {
+            "title": "Investor Id",
+            "type": "integer"
+          },
+          "investor_name": {
+            "title": "Investor Name",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ValuationIssueOut"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "next_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Attempt At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "investor_id",
+          "investor_name",
+          "status"
+        ],
+        "title": "ValuationDiagnosticsOut",
+        "type": "object"
+      },
+      "ValuationIssueOut": {
+        "description": "The real, per-security cause behind a generic valuation error.",
+        "properties": {
+          "cause": {
+            "title": "Cause",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "identifier": {
+            "title": "Identifier",
+            "type": "string"
+          },
+          "security_id": {
+            "title": "Security Id",
+            "type": "integer"
+          },
+          "security_name": {
+            "title": "Security Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "security_id",
+          "security_name",
+          "identifier",
+          "cause",
+          "detail"
+        ],
+        "title": "ValuationIssueOut",
         "type": "object"
       },
       "ValuationStatusOut": {
@@ -3676,6 +3869,29 @@
         "summary": "Investor Value Series",
         "tags": [
           "investors"
+        ]
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "description": "Recent import jobs + per-investor valuation status/errors for the advisor.",
+        "operationId": "folioman_app_api_jobs_jobs_overview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobsOverviewOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Jobs Overview",
+        "tags": [
+          "jobs"
         ]
       }
     },

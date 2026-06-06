@@ -575,6 +575,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jobs Overview
+         * @description Recent import jobs + per-investor valuation status/errors for the advisor.
+         */
+        get: operations["folioman_app_api_jobs_jobs_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/meta": {
         parameters: {
             query?: never;
@@ -918,6 +938,37 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * ImportJobSummaryOut
+         * @description A recent import job for the advisor-wide Settings activity list.
+         */
+        ImportJobSummaryOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error */
+            error: string;
+            /** Filename */
+            filename: string;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: number;
+            /** Investor Id */
+            investor_id: number;
+            /** Investor Name */
+            investor_name: string;
+            /** Kind */
+            kind: string;
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            };
+            /** Status */
+            status: string;
+        };
         /** IntegrityStatusOut */
         IntegrityStatusOut: {
             folio: components["schemas"]["FolioRef"];
@@ -1113,6 +1164,16 @@ export interface components {
             name?: string | null;
             /** Pan */
             pan?: string | null;
+        };
+        /**
+         * JobsOverviewOut
+         * @description Settings 'Jobs & valuation' panel: recent imports + per-investor valuation.
+         */
+        JobsOverviewOut: {
+            /** Imports */
+            imports: components["schemas"]["ImportJobSummaryOut"][];
+            /** Valuations */
+            valuations: components["schemas"]["ValuationDiagnosticsOut"][];
         };
         /** NavPoint */
         NavPoint: {
@@ -1407,6 +1468,50 @@ export interface components {
             transaction_type: string;
             /** Units */
             units: string;
+        };
+        /**
+         * ValuationDiagnosticsOut
+         * @description One investor's valuation status + the actionable cause of any failure.
+         */
+        ValuationDiagnosticsOut: {
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts: number;
+            /** Computed Through */
+            computed_through?: string | null;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /** Investor Id */
+            investor_id: number;
+            /** Investor Name */
+            investor_name: string;
+            /** Issues */
+            issues?: components["schemas"]["ValuationIssueOut"][];
+            /** Next Attempt At */
+            next_attempt_at?: string | null;
+            /** Status */
+            status: string;
+        };
+        /**
+         * ValuationIssueOut
+         * @description The real, per-security cause behind a generic valuation error.
+         */
+        ValuationIssueOut: {
+            /** Cause */
+            cause: string;
+            /** Detail */
+            detail: string;
+            /** Identifier */
+            identifier: string;
+            /** Security Id */
+            security_id: number;
+            /** Security Name */
+            security_name: string;
         };
         /**
          * ValuationStatusOut
@@ -2348,6 +2453,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValueSeriesOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_jobs_jobs_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobsOverviewOut"];
                 };
             };
         };
