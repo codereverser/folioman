@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 
 from folioman_app.settings._logging import make_logging
+from folioman_app.settings._sqlite import sqlite_concurrency_options
 from folioman_app.settings.base import *
 
 # Writable user-data dir. A later change replaces this fallback with a platformdirs-based,
@@ -38,22 +39,13 @@ FOLIOMAN_API_AUTH = "local"
 # and the request thread share the DB.
 FOLIOMAN_RUN_SCHEDULER = True
 
+# WAL + busy_timeout + IMMEDIATE so the request thread and the in-process scheduler
+# thread share this file without "database is locked" (see _sqlite.py for the why).
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": DATA_DIR / "folioman.sqlite3",
-        "OPTIONS": {
-            # Django 5.2 splits init_command on ';' and runs each PRAGMA per
-            # connection. WAL lets the scheduler process read/write concurrently
-            # with the app; synchronous=NORMAL is the safe+fast pairing under
-            # WAL; busy_timeout makes a writer wait out a lock instead of erroring.
-            "init_command": (
-                "PRAGMA journal_mode=WAL;PRAGMA synchronous=NORMAL;PRAGMA busy_timeout=5000;"
-            ),
-            # IMMEDIATE takes the write lock at BEGIN, avoiding the deferred-then-
-            # upgrade deadlock window between two concurrent writers.
-            "transaction_mode": "IMMEDIATE",
-        },
+        "OPTIONS": sqlite_concurrency_options(),
     }
 }
 

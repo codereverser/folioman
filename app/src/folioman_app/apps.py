@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 
 from django.apps import AppConfig
@@ -48,6 +49,14 @@ class FoliomanAppConfig(AppConfig):
             return
         argv1 = sys.argv[1] if len(sys.argv) > 1 else ""
         if argv1 in _NO_SCHEDULER_COMMANDS:
+            return
+        # `runserver` autoreload runs ready() in BOTH the reloader parent and the
+        # worker child — start the scheduler only in the child (RUN_MAIN=true), else
+        # two scheduler threads in two processes fight over the SQLite file. The
+        # `--noreload` case has no child, so don't gate on RUN_MAIN there; desktop /
+        # other entrypoints never set RUN_MAIN and start normally.
+        uses_autoreload = argv1 == "runserver" and "--noreload" not in sys.argv
+        if uses_autoreload and os.environ.get("RUN_MAIN") != "true":
             return
         from folioman_app.scheduler import start_background_scheduler
 

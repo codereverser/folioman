@@ -26,6 +26,18 @@ def test_desktop_sqlite_wal_configured():
     assert desktop.FOLIOMAN_API_AUTH == "local"
 
 
+def test_base_sqlite_shares_concurrency_options():
+    """Dev `runserver` SQLite gets the same WAL/busy_timeout/IMMEDIATE as desktop, so
+    an inline scheduler thread doesn't lock the DB in dev. One source — _sqlite.py."""
+    base = importlib.import_module("folioman_app.settings.base")
+    desktop = importlib.import_module("folioman_app.settings.desktop")
+    opts = base.DATABASES["default"]["OPTIONS"]
+    assert "journal_mode=WAL" in opts["init_command"]
+    assert "busy_timeout=5000" in opts["init_command"]
+    assert opts["transaction_mode"] == "IMMEDIATE"
+    assert opts == desktop.DATABASES["default"]["OPTIONS"]  # identical, both modes
+
+
 def test_desktop_data_dir_env_override(monkeypatch, tmp_path):
     import folioman_app.settings.desktop as desktop
 

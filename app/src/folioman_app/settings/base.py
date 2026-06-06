@@ -19,6 +19,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from folioman_app.settings._sqlite import sqlite_concurrency_options
+
 # .../app/src/folioman_app/settings/base.py -> BASE_DIR = .../folioman_app
 # Runtime DB / static locations are overridden by desktop.py / server.py;
 # this default keeps base.py self-sufficient for tests and `manage.py check`.
@@ -89,10 +91,15 @@ FOLIOMAN_VERSION = os.environ.get("FOLIOMAN_VERSION", "1.0.0-dev")
 
 # Placeholder database. desktop.py points NAME at a user-data SQLite file;
 # server.py switches to Postgres. Tests use the in-memory SQLite test DB.
+# The WAL/busy_timeout/IMMEDIATE OPTIONS matter the moment a `runserver` also runs
+# the in-process scheduler (FOLIOMAN_RUN_SCHEDULER=1): request and scheduler threads
+# then share this file, and these keep contention from erroring out. SQLite ignores
+# WAL for the in-memory test DB, so they're a no-op under pytest.
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "folioman.sqlite3",
+        "OPTIONS": sqlite_concurrency_options(),
     }
 }
 
