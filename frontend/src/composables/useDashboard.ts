@@ -53,6 +53,10 @@ export interface DashboardSummary {
   // total_inr is a last-known value (statement close / last computed day), not a
   // live valuation at as_of — e.g. NAVs not fetched yet. as_of is that value's date.
   isProvisional: boolean
+  // The prices backing the total are old (the feed hasn't run for >1 trading day).
+  // navsAsOf is the freshest NAV date, formatted for the "NAVs as of …" subtitle.
+  navsStale: boolean
+  navsAsOf: string
   allocation: AllocationSlice[] // by asset class (the "All" view; MF-only for now)
   allocationByCategory: AllocationSlice[] // equity vs debt
   allocationByAmc: AllocationSlice[] // by fund house
@@ -77,6 +81,8 @@ const EMPTY: DashboardSummary = {
   xirr: null,
   asOf: '—',
   isProvisional: false,
+  navsStale: false,
+  navsAsOf: '',
   allocation: [],
   allocationByCategory: [],
   allocationByAmc: [],
@@ -267,6 +273,8 @@ export function useDashboard(investorId: Ref<number>) {
       xirr: s.xirr == null ? null : s.xirr * 100, // fraction → percent for the card
       asOf: `as of ${formatDate(s.as_of)}${s.is_provisional ? ' · provisional' : ''}`,
       isProvisional: s.is_provisional,
+      navsStale: s.navs_stale ?? false,
+      navsAsOf: s.navs_as_of ? formatDate(s.navs_as_of) : '',
       allocation: (s.asset_mix ?? []).map<AllocationSlice>((row) => ({
         name: assetLabel(row.security_type),
         value: num(row.value_inr),

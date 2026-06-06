@@ -38,6 +38,8 @@ export interface RosterAggregate {
   needsAttentionCount: number
   snapshotCount: number
   asOf: string
+  navsStale: boolean // the book's prices haven't refreshed for >1 trading day
+  navsAsOf: string | null // freshest NAV date backing the total (ISO), null if unpriced
 }
 
 export function useRosterMetrics() {
@@ -62,6 +64,8 @@ export function useRosterMetrics() {
           needsAttentionCount: data.needs_attention_count,
           snapshotCount: data.snapshot_count,
           asOf: data.as_of,
+          navsStale: data.navs_stale ?? false,
+          navsAsOf: data.navs_as_of ?? null,
         }
         // The same call carries a lean row per investor (value read from the
         // persisted InvestorValue, not re-valued) — populate the per-row summaries

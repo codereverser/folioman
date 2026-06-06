@@ -335,6 +335,23 @@
             "title": "Investor Count",
             "type": "integer"
           },
+          "navs_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Navs As Of"
+          },
+          "navs_stale": {
+            "default": false,
+            "title": "Navs Stale",
+            "type": "boolean"
+          },
           "needs_attention_count": {
             "default": 0,
             "title": "Needs Attention Count",
@@ -1261,6 +1278,23 @@
             ],
             "title": "Last Import At"
           },
+          "navs_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Navs As Of"
+          },
+          "navs_stale": {
+            "default": false,
+            "title": "Navs Stale",
+            "type": "boolean"
+          },
           "needs_attention_count": {
             "title": "Needs Attention Count",
             "type": "integer"
@@ -1435,6 +1469,23 @@
           "investor_count": {
             "title": "Investor Count",
             "type": "integer"
+          },
+          "navs_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Navs As Of"
+          },
+          "navs_stale": {
+            "default": false,
+            "title": "Navs Stale",
+            "type": "boolean"
           },
           "needs_attention_count": {
             "title": "Needs Attention Count",

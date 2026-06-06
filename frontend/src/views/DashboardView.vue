@@ -140,7 +140,13 @@ function openScheme(securityId: number): void {
     <header class="page-head">
       <div>
         <h1>Dashboard</h1>
-        <p class="sub">{{ investorName }} · {{ summary.asOf }}</p>
+        <p class="sub">
+          {{ investorName }} ·
+          <span v-if="summary.navsStale" class="stale-navs" title="Prices haven't refreshed recently">
+            <i class="pi pi-exclamation-triangle" aria-hidden="true" /> NAVs as of {{ summary.navsAsOf }}
+          </span>
+          <template v-else>{{ summary.asOf }}</template>
+        </p>
       </div>
     </header>
 
@@ -390,6 +396,14 @@ function openScheme(securityId: number): void {
 .page-head .sub {
   margin: 0.15rem 0 0;
   color: var(--fm-text-muted);
+}
+/* NAV-feed staleness marker: qualifies price recency without alarming about value. */
+.page-head .sub .stale-navs {
+  color: var(--p-amber-600, #d97706);
+  font-weight: 600;
+}
+.page-head .sub .stale-navs .pi {
+  font-size: 0.75rem;
 }
 
 .bento {

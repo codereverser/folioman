@@ -346,6 +346,14 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
         <p class="rs-sub">
           {{ agg.investorCount }} investor{{ agg.investorCount === 1 ? '' : 's' }}
           <template v-if="agg.familyCount > 0"> · {{ agg.familyCount }} {{ agg.familyCount === 1 ? 'family' : 'families' }}</template>
+          <span
+            v-if="agg.navsStale && agg.navsAsOf"
+            class="rs-stale"
+            title="Prices haven't refreshed recently — values use the last NAV on file"
+          >
+            · <i class="pi pi-exclamation-triangle" aria-hidden="true" /> prices as of
+            {{ formatDate(agg.navsAsOf) }}
+          </span>
         </p>
       </div>
       <div class="rs-integrity" :title="`${agg.taxReadyCount} of ${agg.integrityUnitCount} holdings tax-ready`">
@@ -619,6 +627,13 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
   margin: 0.1rem 0 0;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
+}
+.rs-stale {
+  color: var(--p-amber-600, #d97706);
+  font-weight: 600;
+}
+.rs-stale .pi {
+  font-size: 0.7rem;
 }
 .rs-integrity {
   display: inline-flex;

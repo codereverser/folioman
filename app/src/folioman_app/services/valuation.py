@@ -342,6 +342,7 @@ def build_family_aggregate(family: Family, as_of: date) -> dict:
         if investors
         else []
     )
+    navs_as_of = _book_navs_as_of(investors, as_of)
     return {
         "family_id": family.id,
         "as_of": as_of,
@@ -356,6 +357,8 @@ def build_family_aggregate(family: Family, as_of: date) -> dict:
         "needs_attention_count": sum(
             1 for status, _ in statuses if status == IntegrityStatus.MISMATCH.value
         ),
+        "navs_as_of": navs_as_of,
+        "navs_stale": _navs_stale(navs_as_of, as_of),
         "day_change_inr": _day_change_total(extras),
         "xirr": compute_portfolio_xirr(investors, as_of),
     }
@@ -446,6 +449,59 @@ def _holding_counts_by_investor(investors: list[Investor]) -> dict[int, int]:
     return {investor_id: len(ids) for investor_id, ids in secs.items()}
 
 
+# NAV-feed staleness (V9): "old-but-present" prices. The portfolio still values to a
+# confident total off the most-recent NAV on/before today, so a feed that hasn't run
+# for days otherwise shows no warning. We surface the freshest NAV date among the
+# book's priceable securities and flag it when it's behind the last trading day by more
+# than a one-day grace (NAVs publish on business days; a fund can declare late).
+_NAV_STALE_GRACE_TRADING_DAYS = 1
+
+
+def _last_trading_day(d: date) -> date:
+    """Most recent weekday on/before ``d`` (Sat/Sun roll back to Friday). Public
+    holidays aren't modelled — the one-day grace absorbs the common late-declare case."""
+    while d.weekday() >= 5:  # 5 = Saturday, 6 = Sunday
+        d -= timedelta(days=1)
+    return d
+
+
+def _trading_days_between(start: date, end: date) -> int:
+    """Count weekdays in ``(start, end]`` — 0 when ``end <= start``."""
+    days = 0
+    cur = start + timedelta(days=1)
+    while cur <= end:
+        if cur.weekday() < 5:
+            days += 1
+        cur += timedelta(days=1)
+    return days
+
+
+def _book_navs_as_of(investors: list[Investor], as_of: date) -> date | None:
+    """Freshest NAV date on/before ``as_of`` among securities these investors hold or
+    have transacted — how recently the price feed actually ran for the book. ``None``
+    when nothing priceable has a NAV yet (a fresh import — that's V1's *unpriced* case,
+    not staleness). Snapshot-only equity/bonds have no NAVHistory, so they don't drag
+    this down."""
+    sec_ids = set(
+        Transaction.objects.filter(investor__in=investors).values_list("security_id", flat=True)
+    ) | set(Holding.objects.filter(investor__in=investors).values_list("security_id", flat=True))
+    if not sec_ids:
+        return None
+    return NAVHistory.objects.filter(security_id__in=sec_ids, date__lte=as_of).aggregate(
+        m=Max("date")
+    )["m"]
+
+
+def _navs_stale(navs_as_of: date | None, as_of: date) -> bool:
+    """Prices are stale when the freshest NAV is behind the last trading day by more
+    than the grace. ``None`` (nothing priced yet) isn't stale — it's the unpriced case
+    handled elsewhere."""
+    if navs_as_of is None:
+        return False
+    behind = _trading_days_between(navs_as_of, _last_trading_day(as_of))
+    return behind > _NAV_STALE_GRACE_TRADING_DAYS
+
+
 def build_roster_summary(investors: list[Investor], family_count: int, as_of: date) -> dict:
     """Advisor-wide roster: the header roll-up **plus a lean per-investor row** for
     every investor, computed in one pass. The rows carry only what the roster list
@@ -490,6 +546,7 @@ def build_roster_summary(investors: list[Investor], family_count: int, as_of: da
         for k in totals:
             totals[k] += c[k]
 
+    navs_as_of = _book_navs_as_of(investors, as_of)
     return {
         "as_of": as_of,
         "total_inr": grand_total,
@@ -499,6 +556,8 @@ def build_roster_summary(investors: list[Investor], family_count: int, as_of: da
         "tax_ready_count": totals["ready"],
         "needs_attention_count": totals["attention"],
         "snapshot_count": totals["snapshot"],
+        "navs_as_of": navs_as_of,
+        "navs_stale": _navs_stale(navs_as_of, as_of),
         "rows": rows,
     }
 
@@ -570,11 +629,14 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
             summary_as_of = last_known.date
             is_provisional = True
 
+    navs_as_of = _book_navs_as_of([investor], as_of)
     return {
         "investor_id": investor.id,
         "as_of": summary_as_of,
         "total_inr": total_inr,
         "is_provisional": is_provisional,
+        "navs_as_of": navs_as_of,
+        "navs_stale": _navs_stale(navs_as_of, as_of),
         "holdings_count": rollup["holdings_count"],
         "integrity_unit_count": integrity_unit_count,
         "tax_ready_count": tax_ready_count,

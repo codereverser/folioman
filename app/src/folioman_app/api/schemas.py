@@ -137,6 +137,10 @@ class RosterAggregateOut(Schema):
     tax_ready_count: int
     needs_attention_count: int
     snapshot_count: int
+    # Freshest NAV date backing the priced total + whether that's behind the last
+    # trading day (a feed that hasn't run for days). null when nothing is priced yet.
+    navs_as_of: date | None = None
+    navs_stale: bool = False
     rows: list[InvestorRowOut] = Field(default_factory=list)
 
 
@@ -152,6 +156,8 @@ class FamilyAggregateOut(Schema):
     integrity_unit_count: int = 0  # (security, folio) reconciliation units
     tax_ready_count: int = 0
     needs_attention_count: int = 0  # mismatches awaiting resolution
+    navs_as_of: date | None = None  # freshest NAV date backing the priced total
+    navs_stale: bool = False  # the feed hasn't run for >1 trading day
     day_change_inr: Decimal | None = None  # portfolio-wide intraday change (INR)
     # portfolio lifetime money-weighted return as a fraction (0.1849 = 18.49%),
     # over all cashflows incl. sold-out positions. Per-fund XIRR is on each holding.
@@ -168,6 +174,10 @@ class InvestorSummaryOut(Schema):
     # computed day) rather than a live-NAV valuation at as_of — e.g. NAVs not
     # fetched yet. The UI labels it and `as_of` is that value's own date.
     is_provisional: bool = False
+    # Freshest NAV date backing the priced total + whether that's stale (the feed
+    # hasn't run for >1 trading day). null when nothing is priced yet.
+    navs_as_of: date | None = None
+    navs_stale: bool = False
     holdings_count: int  # securities currently held (units > 0)
     # (security, folio) reconciliation units — the per-folio integrity unit and the
     # denominator for the tax-ready fraction (a fund in two folios = two units).

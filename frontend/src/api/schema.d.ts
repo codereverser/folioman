@@ -779,6 +779,13 @@ export interface components {
             integrity_unit_count: number;
             /** Investor Count */
             investor_count: number;
+            /** Navs As Of */
+            navs_as_of?: string | null;
+            /**
+             * Navs Stale
+             * @default false
+             */
+            navs_stale: boolean;
             /**
              * Needs Attention Count
              * @default 0
@@ -1137,6 +1144,13 @@ export interface components {
             is_provisional: boolean;
             /** Last Import At */
             last_import_at: string | null;
+            /** Navs As Of */
+            navs_as_of?: string | null;
+            /**
+             * Navs Stale
+             * @default false
+             */
+            navs_stale: boolean;
             /** Needs Attention Count */
             needs_attention_count: number;
             /** Snapshot Count */
@@ -1202,6 +1216,13 @@ export interface components {
             integrity_unit_count: number;
             /** Investor Count */
             investor_count: number;
+            /** Navs As Of */
+            navs_as_of?: string | null;
+            /**
+             * Navs Stale
+             * @default false
+             */
+            navs_stale: boolean;
             /** Needs Attention Count */
             needs_attention_count: number;
             /** Rows */
