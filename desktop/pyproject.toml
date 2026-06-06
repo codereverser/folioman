@@ -20,6 +20,7 @@ build = [
     "nuitka>=2.4",
     "ordered-set>=4.1",  # Nuitka uses it; pure-Python wheel avoids a build step
     "zstandard>=0.22",  # onefile payload compression
+    "rich>=13.0",  # Nuitka's --progress-bar=rich backend (TTY only)
 ]
 
 [build-system]

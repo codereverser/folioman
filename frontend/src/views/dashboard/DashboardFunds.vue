@@ -2,13 +2,18 @@
 import { computed, defineAsyncComponent, ref } from 'vue'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
-import AllocationDonut from '@/components/charts/AllocationDonut.vue'
 import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import type { FundRow } from '@/composables/useDashboard'
 import { formatInr, formatInrCompact, formatNav, formatPercent } from '@/utils/format'
 
+// Lazy — same as DashboardView/FamilyView. A static import here would pull ECharts
+// (the donut's dep) back into the main chunk, defeating those views' code-split and
+// re-triggering the "dynamically and statically imported" warning.
+const AllocationDonut = defineAsyncComponent(
+  () => import('@/components/charts/AllocationDonut.vue'),
+)
 const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
 const props = defineProps<{

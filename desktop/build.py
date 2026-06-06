@@ -10,8 +10,10 @@ runs it after building the SPA; run it directly to iterate:
 
 What it encodes, and why:
 
-* **Entry** is ``folioman_desktop/__main__.py`` — the launcher (bootstrap → serve →
-  window). Absolute imports throughout, so Nuitka follows them cleanly.
+* **Entry** is the ``folioman_desktop`` *package*, compiled with ``--python-flag=-m``
+  so its ``__main__`` (the launcher: bootstrap → serve → window) runs with the same
+  package context as ``python -m folioman_desktop`` — Nuitka warns against passing
+  the ``__main__.py`` file directly, which breaks the absolute imports.
 * **Excludes** the server-only stack (psycopg, gunicorn, ninja_jwt). The desktop
   app is single-user SQLite with no network auth, so pulling Postgres drivers or
   the JWT library in would only bloat the binary. ``--nofollow-import-to`` drops
@@ -39,6 +41,10 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ENTRY = _REPO_ROOT / "desktop" / "src" / "folioman_desktop"
 _FRONTEND_DIST = _REPO_ROOT / "frontend" / "dist"
 _OUTPUT_DIR = _REPO_ROOT / "dist"
+# App icon for the macOS bundle. A native .icns (generated from the PWA icon via
+# sips/iconutil) so Nuitka bundles it directly — no on-the-fly PNG→icns conversion,
+# which would otherwise pull imageio/numpy into the build env.
+_MACOS_ICON = _REPO_ROOT / "desktop" / "resources" / "folioman.icns"
 
 # Server-only runtime deps — never needed by the single-user SQLite desktop app.
 # Dropping them keeps the binary lean (no Postgres driver, no JWT/crypto-for-JWT).
@@ -73,6 +79,7 @@ def build_command(*, onefile: bool) -> list[str]:
         "--standalone",
         "--python-flag=-m",  # run the package's __main__ with correct package context
         "--assume-yes-for-downloads",  # fetch the C toolchain/depends headlessly
+        "--progress-bar=rich",  # live progress (needs `rich`, in the build extra)
         f"--output-dir={_OUTPUT_DIR}",
         "--output-filename=folioman",
         "--company-name=Folioman",
@@ -96,6 +103,8 @@ def build_command(*, onefile: bool) -> list[str]:
             "--macos-create-app-bundle",
             "--macos-app-name=Folioman",
         ]
+        if _MACOS_ICON.is_file():
+            cmd.append(f"--macos-app-icon={_MACOS_ICON}")
 
     cmd.append(str(_ENTRY))
     return cmd

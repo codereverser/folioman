@@ -83,6 +83,17 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    // Two chunks exceed Vite's 500 kB default, both intentionally:
+    //  - the ECharts chunk is dynamically imported (the donut/charts lazy-load only
+    //    when a view that renders one mounts), so it never weighs on first paint;
+    //  - the entry chunk carries Vue + PrimeVue (incl. the DataTable, which must load
+    //    eagerly) for the landing dashboard.
+    // Both ship precompressed (.br/.gz, see the compression plugin) at ~190–220 kB,
+    // and the primary target is a local desktop binary where transfer size is moot.
+    // So this raises the advisory threshold rather than forcing fragile manual chunks.
+    chunkSizeWarningLimit: 1000,
+  },
   // Dev: the SPA is served by Vite and proxies /api to the Django dev server, so
   // the browser sees one origin (no CORS) — matching production, where Django
   // serves both. Override the API target with VITE_DEV_API_TARGET if needed.

@@ -10,13 +10,18 @@ import Tooltip from 'primevue/tooltip'
 // face never swaps in mid-page: IBM Plex is used when it's ready (the norm once
 // cached) and the system fallback is kept for a cold first paint — either way no
 // layout shift. The boot skeleton renders in system-ui until the app mounts.
-import '@fontsource/ibm-plex-sans/300.css'
-import '@fontsource/ibm-plex-sans/400.css'
-import '@fontsource/ibm-plex-sans/500.css'
-import '@fontsource/ibm-plex-sans/600.css'
-import '@fontsource/ibm-plex-sans/700.css'
-import '@fontsource/ibm-plex-mono/400.css'
-import '@fontsource/ibm-plex-mono/500.css'
+//
+// `latin` subset only: the per-weight `<weight>.css` entrypoints pull in every
+// subset (cyrillic, greek, vietnamese, latin-ext) — dead weight for an English/INR
+// UI that bloats the bundled woff2 set. The app's content is latin, so import just
+// that subset.
+import '@fontsource/ibm-plex-sans/latin-300.css'
+import '@fontsource/ibm-plex-sans/latin-400.css'
+import '@fontsource/ibm-plex-sans/latin-500.css'
+import '@fontsource/ibm-plex-sans/latin-600.css'
+import '@fontsource/ibm-plex-sans/latin-700.css'
+import '@fontsource/ibm-plex-mono/latin-400.css'
+import '@fontsource/ibm-plex-mono/latin-500.css'
 
 import 'primeicons/primeicons.css'
 import './style.css'
