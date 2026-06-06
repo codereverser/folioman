@@ -167,6 +167,34 @@ def _mark_error(inv: Investor, message: str) -> None:
     )
 
 
+def _swap_series(inv: Investor, start: dt.date, points: list[dict]) -> None:
+    """Atomically replace the investor's ``InvestorValue`` rows from ``start`` onward
+    with the freshly-computed ``points``.
+
+    Compute-then-swap: the caller computes ``points`` *first*, so this only ever runs
+    once a full new series is in hand. The destructive delete and the insert share one
+    transaction, so a failure mid-swap rolls the delete back — a recompute that throws
+    here never blanks the investor; the prior (and any provisional) series survives and
+    the attempt is left retryable. Empty ``points`` is treated as "nothing to roll
+    forward" and skips the delete entirely, so the swap can never replace a series with
+    nothing."""
+    if not points:
+        return
+    with db_transaction.atomic():
+        InvestorValue.objects.filter(investor=inv, date__gte=start).delete()
+        InvestorValue.objects.bulk_create(
+            [
+                InvestorValue(
+                    investor=inv,
+                    date=p["date"],
+                    invested_inr=p["invested_inr"],
+                    value_inr=p["value_inr"],
+                )
+                for p in points
+            ]
+        )
+
+
 def recompute_investor_valuation(
     investor_id: int, from_date: dt.date | None = None, *, prime_navs: bool = True
 ) -> str:
@@ -225,20 +253,10 @@ def recompute_investor_valuation(
                 return ValuationStatus.ERROR
             # else: only structurally-unpriceable left (or retries exhausted) — degrade.
 
+        # Compute the full new series first, then swap it in atomically — a failure
+        # in either step leaves the prior/provisional series intact (see _swap_series).
         points = _value_series([inv], start, today, "daily")
-        with db_transaction.atomic():
-            InvestorValue.objects.filter(investor=inv, date__gte=start).delete()
-            InvestorValue.objects.bulk_create(
-                [
-                    InvestorValue(
-                        investor=inv,
-                        date=p["date"],
-                        invested_inr=p["invested_inr"],
-                        value_inr=p["value_inr"],
-                    )
-                    for p in points
-                ]
-            )
+        _swap_series(inv, start, points)
         _mark_ready(inv, today)
         return ValuationStatus.READY
     except Exception as exc:

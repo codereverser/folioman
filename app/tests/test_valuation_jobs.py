@@ -89,6 +89,66 @@ def test_recompute_supersedes_the_provisional_point(
     assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("1000")  # real value, not 9999
 
 
+def test_recompute_failure_midway_keeps_prior_series(
+    monkeypatch, make_investor, make_security, make_folio, make_transaction
+):
+    """Compute-then-swap resilience: a failure during the swap must never blank the
+    investor — the prior (and provisional) values survive, status goes ERROR."""
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    folio = make_folio(investor=inv)
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 1, 1), nav=Decimal("10"))
+    # A prior committed series + a provisional point that a successful recompute would
+    # replace. Both must survive the failed attempt.
+    InvestorValue.objects.create(
+        investor=inv, date=dt.date(2025, 1, 1), value_inr=Decimal("7777"), invested_inr=Decimal("0")
+    )
+    InvestorValue.objects.create(
+        investor=inv,
+        date=dt.date(2025, 1, 2),
+        value_inr=Decimal("8888"),
+        invested_inr=Decimal("0"),
+        is_provisional=True,
+    )
+
+    def boom(*a, **k):
+        raise RuntimeError("insert blew up mid-swap")
+
+    monkeypatch.setattr(InvestorValue.objects, "bulk_create", boom)
+
+    status = valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+
+    assert status == ValuationStatus.ERROR
+    inv.refresh_from_db()
+    assert inv.valuation_status == ValuationStatus.ERROR
+    # The destructive delete is part of the swap — rolled back, so prior values remain.
+    vals = _values(inv)
+    assert vals[dt.date(2025, 1, 1)] == Decimal("7777")
+    assert vals[dt.date(2025, 1, 2)] == Decimal("8888")
+    assert InvestorValue.objects.filter(investor=inv, is_provisional=True).exists()
+
+
+def test_swap_series_never_replaces_with_nothing(make_investor):
+    """The swap guards 'never blank': an empty computed series skips the delete, so a
+    prior series is left untouched rather than wiped."""
+    inv = make_investor()
+    InvestorValue.objects.create(
+        investor=inv, date=dt.date(2025, 1, 1), value_inr=Decimal("5000"), invested_inr=Decimal("0")
+    )
+
+    valuation_jobs._swap_series(inv, dt.date(2025, 1, 1), [])
+
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("5000")
+
+
 def test_unpriced_mf_errors_then_recovers_on_retry(
     make_investor, make_security, make_folio, make_transaction
 ):
