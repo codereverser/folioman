@@ -4,19 +4,19 @@
       <stop offset="0" stop-color="#0B1120"/>
       <stop offset="1" stop-color="#16263B"/>
     </linearGradient>
-    <linearGradient id="fm-bars" x1="0" y1="0" x2="0.4" y2="1">
-      <stop offset="0" stop-color="#5EEAD4"/>
-      <stop offset="1" stop-color="#0D9488"/>
+    <linearGradient id="fm-bars" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#7DF1DE"/>
+      <stop offset="1" stop-color="#2DD4BF"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="url(#fm-ground)"/>
+  <rect width="512" height="512" rx="96" fill="url(#fm-ground)"/>
   <!-- F: rounded stem + sheared top arm + sheared middle arm -->
   <g fill="#ffffff">
-    <rect x="148" y="118" width="66" height="276" rx="20"/>
-    <path d="M150 118 L410 118 L350 182 L150 182 Z"/>
-    <path d="M150 214 L320 214 L286 266 L150 266 Z"/>
+    <rect x="118" y="92" width="78" height="328" rx="24"/>
+    <path d="M120 92 L444 92 L372 168 L120 168 Z"/>
+    <path d="M120 198 L352 198 L312 262 L120 262 Z"/>
   </g>
   <!-- Two bars whose angled inner tops drop to a shared valley: a hidden "M" / growth chart -->
-  <path d="M230 392 L230 286 L296 346 L296 392 Z" fill="url(#fm-bars)"/>
-  <path d="M300 392 L300 346 L366 286 L366 392 Z" fill="url(#fm-bars)"/>
+  <path d="M210 420 L210 282 L292 352 L292 420 Z" fill="url(#fm-bars)"/>
+  <path d="M320 420 L320 352 L402 282 L402 420 Z" fill="url(#fm-bars)"/>
 </svg>
