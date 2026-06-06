@@ -21,5 +21,14 @@ On first launch this bootstraps a working install with no further setup:
 
 Relaunch is idempotent: the existing DB/key are detected and bootstrap is skipped.
 
-The window serves `frontend/dist`, so build the SPA first (`cd frontend && npm
-run build`) — otherwise the API is up but there's no UI to show.
+The window serves `frontend/dist`, so build the SPA first (`make frontend-build`)
+— otherwise the API is up but there's no UI to show.
+
+## Build a standalone binary
+
+```sh
+make desktop   # builds the SPA, then compiles with Nuitka → dist/
+```
+
+The Nuitka build spec is [`build.py`](build.py); prerequisites and the
+Gatekeeper / SmartScreen first-run notes are in [`BUILD.md`](../BUILD.md).

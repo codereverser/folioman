@@ -30,7 +30,7 @@ help:
 	@echo "  frontend-test   Run the Vitest suite"
 	@echo "  frontend-api    Regenerate the typed API client from openapi.json"
 	@echo "  frontend-build  Build the Vue 3 SPA into frontend/dist/"
-	@echo "  desktop         [planned] Build standalone desktop binary via Nuitka"
+	@echo "  desktop         Build standalone desktop binary via Nuitka (SPA + compile)"
 	@echo "  server-image    [planned] Build multi-arch Docker image"
 	@echo "  clean           Remove build artefacts"
 
@@ -93,8 +93,11 @@ frontend-api:
 frontend-build:
 	$(PNPM) build
 
+# Build the standalone desktop binary: SPA first, then Nuitka (excludes + data
+# files live in desktop/build.py). Produces dist/folioman.app (macOS) or
+# dist/folioman[.exe] (Linux/Windows). Needs a C toolchain — see BUILD.md.
 desktop: frontend-build
-	@echo "[planned] desktop packaging not implemented yet"
+	uv run --extra build python desktop/build.py
 
 server-image:
 	@echo "[planned] server image not implemented yet"

@@ -33,7 +33,10 @@ import sys
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_ENTRY = _REPO_ROOT / "desktop" / "src" / "folioman_desktop" / "__main__.py"
+# Compile the *package* (not __main__.py directly) with `-m` semantics, so the
+# launcher's absolute folioman_desktop.* imports resolve and run exactly like
+# `python -m folioman_desktop` — Nuitka warns against passing the __main__.py file.
+_ENTRY = _REPO_ROOT / "desktop" / "src" / "folioman_desktop"
 _FRONTEND_DIST = _REPO_ROOT / "frontend" / "dist"
 _OUTPUT_DIR = _REPO_ROOT / "dist"
 
@@ -68,6 +71,7 @@ def build_command(*, onefile: bool) -> list[str]:
         "-m",
         "nuitka",
         "--standalone",
+        "--python-flag=-m",  # run the package's __main__ with correct package context
         "--assume-yes-for-downloads",  # fetch the C toolchain/depends headlessly
         f"--output-dir={_OUTPUT_DIR}",
         "--output-filename=folioman",

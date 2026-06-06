@@ -1,14 +1,15 @@
 # Building Folioman locally
 
-> **Placeholder.** The full build-from-source workflow is not yet implemented.
-> This file currently captures the intended prerequisites and entry points only.
-
 ## Prerequisites
 
 - Python 3.13+ (pinned via `.python-version`)
-- Node 20+ (pnpm preferred)
+- Node 20+ (pnpm via corepack — `corepack pnpm`, no standalone install needed)
 - Git
 - `uv` (recommended) or `pip`
+- For the **desktop binary**: a C toolchain Nuitka can drive — Xcode Command Line
+  Tools on macOS (`xcode-select --install`), `build-essential` + `patchelf` on
+  Linux, or MSVC Build Tools on Windows. Nuitka downloads anything else it needs
+  on first run (`--assume-yes-for-downloads`).
 
 ## Run modes & configuration
 
@@ -64,13 +65,63 @@ Throwaway dev creds (`folioman` / `folioman`); not the production stack
 (that comes later). The migration suite is verified to apply identically on
 SQLite and Postgres 17.
 
+## Desktop build (Nuitka)
+
+The desktop app is a PyWebView window over the embedded Django app, compiled to a
+standalone binary with [Nuitka](https://nuitka.net). One command builds the SPA
+and compiles:
+
+```bash
+make desktop          # → dist/folioman.app (macOS) or dist/folioman[.exe]
+```
+
+Under the hood that runs `desktop/build.py` (the build spec — the single source of
+truth for the `nuitka` invocation). Iterate on it directly:
+
+```bash
+uv run --extra build python desktop/build.py            # compile
+python desktop/build.py --print                         # print the command only
+uv run --extra build python desktop/build.py --onefile  # single-file (Linux/Win)
+```
+
+What the spec encodes:
+
+- **Excludes** the server-only stack (`psycopg`, `gunicorn`, `ninja_jwt`) — the
+  desktop app is single-user SQLite with no network auth, so those would only
+  bloat the binary. `api/auth.py` imports `ninja_jwt` lazily, so nothing breaks.
+- **Bundles** the built SPA (`frontend/dist`) inside the package; the launcher
+  points `FOLIOMAN_FRONTEND_DIST` at it so WhiteNoise serves it from the binary.
+- **Force-includes** `folioman_app` / `folioman_core` (+ their data) and the
+  SQLite backend, which Django imports dynamically by dotted string.
+
+The first launch of the binary bootstraps itself — creates the per-OS user-data
+dir, migrates, creates the local user, and generates the encryption key (see
+*Run modes* above and *Secrets & keys* below). No installer or setup step.
+
+### First run: Gatekeeper / SmartScreen (unsigned in v1)
+
+v1 ships **unsigned** (code signing comes later — Apple notarization; SignPath for
+Windows). The OS will warn on first launch:
+
+- **macOS** — "Folioman can't be opened because it is from an unidentified
+  developer." Right-click the `.app` → **Open** → **Open** (once), or
+  System Settings → Privacy & Security → **Open Anyway**. `xattr -dr
+  com.apple.quarantine dist/folioman.app` also clears it.
+- **Windows** — SmartScreen shows "Windows protected your PC." Click **More info**
+  → **Run anyway**.
+- **Linux** — no gatekeeper; `chmod +x` the binary if needed.
+
+These are expected for a build-from-source artifact and go away once signing lands.
+
 ## Backup & data export
 
 Your data never leaves your machine, so back it up yourself:
 
-- **Desktop (SQLite):** copy the DB file — `cp "$FOLIOMAN_DATA_DIR/folioman.sqlite3" backup.sqlite3`
-  (default dir `~/.folioman`). Also back up `fernet.key` in the same dir — **without
-  it, encrypted PANs are unrecoverable.**
+- **Desktop (SQLite):** copy the DB file — `cp "$FOLIOMAN_DATA_DIR/folioman.sqlite3" backup.sqlite3`.
+  The default dir is the per-OS user-data location (macOS `~/Library/Application
+  Support/folioman`, Linux `~/.local/share/folioman`, Windows
+  `%LOCALAPPDATA%\folioman`); override it with `FOLIOMAN_DATA_DIR`. Also back up
+  `fernet.key` in the same dir — **without it, encrypted PANs are unrecoverable.**
 - **Server (Postgres):** `pg_dump` the database (and keep `FOLIOMAN_FERNET_KEY` safe).
 
 Per-investor data is also exportable as CSV from the API (free tier, no Tax Pack):
@@ -83,7 +134,7 @@ Per-investor data is also exportable as CSV from the API (free tier, no Tax Pack
 |---|---|---|---|
 | `FOLIOMAN_SECRET_KEY` | both | dev placeholder | Django secret key — **set in production** |
 | `FOLIOMAN_DEBUG` | both | `0` | `1` enables DEBUG (never in production) |
-| `FOLIOMAN_DATA_DIR` | desktop | `~/.folioman` | SQLite DB + rotating logs location |
+| `FOLIOMAN_DATA_DIR` | desktop | per-OS user-data dir (platformdirs) | SQLite DB + rotating logs location |
 | `FOLIOMAN_ALLOWED_HOSTS` | server | (empty) | Comma-separated allowed hostnames |
 | `FOLIOMAN_DB_NAME` / `_USER` / `_PASSWORD` / `_HOST` / `_PORT` | server | `folioman` / `folioman` / (empty) / `127.0.0.1` / `5432` | Postgres connection |
 | `FOLIOMAN_DB_CONN_MAX_AGE` | server | `60` | Persistent connection lifetime (seconds) |
@@ -113,20 +164,21 @@ files against the public key; empty public key ⇒ everything stays free tier.
 
 The dev `SECRET_KEY` / Fernet fallbacks are local-only; never use them in production.
 
-## Quick start (target shape)
+## Quick start
 
 ```bash
 git clone https://github.com/codereverser/folioman
 cd folioman
-make install        # uv sync + pnpm install across the workspace
-make test           # core/ + app/ pytest, frontend unit tests
-make desktop        # produces ./dist/folioman[.exe]
+make install        # uv sync + pre-commit hook
+make frontend-install
+make test           # core/ + app/ pytest
+make desktop        # produces dist/folioman.app (macOS) or dist/folioman[.exe]
 ```
 
-## Install paths (planned)
+## Install paths
 
-1. **Docker Compose** — recommended for self-hosted PM Pro
-2. **Build from source** — `make desktop` for a native window
-3. **`pip install folioman-cli`** — power users / CA scripting
+1. **Build from source** — `make desktop` for a native window (v1, unsigned)
+2. **Docker Compose** — self-hosted PM Pro server (Phase 9)
+3. **`pip install folioman-cli`** — power users / CA scripting (later)
 
 Detailed per-platform instructions will land with the desktop packaging work.
