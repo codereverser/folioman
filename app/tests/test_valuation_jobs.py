@@ -259,6 +259,42 @@ def test_unpriceable_mf_does_not_block_the_whole_investor(
     assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("1000")
 
 
+def test_closed_fund_degrades_investor_to_ready_not_error(
+    make_investor, make_security, make_folio, make_transaction
+):
+    """A matured/delisted fund (HAS an amfi_code but the feed confirmed no NAV, so
+    nav_feed_closed) must degrade like an unmapped one — not error and retry forever.
+    The priceable holding values; the closed fund falls out; investor stays READY."""
+    inv = make_investor()
+    priced = make_security(security_type=SecurityType.MF.value)  # auto amfi_code + NAV below
+    closed = make_security(security_type=SecurityType.MF.value, nav_feed_closed=True)  # has code
+    folio = make_folio(investor=inv)
+    make_transaction(
+        investor=inv,
+        security=priced,
+        folio=folio,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    make_transaction(
+        investor=inv,
+        security=closed,
+        folio=folio,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("50"),
+        nav_or_price=Decimal("20"),
+    )
+    NAVHistory.objects.create(security=priced, date=dt.date(2025, 1, 1), nav=Decimal("10"))
+    # `closed` has an amfi_code but NO NAVHistory — without the flag it would be treated
+    # as feed-pending and error the investor; the flag makes it degrade instead.
+
+    status = valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+
+    assert status == ValuationStatus.READY  # degraded, not errored
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("1000")  # only the priceable holding
+
+
 def test_process_pending_skips_error_not_yet_due(make_investor):
     inv = make_investor()
     inv.valuation_status = ValuationStatus.ERROR

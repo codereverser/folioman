@@ -117,7 +117,7 @@ def backfill_missing_history(*, securities: Iterable[Security] | None = None) ->
         if securities is not None
         else Security.objects.filter(security_type=SecurityType.MF.value)
     )
-    summary = {"securities": 0, "points": 0, "errors": 0, "skipped": 0}
+    summary = {"securities": 0, "points": 0, "errors": 0, "skipped": 0, "closed": 0}
     today = timezone.localdate()
     fetched = False
     for security in qs:
@@ -135,9 +135,19 @@ def backfill_missing_history(*, securities: Iterable[Security] | None = None) ->
         try:
             written = backfill_nav_history(security, since=since)
         except (NAVFetchError, PriceFetchError):
-            summary["errors"] += 1
+            summary["errors"] += 1  # transient: leave it feed-pending, retry next cycle
             continue
         if written:
             summary["securities"] += 1
             summary["points"] += written
+            if security.nav_feed_closed:  # data arrived → reopen a previously-dead code
+                security.nav_feed_closed = False
+                security.save(update_fields=["nav_feed_closed", "updated_at"])
+        elif latest is None and not security.nav_feed_closed:
+            # The feed responded (no error) with no history for a fund we hold NO NAV
+            # for: the code is dead (matured/delisted/unmappable), not slow. Flag it so
+            # valuation degrades it instead of erroring + retrying the feed forever.
+            security.nav_feed_closed = True
+            security.save(update_fields=["nav_feed_closed", "updated_at"])
+            summary["closed"] += 1
     return summary

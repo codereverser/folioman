@@ -248,27 +248,32 @@ def recompute_investor_valuation(
             backfill_missing_history(  # MF history (mfapi); equities keep latest only
                 securities=securities.filter(security_type=SecurityType.MF.value)
             )
-        # Only MF securities have a history feed. An unpriced MF splits two ways:
-        #  - **feed-pending** (has an amfi_code → the feed should price it): a slow
+        # Only MF securities have a history feed. An unpriced MF splits three ways:
+        #  - **feed-pending** (has an amfi_code, feed not yet confirmed dead): a slow
         #    or transient feed; keep erroring + retrying with backoff so it recovers.
-        #  - **unpriceable** (no amfi_code → nothing to query: an eCAS demat fund the
-        #    ISIN DB can't map, or a closed/matured scheme): retrying never helps, so
-        #    it must NOT block the whole investor.
-        # Degrade per-security: value the priceable holdings and let the unpriced ones
-        # fall out of the series (``_value_series`` skips + flags them; they surface as
-        # ``stale_count`` in the summary) — never blank an otherwise-valued portfolio.
+        #  - **unmapped** (no amfi_code → nothing to query: an eCAS demat fund the ISIN
+        #    DB can't map): retrying never helps.
+        #  - **closed** (``nav_feed_closed`` — the feed confirmed no NAV for its code:
+        #    a matured/delisted close-ended fund): permanently unpriceable, must NOT be
+        #    retried as feed-pending forever.
+        # The latter two must NOT block the whole investor. Degrade per-security: value
+        # the priceable holdings and let the unpriced ones fall out of the series
+        # (``_value_series`` skips + flags them; they surface as ``stale_count`` in the
+        # summary) — never blank an otherwise-valued portfolio.
         unpriced = _unpriced_securities(
             {s.id for s in securities if s.security_type == SecurityType.MF.value}, today
         )
         if unpriced:
-            no_code = set(
-                Security.objects.filter(id__in=unpriced, amfi_code="").values_list("id", flat=True)
+            degraded = set(
+                Security.objects.filter(id__in=unpriced)
+                .filter(Q(amfi_code="") | Q(nav_feed_closed=True))
+                .values_list("id", flat=True)
             )
-            pending = unpriced - no_code
+            pending = unpriced - degraded
             if pending and inv.valuation_attempts < _MAX_ATTEMPTS:
                 _mark_error(inv, f"{len(pending)} securities awaiting NAV (feed pending)")
                 return ValuationStatus.ERROR
-            # else: only structurally-unpriceable left (or retries exhausted) — degrade.
+            # else: only unmapped/closed left (or retries exhausted) — degrade.
 
         # Compute the full new series first, then upsert it — a failure in either step
         # leaves the prior/provisional series intact (see _upsert_series).

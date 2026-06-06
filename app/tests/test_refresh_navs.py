@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from django.core.management import call_command
 from folioman_app.models import NAVHistory, Security
 from folioman_app.tasks import refresh_navs as refresh_navs_mod
 from folioman_app.tasks.import_csv import create_manual_transaction
-from folioman_app.tasks.refresh_navs import refresh_navs
+from folioman_app.tasks.refresh_navs import backfill_missing_history, refresh_navs
 from folioman_core.models import NAVPoint, Quote, SecurityType
 from folioman_core.price_feeds import coingecko, mfapi, yfinance_feed
 
@@ -96,6 +97,58 @@ def test_refresh_records_feed_errors(monkeypatch):
     summary = refresh_navs()
     assert summary["errors"] == 1
     assert NAVHistory.objects.count() == 0
+
+
+def test_backfill_flags_dead_code_as_closed(monkeypatch):
+    """The feed responds with NO history for a fund we hold no NAV for → its code is
+    dead (matured/delisted). Flag nav_feed_closed so valuation degrades it."""
+    monkeypatch.setattr(mfapi, "fetch_nav_history", lambda code, **_: SimpleNamespace(points=[]))
+    mf = Security.objects.create(
+        security_type=SecurityType.MF.value, name="Matured CEF", amfi_code="999999"
+    )
+
+    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+
+    assert summary["closed"] == 1
+    mf.refresh_from_db()
+    assert mf.nav_feed_closed is True
+    assert NAVHistory.objects.filter(security=mf).count() == 0
+
+
+def test_backfill_feed_error_does_not_flag_closed(monkeypatch):
+    """A transient feed error must NOT be mistaken for a dead code — stays retryable."""
+
+    def _boom(code, **_):
+        raise mfapi.NAVFetchError("mfapi 502")
+
+    monkeypatch.setattr(mfapi, "fetch_nav_history", _boom)
+    mf = Security.objects.create(
+        security_type=SecurityType.MF.value, name="Fund", amfi_code="122639"
+    )
+
+    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+
+    assert summary["errors"] == 1 and summary["closed"] == 0
+    mf.refresh_from_db()
+    assert mf.nav_feed_closed is False
+
+
+def test_backfill_reopens_closed_code_when_data_returns(monkeypatch):
+    """Self-healing: a previously-dead code that starts returning data is reopened."""
+    monkeypatch.setattr(
+        mfapi,
+        "fetch_nav_history",
+        lambda code, **_: SimpleNamespace(points=[NAVPoint(date=_TODAY, nav=Decimal("10"))]),
+    )
+    mf = Security.objects.create(
+        security_type=SecurityType.MF.value, name="Fund", amfi_code="122639", nav_feed_closed=True
+    )
+
+    backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+
+    mf.refresh_from_db()
+    assert mf.nav_feed_closed is False
+    assert NAVHistory.objects.filter(security=mf).exists()
 
 
 def test_refresh_navs_command(mocked_feeds):

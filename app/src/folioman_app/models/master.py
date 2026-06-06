@@ -56,6 +56,12 @@ class Security(TimeStampedModel):
     )
     # equity_oriented (112A eligibility), fund_type, coin_id, principal, etc.
     metadata = models.JSONField(default=dict, blank=True)
+    # Set when the NAV feed responds with no data for this security's code AND we hold
+    # no NAV for it at all — a matured/delisted close-ended fund (or an ISIN the feed
+    # can't map). Distinguishes a permanently-unpriceable scheme from a transient feed
+    # gap, so valuation degrades it (stale, never an error) instead of retrying the feed
+    # forever. Reversible: a later backfill that finds data clears it (self-healing).
+    nav_feed_closed = models.BooleanField(default=False)
 
     class Meta:
         verbose_name_plural = "securities"
