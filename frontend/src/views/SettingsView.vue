@@ -8,6 +8,8 @@ import { useUiStore, type ThemePreference } from '@/stores/ui'
 import { useRosterStore } from '@/stores/roster'
 import { downloadText } from '@/utils/csv'
 import { formatDate } from '@/utils/format'
+import { importSummary } from '@/utils/jobs'
+import JobStatusBadge from '@/components/JobStatusBadge.vue'
 
 const route = useRoute()
 // Settings is split into tabs (route param ":tab"); bare /settings = general.
@@ -40,7 +42,6 @@ onMounted(async () => {
 
 // Jobs & valuation activity (advisor-wide): recent imports + per-investor valuation
 // status with the real per-security cause of any failure.
-type ImportRow = Schemas['ImportJobSummaryOut']
 type Diagnostics = Schemas['ValuationDiagnosticsOut']
 
 const jobs = ref<Schemas['JobsOverviewOut'] | null>(null)
@@ -64,43 +65,6 @@ watch(activeTab, (tab) => tab === 'jobs' && void loadJobs(), { immediate: true }
 const problemValuations = computed<Diagnostics[]>(() =>
   (jobs.value?.valuations ?? []).filter((v) => v.status !== 'ready' || (v.issues?.length ?? 0) > 0),
 )
-
-type Tone = 'ok' | 'warn' | 'bad' | 'busy'
-const STATUS_TONE: Record<string, Tone> = {
-  success: 'ok',
-  ready: 'ok',
-  failed: 'bad',
-  error: 'bad',
-  completed_with_warnings: 'warn',
-  needs_confirmation: 'warn',
-  pending: 'busy',
-  running: 'busy',
-  computing: 'busy',
-}
-const STATUS_LABEL: Record<string, string> = {
-  success: 'Success',
-  failed: 'Failed',
-  completed_with_warnings: 'Warnings',
-  needs_confirmation: 'Needs confirmation',
-  pending: 'Pending',
-  running: 'Running',
-  ready: 'Ready',
-  computing: 'Computing',
-  error: 'Error',
-}
-const statusTone = (s: string): Tone => STATUS_TONE[s] ?? 'busy'
-const statusLabel = (s: string): string => STATUS_LABEL[s] ?? s
-
-/** A one-line outcome for an import row: the error if it failed, else what landed. */
-function importSummary(job: ImportRow): string {
-  if (job.error) return job.error
-  const r = (job.result ?? {}) as Record<string, number | undefined>
-  const parts: string[] = []
-  if (r.transactions_created) parts.push(`${r.transactions_created} transactions`)
-  if (r.holdings_snapshotted) parts.push(`${r.holdings_snapshotted} snapshots`)
-  if (r.securities) parts.push(`${r.securities} securities`)
-  return parts.join(' · ') || '—'
-}
 
 const isLocal = computed(() => meta.value?.storage === 'local')
 
@@ -311,9 +275,7 @@ async function exportTransactions(): Promise<void> {
               <span class="job-detail" :class="{ 'is-error': !!job.error }">{{
                 importSummary(job)
               }}</span>
-              <span class="badge" :class="statusTone(job.status)">{{
-                statusLabel(job.status)
-              }}</span>
+              <JobStatusBadge :status="job.status" />
             </li>
           </ul>
         </article>
@@ -334,7 +296,7 @@ async function exportTransactions(): Promise<void> {
                   >valued through {{ formatDate(v.computed_through) }}</span
                 >
               </span>
-              <span class="badge" :class="statusTone(v.status)">{{ statusLabel(v.status) }}</span>
+              <JobStatusBadge :status="v.status" />
               <ul v-if="v.issues?.length" class="issues">
                 <li v-for="iss in v.issues ?? []" :key="iss.security_id">
                   <span class="cause" :class="iss.cause">{{ iss.security_name }}</span>
@@ -534,34 +496,6 @@ async function exportTransactions(): Promise<void> {
 }
 .job-detail.is-error {
   color: var(--p-red-500, #ef4444);
-}
-
-/* Status pill */
-.badge {
-  flex: 0 0 auto;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  padding: 0.15rem 0.5rem;
-  border-radius: 999px;
-  white-space: nowrap;
-  border: 1px solid transparent;
-}
-.badge.ok {
-  color: var(--p-green-600, #16a34a);
-  background: color-mix(in srgb, var(--p-green-500, #22c55e) 14%, transparent);
-}
-.badge.bad {
-  color: var(--p-red-600, #dc2626);
-  background: color-mix(in srgb, var(--p-red-500, #ef4444) 14%, transparent);
-}
-.badge.warn {
-  color: var(--p-amber-600, #d97706);
-  background: color-mix(in srgb, var(--p-amber-500, #f59e0b) 16%, transparent);
-}
-.badge.busy {
-  color: var(--fm-text-muted);
-  background: var(--fm-surface-raised);
-  border-color: var(--fm-border-subtle);
 }
 
 /* Per-security valuation issues (the real cause), full-width under the row */

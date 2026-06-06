@@ -1,14 +1,33 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
-import { importCas, previewCas, type CasPreviewOut, type ImportJobOut } from '@/api/client'
+import {
+  api,
+  importCas,
+  previewCas,
+  type CasPreviewOut,
+  type ImportJobOut,
+  type Schemas,
+} from '@/api/client'
 import { useUiStore } from '@/stores/ui'
 import { formatDate } from '@/utils/format'
+import { importSummary } from '@/utils/jobs'
+import JobStatusBadge from '@/components/JobStatusBadge.vue'
 
 const router = useRouter()
 const ui = useUiStore()
+
+// Recent imports across all investors, so a past outcome / re-import is visible in
+// context on the landing step. Reuses the advisor-wide /api/jobs endpoint; the full
+// list (with valuation status) lives on the Settings → Jobs & valuation tab.
+const recentImports = ref<Schemas['ImportJobSummaryOut'][]>([])
+async function loadHistory(): Promise<void> {
+  const res = await api.GET('/api/jobs')
+  if (res.data) recentImports.value = res.data.imports.slice(0, 5)
+}
+onMounted(loadHistory)
 
 // --- result view-model ------------------------------------------------------
 // The job's `result` is an open dict on the wire; narrow it to the keys the two
@@ -127,6 +146,7 @@ async function submit(confirm = false): Promise<void> {
     job.value = await importCas(file.value, password.value, confirm)
     if (succeeded.value) {
       ui.notify({ severity: 'success', summary: 'Import complete', detail: file.value.name })
+      void loadHistory() // reflect the just-completed import in the recent list
     }
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Import failed'
@@ -236,6 +256,26 @@ function goToDashboard(): void {
         </p>
       </div>
     </details>
+
+    <!-- Recent imports (in context): newest first, advisor-wide. Detail in Settings. -->
+    <section v-if="recentImports.length" class="recent">
+      <header class="recent-head">
+        <h2>Recent imports</h2>
+        <RouterLink class="recent-all" :to="{ name: 'settings', params: { tab: 'jobs' } }"
+          >View all in Settings ↗</RouterLink
+        >
+      </header>
+      <ul class="recent-list">
+        <li v-for="j in recentImports" :key="j.id" class="recent-row">
+          <span class="r-main">
+            <span class="r-name">{{ j.filename || j.kind.toUpperCase() }}</span>
+            <span class="r-sub">{{ j.investor_name }} · {{ formatDate(j.created_at) }}</span>
+          </span>
+          <span class="r-detail" :class="{ 'is-error': !!j.error }">{{ importSummary(j) }}</span>
+          <JobStatusBadge :status="j.status" />
+        </li>
+      </ul>
+    </section>
     </template>
 
     <!-- Step 2: confirm who the statement belongs to before importing -->
@@ -599,5 +639,78 @@ function goToDashboard(): void {
   flex-basis: 100%;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
+}
+
+/* Recent imports list (landing step) */
+.recent {
+  margin-top: var(--fm-space-5);
+}
+.recent-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--fm-space-3);
+  margin-bottom: var(--fm-space-2);
+}
+.recent-head h2 {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--fm-text-muted);
+}
+.recent-all {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--p-primary-color);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.recent-all:hover {
+  text-decoration: underline;
+}
+.recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.recent-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--fm-space-3);
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--fm-border-subtle);
+}
+.recent-row:first-child {
+  border-top: none;
+}
+.r-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+.r-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--fm-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.r-sub {
+  font-size: 0.75rem;
+  color: var(--fm-text-muted);
+}
+.r-detail {
+  flex: 1 1 8rem;
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+  text-align: right;
+}
+.r-detail.is-error {
+  color: var(--p-red-500, #ef4444);
 }
 </style>
