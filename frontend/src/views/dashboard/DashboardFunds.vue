@@ -7,7 +7,7 @@ import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import type { FundRow } from '@/composables/useDashboard'
-import { formatInr, formatPercent } from '@/utils/format'
+import { formatInr, formatInrCompact, formatPercent } from '@/utils/format'
 
 const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
@@ -84,7 +84,7 @@ const sortedFunds = computed(() => {
     <template v-else>
       <div class="funds-grid">
         <article class="card donut-card">
-          <AllocationDonut :data="slices" :center-label="formatInr(total)" />
+          <AllocationDonut :data="slices" :center-label="formatInrCompact(total)" />
         </article>
         <article class="card breakdown-card">
           <ul class="breakdown">
@@ -92,7 +92,7 @@ const sortedFunds = computed(() => {
               <span class="dot" :style="{ background: r.color }" aria-hidden="true" />
               <span class="b-name">{{ r.name }}</span>
               <span class="b-pct">{{ r.pct.toFixed(1) }}%</span>
-              <span class="b-val">{{ formatInr(r.value) }}</span>
+              <span class="b-val">{{ formatInrCompact(r.value) }}</span>
             </li>
           </ul>
         </article>
@@ -110,7 +110,7 @@ const sortedFunds = computed(() => {
         >
           <template #groupheader="{ data }">
             <span class="grp">{{ data[groupField] }}</span>
-            <span class="grp-total">{{ formatInr(groupTotals.get(data[groupField]) ?? 0) }}</span>
+            <span class="grp-total">{{ formatInrCompact(groupTotals.get(data[groupField]) ?? 0) }}</span>
           </template>
           <Column field="name" header="Fund" />
           <Column header="Value" class="num">

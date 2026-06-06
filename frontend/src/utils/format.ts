@@ -35,6 +35,22 @@ export function formatInrPaise(v: number | string | null | undefined): string {
   return inr2.format(toNumber(v))
 }
 
+const compact2 = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 })
+
+/**
+ * Human-friendly INR for overview surfaces — ₹3.13Cr, ₹12.5L. Rounds amounts at
+ * or above ₹1 lakh to L/Cr (≤2 decimals, trailing zeros trimmed); anything below
+ * ₹1L falls back to the exact figure. For headlines, donut centres, chart
+ * legends — never for ledgers, tables, or tax figures, which stay exact.
+ */
+export function formatInrCompact(v: number | string | null | undefined): string {
+  const n = toNumber(v)
+  const abs = Math.abs(n)
+  if (abs < 1e5) return formatInr(n)
+  const [div, suffix] = abs >= 1e7 ? [1e7, 'Cr'] : [1e5, 'L']
+  return `${n < 0 ? '−' : ''}₹${compact2.format(abs / div)}${suffix}`
+}
+
 /** Signed percent with two decimals, no % sign added (caller decides). */
 export function formatPercent(v: number | string | null | undefined, signed = true): string {
   const n = toNumber(v)
@@ -61,6 +77,15 @@ export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? '—' : dateFmt.format(d)
+}
+
+const monthYearFmt = new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' })
+
+/** ISO date → "Jun 2025"; for trend axes where day-level detail is noise. */
+export function formatMonthYear(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : monthYearFmt.format(d)
 }
 
 export { toNumber }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { formatInr, formatPercent, toNumber, trendGlyph } from '@/utils/format'
+import { formatInr, formatInrCompact, formatPercent, toNumber, trendGlyph } from '@/utils/format'
 
 const props = withDefaults(
   defineProps<{
@@ -11,8 +11,14 @@ const props = withDefaults(
     /** Drives colour/glyph when amount/percent could be ambiguous. */
     value?: number | string | null
     size?: 'sm' | 'md'
+    /** Round the rupee amount to L/Cr for overview surfaces. */
+    compact?: boolean
   }>(),
-  { size: 'md' },
+  { size: 'md', compact: false },
+)
+
+const amountText = computed(() =>
+  props.compact ? formatInrCompact(props.amount) : formatInr(props.amount),
 )
 
 const basis = computed(() => toNumber(props.value ?? props.amount ?? props.percent))
@@ -25,7 +31,7 @@ const glyph = computed(() => trendGlyph(basis.value))
 <template>
   <span class="delta-chip" :class="[dir, size]">
     <span class="glyph" aria-hidden="true">{{ glyph }}</span>
-    <span v-if="amount !== undefined && amount !== null" class="amount">{{ formatInr(amount) }}</span>
+    <span v-if="amount !== undefined && amount !== null" class="amount">{{ amountText }}</span>
     <span v-if="percent !== undefined && percent !== null" class="percent">{{ formatPercent(percent) }}</span>
   </span>
 </template>

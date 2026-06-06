@@ -4,7 +4,7 @@ import VChart from 'vue-echarts'
 import type { EChartsOption } from 'echarts'
 import '@/charts/echarts' // registers the tree-shaken ECharts modules (side-effect)
 import { useChartTokens } from '@/charts/useChartTokens'
-import { formatInr } from '@/utils/format'
+import { formatInr, formatMonthYear } from '@/utils/format'
 
 export interface ValuePoint {
   date: string // ISO date
@@ -22,7 +22,21 @@ const option = computed<EChartsOption>(() => ({
     backgroundColor: tokens.value.surface,
     borderColor: tokens.value.border,
     textStyle: { color: tokens.value.text },
-    valueFormatter: (v) => formatInr(v as number),
+    // Month-year header (matches the axis); exact rupees on hover for inspection.
+    formatter: (params) => {
+      const rows = params as unknown as {
+        axisValue: string
+        marker: string
+        seriesName: string
+        value: number
+      }[]
+      if (!rows.length) return ''
+      const header = formatMonthYear(rows[0].axisValue)
+      const body = rows
+        .map((r) => `${r.marker} ${r.seriesName}: <b>${formatInr(r.value)}</b>`)
+        .join('<br/>')
+      return `<div style="margin-bottom:4px">${header}</div>${body}`
+    },
   },
   legend: {
     top: 0,
@@ -37,7 +51,11 @@ const option = computed<EChartsOption>(() => ({
     boundaryGap: false,
     data: props.data.map((d) => d.date),
     axisLine: { lineStyle: { color: tokens.value.border } },
-    axisLabel: { color: tokens.value.muted, hideOverlap: true },
+    axisLabel: {
+      color: tokens.value.muted,
+      hideOverlap: true,
+      formatter: (val: string) => formatMonthYear(val),
+    },
   },
   yAxis: {
     type: 'value',

@@ -64,6 +64,7 @@ export interface DashboardSummary {
   mfByCategory: AllocationSlice[]
   mfByAmc: AllocationSlice[]
   mfTotal: number
+  holdingsCount: number // priced holdings tracked (hero KPI)
 }
 
 const EMPTY: DashboardSummary = {
@@ -85,6 +86,7 @@ const EMPTY: DashboardSummary = {
   mfByCategory: [],
   mfByAmc: [],
   mfTotal: 0,
+  holdingsCount: 0,
 }
 
 // Map a backend allocation breakdown into donut slices. With `cap`, keep the
@@ -300,6 +302,7 @@ export function useDashboard(investorId: Ref<number>) {
       mfByCategory: toSlices(mfMix((h) => h.category), categoryColor),
       mfByAmc: toSlices(mfMix((h) => h.amc), (_label, i) => rampColor(i), 6, shortAmc),
       mfTotal: mfHoldings.reduce((sum, h) => sum + num(h.value_inr), 0),
+      holdingsCount: s.holdings_count ?? (s.holdings?.length ?? 0),
     }
   })
 

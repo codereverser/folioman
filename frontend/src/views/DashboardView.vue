@@ -12,7 +12,7 @@ import { useDashboard, type RangeKey } from '@/composables/useDashboard'
 import { useCountUp } from '@/composables/useCountUp'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
-import { formatInr, formatUnits } from '@/utils/format'
+import { formatInr, formatInrCompact, formatUnits } from '@/utils/format'
 
 const AllocationDonut = defineAsyncComponent(() => import('@/components/charts/AllocationDonut.vue'))
 const PortfolioValueChart = defineAsyncComponent(() => import('@/components/charts/PortfolioValueChart.vue'))
@@ -76,16 +76,6 @@ const ranges: { label: string; value: RangeKey }[] = [
 // (No CAGR: it assumes a single lump sum and a known holding period — wrong for a
 // multi-cashflow SIP portfolio, where XIRR is the correct annualized figure.)
 const heroNetWorth = useCountUp(toRef(() => summary.value.netWorth))
-
-type ReturnBasis = 'absolute' | 'xirr'
-const returnBasis = ref<ReturnBasis>('xirr')
-const basisOptions: { label: string; value: ReturnBasis }[] = [
-  { label: 'Absolute', value: 'absolute' },
-  { label: 'XIRR', value: 'xirr' },
-]
-const shownReturnPercent = computed<number | null>(() =>
-  returnBasis.value === 'absolute' ? summary.value.totalReturnPercent : summary.value.xirr,
-)
 
 // Main-dashboard allocation: the *asset-allocation* question (asset class →
 // equity/debt). Fund-house (AMC) concentration is a fund-level lens and lives on
@@ -158,43 +148,45 @@ function openScheme(securityId: number): void {
       <header class="hero span-8 card">
         <div class="hero-net">
           <p class="eyebrow">Net worth</p>
-          <p class="hero-value">{{ formatInr(heroNetWorth) }}</p>
-          <p class="hero-invested">Invested {{ formatInr(summary.invested) }}</p>
+          <p class="hero-value">{{ formatInrCompact(heroNetWorth) }}</p>
+          <p class="hero-exact">{{ formatInr(summary.netWorth) }}</p>
+          <p class="hero-invested">Invested {{ formatInrCompact(summary.invested) }}</p>
         </div>
-        <div class="hero-returns">
-          <div class="ret">
-            <div class="ret-head">
-              <span class="eyebrow">All-time return</span>
-              <SelectButton
-                class="basis-toggle"
-                :model-value="returnBasis"
-                :options="basisOptions"
-                option-label="label"
-                option-value="value"
-                :allow-empty="false"
-                size="small"
-                @update:model-value="(v: ReturnBasis | null) => v && (returnBasis = v)"
-              />
-            </div>
+        <div class="hero-kpis">
+          <div class="kpi">
+            <span class="eyebrow">All-time return</span>
             <DeltaChip
               :amount="summary.totalReturnAmount"
-              :percent="shownReturnPercent ?? undefined"
+              :percent="summary.totalReturnPercent ?? undefined"
               :value="summary.totalReturnAmount"
               size="md"
+              compact
             />
-            <span v-if="returnBasis === 'xirr' && shownReturnPercent === null" class="ret-na"
-              >XIRR needs more history</span
-            >
           </div>
-          <div class="ret ret-1d">
+          <div class="kpi">
+            <span class="eyebrow">XIRR</span>
+            <DeltaChip
+              v-if="summary.xirr !== null"
+              :percent="summary.xirr"
+              :value="summary.xirr"
+              size="md"
+            />
+            <span v-else class="kpi-na">Needs more history</span>
+          </div>
+          <div class="kpi">
             <span class="eyebrow">1D return</span>
             <DeltaChip
               v-if="summary.dayChangeAmount !== null"
               :amount="summary.dayChangeAmount"
               :percent="summary.dayChangePercent ?? undefined"
               size="sm"
+              compact
             />
             <span v-else class="muted">—</span>
+          </div>
+          <div class="kpi">
+            <span class="eyebrow">Holdings</span>
+            <span class="kpi-val">{{ summary.holdingsCount }}</span>
           </div>
         </div>
       </header>
@@ -252,7 +244,7 @@ function openScheme(securityId: number): void {
         <AllocationDonut
           v-if="loadCharts"
           :data="allocationData"
-          :center-label="formatInr(summary.netWorth)"
+          :center-label="formatInrCompact(summary.netWorth)"
         />
         <div v-else class="chart-placeholder donut-placeholder" aria-hidden="true" />
       </article>
@@ -660,45 +652,46 @@ function openScheme(securityId: number): void {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
+.hero-exact {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--fm-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
 .hero-invested {
   margin: 0.4rem 0 0;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
 }
-.hero-returns {
-  display: flex;
-  flex-direction: column;
-  gap: var(--fm-space-4);
-  align-items: flex-end;
-  text-align: right;
+/* KPI grid fills the hero's right half: two return bases + 1D + holdings count.
+   Replaces the old toggle so both Absolute and XIRR are visible at once. */
+.hero-kpis {
+  flex: 1;
+  min-width: 16rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--fm-space-4) var(--fm-space-5);
+  align-content: center;
 }
-.ret {
+.kpi {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  align-items: flex-end;
+  align-items: flex-start;
 }
-.ret-head {
-  display: flex;
-  align-items: center;
-  gap: var(--fm-space-3);
+.kpi-val {
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
-.ret-1d {
-  opacity: 0.9;
-}
-.ret-na {
+.kpi-na {
   font-size: 0.6875rem;
   color: var(--fm-text-subtle);
 }
-/* When the hero wraps to a narrow column, left-align the returns under the value. */
-@media (max-width: 1024px) {
-  .hero-returns {
-    align-items: flex-start;
-    text-align: left;
-    width: 100%;
-  }
-  .ret {
-    align-items: flex-start;
+/* On a phone the hero stacks; one KPI per row keeps the numbers readable. */
+@media (max-width: 480px) {
+  .hero-kpis {
+    grid-template-columns: 1fr;
   }
 }
 
