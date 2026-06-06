@@ -115,14 +115,20 @@ def backfill_nav_history(security: Security, *, since: date_cls | None = None) -
     return len(to_create)
 
 
-def backfill_missing_history(*, securities: Iterable[Security] | None = None) -> dict:
+def backfill_missing_history(
+    *, securities: Iterable[Security] | None = None, force: bool = False
+) -> dict:
     """Backfill history for MF securities, each bounded by its earliest transaction.
 
     Whenever a fund's latest NAV is more than a trading day behind the last trading
     day, re-pull the full history (mfapi serves it all) and insert every missing date
     — so the series stays gap-free from the last stored date to today even if the app
     only ran days or weeks ago. A fund already current (within the grace) is skipped
-    to avoid re-downloading; the cheap latest-point refresh keeps it warm meanwhile."""
+    to avoid re-downloading; the cheap latest-point refresh keeps it warm meanwhile.
+
+    ``force=True`` ignores the freshness skip and re-pulls every fund — used to repair
+    pre-existing interior holes (where the *latest* point is current but earlier
+    trading days are missing), which the freshness check can't detect."""
     qs = (
         securities
         if securities is not None
@@ -139,7 +145,7 @@ def backfill_missing_history(*, securities: Iterable[Security] | None = None) ->
         # aware so a fortnight-old series is brought fully current, not just nudged.
         latest = NAVHistory.objects.filter(security=security).aggregate(m=Max("date"))["m"]
         behind = trading_days_between(latest, cutoff) if latest is not None else None
-        if behind is not None and behind <= _HISTORY_FRESH_TRADING_DAYS:
+        if not force and behind is not None and behind <= _HISTORY_FRESH_TRADING_DAYS:
             summary["skipped"] += 1
             continue
         if fetched:

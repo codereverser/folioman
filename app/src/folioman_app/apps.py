@@ -20,6 +20,8 @@ _NO_SCHEDULER_COMMANDS = {
     "run_scheduler",
     "valuation_tick_pending",
     "valuation_tick_daily_extend",
+    "refresh_navs",
+    "backfill_navs",
 }
 
 

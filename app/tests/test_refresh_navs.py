@@ -143,6 +143,34 @@ def test_backfill_skips_a_fund_current_to_last_trading_day(monkeypatch):
     assert calls["n"] == 0  # current → no network call
 
 
+def test_backfill_force_refetches_a_current_fund_to_repair_interior_holes(monkeypatch):
+    """--force re-pulls even a fund whose latest point is current, filling earlier
+    missing dates the freshness check can't detect."""
+    cutoff = last_trading_day(dt.date.today())
+    gap_day = cutoff - dt.timedelta(days=7)
+    monkeypatch.setattr(
+        mfapi,
+        "fetch_nav_history",
+        lambda code, **_: SimpleNamespace(
+            points=[
+                NAVPoint(date=gap_day, nav=Decimal("9")),
+                NAVPoint(date=cutoff, nav=Decimal("10")),
+            ]
+        ),
+    )
+    mf = Security.objects.create(security_type=SecurityType.MF.value, name="F", amfi_code="100003")
+    NAVHistory.objects.create(security=mf, date=cutoff, nav=Decimal("10"))  # current → would skip
+
+    # Without force: current, so skipped — the interior hole stays.
+    assert backfill_missing_history(securities=Security.objects.filter(id=mf.id))["skipped"] == 1
+    assert not NAVHistory.objects.filter(security=mf, date=gap_day).exists()
+
+    # With force: re-pulled, the earlier missing date is filled.
+    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id), force=True)
+    assert summary["skipped"] == 0
+    assert NAVHistory.objects.filter(security=mf, date=gap_day).exists()
+
+
 def test_backfill_flags_dead_code_as_closed(monkeypatch):
     """The feed responds with NO history for a fund we hold no NAV for → its code is
     dead (matured/delisted). Flag nav_feed_closed so valuation degrades it."""
