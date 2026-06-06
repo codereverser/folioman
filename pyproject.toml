@@ -38,7 +38,7 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 "app/src/folioman_app/api/*.py" = ["B008"]
 
 [tool.pytest.ini_options]
-testpaths = ["core/tests", "app/tests"]
+testpaths = ["core/tests", "app/tests", "desktop/tests"]
 addopts = "-q --import-mode=importlib"
 # pytest-django: app/tests need Django configured. Setting this session-wide is
 # the standard monorepo approach — core/tests stay framework-free in *code*

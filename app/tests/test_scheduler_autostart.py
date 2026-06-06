@@ -35,6 +35,7 @@ def starts(monkeypatch):
 def _arrange(monkeypatch, settings, *, argv, run_main=None, flag=True):
     settings.FOLIOMAN_RUN_SCHEDULER = flag
     monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.delenv("FOLIOMAN_DEFER_SCHEDULER", raising=False)
     if run_main is None:
         monkeypatch.delenv("RUN_MAIN", raising=False)
     else:
@@ -78,3 +79,38 @@ def test_flag_off_does_not_start(monkeypatch, settings, cfg, starts):
     _arrange(monkeypatch, settings, argv=["folioman-desktop"], run_main=None, flag=False)
     cfg._maybe_start_scheduler()
     assert starts["n"] == 0
+
+
+def test_defer_flag_holds_off_autostart(monkeypatch, settings, cfg, starts):
+    # The desktop launcher sets this before django.setup, then starts the scheduler
+    # itself after migrate — so ready() must NOT start it during bootstrap.
+    _arrange(monkeypatch, settings, argv=["folioman-desktop"], run_main=None)
+    monkeypatch.setenv("FOLIOMAN_DEFER_SCHEDULER", "1")
+    cfg._maybe_start_scheduler()
+    assert starts["n"] == 0
+
+
+def test_start_then_shutdown_lifecycle(monkeypatch):
+    # The desktop launcher owns start (after migrate) and shutdown (window close).
+    from folioman_app import scheduler
+
+    # Stub the one-shot launch catch-up: its DB tick (covered in test_valuation_ticks)
+    # would otherwise race this start→shutdown on the scheduler thread. We only assert
+    # the start/shutdown lifecycle here, not the catch-up.
+    monkeypatch.setattr(scheduler, "_add_catch_up_job", lambda sched: None)
+
+    sched = scheduler.start_background_scheduler()
+    try:
+        assert sched.running
+        # Idempotent start: a second call returns the same instance, not a new one.
+        assert scheduler.start_background_scheduler() is sched
+    finally:
+        scheduler.shutdown_background_scheduler()
+    assert not sched.running
+    scheduler.shutdown_background_scheduler()  # second teardown is a no-op
+
+
+def test_shutdown_with_nothing_running_is_a_noop():
+    from folioman_app import scheduler
+
+    scheduler.shutdown_background_scheduler()  # never started → must not raise

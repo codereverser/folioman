@@ -49,6 +49,12 @@ class FoliomanAppConfig(AppConfig):
         process instead (flag off). Skip during migrations/tests/tooling."""
         if not getattr(settings, "FOLIOMAN_RUN_SCHEDULER", False):
             return
+        # The desktop launcher defers the scheduler until after first-run migrate,
+        # then starts it explicitly so it also owns the shutdown on window close.
+        # Without this, ready() (run during django.setup) would start the catch-up
+        # tick against a not-yet-migrated DB on a fresh install.
+        if os.environ.get("FOLIOMAN_DEFER_SCHEDULER") == "1":
+            return
         argv1 = sys.argv[1] if len(sys.argv) > 1 else ""
         if argv1 in _NO_SCHEDULER_COMMANDS:
             return

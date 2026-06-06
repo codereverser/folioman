@@ -5,8 +5,11 @@ description = "Folioman desktop launcher (PyWebView shell, packaged via Nuitka).
 requires-python = ">=3.13"
 dependencies = [
     "folioman-app",
-    # Activated when desktop packaging lands:
-    # "pywebview",
+    # Native window shell. Uses the OS webview (Cocoa/WebKit on macOS, WebKitGTK
+    # on Linux, Edge WebView2 on Windows) — no bundled Chromium, so it stays light
+    # under Nuitka. The per-OS GUI backend (pyobjc / pygobject / pythonnet) is
+    # pulled in by pywebview's own platform extras at build time.
+    "pywebview>=5.0",
 ]
 
 [project.optional-dependencies]

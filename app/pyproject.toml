@@ -14,6 +14,8 @@ dependencies = [
     # In-process background scheduler for day-wise valuation (no broker). Pure
     # Python (thread-based BackgroundScheduler), so it bundles fine under Nuitka.
     "apscheduler>=3.10,<4",
+    # Per-OS user-data dir resolution (desktop settings). Pure Python, Nuitka-safe.
+    "platformdirs>=4.0",
 ]
 
 # Server-mode-only runtime deps. The desktop Nuitka build excludes these:

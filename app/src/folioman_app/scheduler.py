@@ -141,6 +141,20 @@ def start_background_scheduler() -> BackgroundScheduler:
     return sched
 
 
+def shutdown_background_scheduler(*, wait: bool = False) -> None:
+    """Stop the in-process scheduler if one is running (desktop window close).
+
+    Idempotent — a no-op when nothing was started. ``wait=False`` returns without
+    blocking on a job that's mid-tick: window teardown shouldn't hang on a slow
+    recompute, and the next launch's catch-up reconciles any half-done work."""
+    global _background
+    if _background is None:
+        return
+    _background.shutdown(wait=wait)
+    _background = None
+    logger.info("folioman background scheduler stopped")
+
+
 def run_blocking_scheduler() -> None:
     """Run a blocking scheduler in the foreground (server `run_scheduler` process)."""
     sched = BlockingScheduler(timezone=str(settings.TIME_ZONE))

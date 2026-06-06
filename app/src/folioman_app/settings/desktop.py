@@ -8,9 +8,10 @@ SQLite is configured with WAL + a busy timeout so the app and the separate
 `refresh_navs` scheduler process can both touch the database without
 hitting "database is locked".
 
-The user-data directory is env-overridable now (`FOLIOMAN_DATA_DIR`); the
-per-OS resolution via `platformdirs` and first-run directory creation arrive
-later.
+The user-data directory is `FOLIOMAN_DATA_DIR` if set, else the per-OS
+platformdirs location (e.g. `~/Library/Application Support/folioman` on macOS,
+`~/.local/share/folioman` on Linux, `%LOCALAPPDATA%\\folioman` on Windows). The
+desktop launcher creates it on first run before `django.setup()`.
 """
 
 from __future__ import annotations
@@ -18,13 +19,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from platformdirs import user_data_dir
+
 from folioman_app.settings._logging import make_logging
 from folioman_app.settings._sqlite import sqlite_concurrency_options
 from folioman_app.settings.base import *
 
-# Writable user-data dir. A later change replaces this fallback with a platformdirs-based,
-# per-OS location and creates it on first launch.
-DATA_DIR = Path(os.environ.get("FOLIOMAN_DATA_DIR") or Path.home() / ".folioman")
+# Writable per-OS user-data dir, env-overridable. The desktop launcher sets
+# FOLIOMAN_DATA_DIR to this same resolved path and mkdirs it before django.setup,
+# so settings import never touches the filesystem (logging uses delay=True).
+DATA_DIR = Path(os.environ.get("FOLIOMAN_DATA_DIR") or user_data_dir("folioman", "folioman"))
 
 # Desktop ships as a built binary; never run with DEBUG on.
 DEBUG = False
