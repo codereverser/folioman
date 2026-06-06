@@ -293,3 +293,21 @@ def enqueue_daily_extend() -> int:
         valuation_next_attempt_at=None,
     )
     return rolled + retried
+
+
+def enqueue_catch_up_if_stale() -> int:
+    """Launch-time catch-up. The 02:00 ``enqueue_daily_extend`` cron only fires while
+    a scheduler is running, so a desktop app that was closed overnight (or a process
+    asleep across 02:00) leaves READY investors at their last-computed day with no
+    PENDING flag for the interval tick to act on. On scheduler start, if any READY
+    series is behind today, run the daily extend **once** so the next interval tick
+    brings everyone current. Idempotent and quiet: a no-op (returns 0) when every
+    READY series is already at today — the same flag-then-tick path, just kicked at
+    startup, so no duplicate work if current."""
+    today = timezone.localdate()
+    behind = Investor.objects.filter(
+        valuation_status=ValuationStatus.READY, valuation_computed_through__lt=today
+    ).exists()
+    if not behind:
+        return 0
+    return enqueue_daily_extend()

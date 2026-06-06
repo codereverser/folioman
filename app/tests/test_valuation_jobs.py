@@ -217,6 +217,37 @@ def test_empty_investor_is_ready_with_no_rows(make_investor):
     assert not InvestorValue.objects.filter(investor=inv).exists()
 
 
+def test_catch_up_flags_ready_but_behind_investor(make_investor):
+    """Launch catch-up: a READY series behind today is flagged PENDING (so the next
+    interval tick brings it current), re-doing its last-computed day."""
+    yesterday = timezone.localdate() - dt.timedelta(days=1)
+    inv = make_investor()
+    inv.valuation_status = ValuationStatus.READY
+    inv.valuation_computed_through = yesterday
+    inv.save()
+
+    queued = valuation_jobs.enqueue_catch_up_if_stale()
+
+    assert queued == 1
+    inv.refresh_from_db()
+    assert inv.valuation_status == ValuationStatus.PENDING
+    assert inv.valuation_recompute_from == yesterday  # re-do last day, extend to today
+
+
+def test_catch_up_is_noop_when_all_current(make_investor):
+    """Idempotent and quiet: when every READY series is already at today, catch-up
+    does nothing — no duplicate work, status untouched."""
+    today = timezone.localdate()
+    inv = make_investor()
+    inv.valuation_status = ValuationStatus.READY
+    inv.valuation_computed_through = today
+    inv.save()
+
+    assert valuation_jobs.enqueue_catch_up_if_stale() == 0
+    inv.refresh_from_db()
+    assert inv.valuation_status == ValuationStatus.READY
+
+
 def test_queue_recompute_seeds_provisional_and_marks_computing(make_investor):
     inv = make_investor()
     valuation_jobs.queue_recompute(

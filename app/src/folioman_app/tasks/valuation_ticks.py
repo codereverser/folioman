@@ -52,3 +52,12 @@ def run_daily_extend_tick() -> int:
     from folioman_app.tasks.valuation_jobs import enqueue_daily_extend
 
     return _run(enqueue_daily_extend)
+
+
+def run_catch_up_tick() -> int:
+    """Launch-time catch-up: if any READY series is behind today (the daily extend
+    was missed while no scheduler ran), kick it once so the next interval tick brings
+    everyone current. No-op when already current. Returns how many were queued."""
+    from folioman_app.tasks.valuation_jobs import enqueue_catch_up_if_stale
+
+    return _run(enqueue_catch_up_if_stale)

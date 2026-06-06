@@ -34,6 +34,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from django.conf import settings
 
 from folioman_app.tasks.valuation_ticks import (
+    run_catch_up_tick,
     run_daily_extend_tick,
     run_pending_valuations_tick,
 )
@@ -42,18 +43,28 @@ logger = logging.getLogger(__name__)
 
 _INTERVAL_SECONDS = 30
 
+# How late the 02:00 daily-extend may fire and still run. APScheduler's in-memory
+# jobstore has no record of runs missed while no scheduler existed, so a cold start
+# (desktop closed all night) is covered by the launch catch-up below; this grace
+# covers the "process alive but asleep across 02:00" case — a machine that wakes a
+# few hours late still fires the missed run (coalesced to once).
+_DAILY_MISFIRE_GRACE_SECONDS = 6 * 60 * 60
+
 
 @dataclass(frozen=True)
 class _Job:
     """A scheduler-neutral job definition. ``trigger`` is an APScheduler trigger
     kind ("interval"/"cron") and ``trigger_args`` its keyword arguments; the
     callable is one of the tick entrypoints (already connection-safe and
-    exception-contained), so the adapter stays a thin translation layer."""
+    exception-contained), so the adapter stays a thin translation layer.
+    ``misfire_grace_time`` overrides APScheduler's default when set (the daily cron
+    wants a wide grace so a late-waking process still fires the missed run)."""
 
     id: str
     func: Callable[[], int]
     trigger: str
     trigger_args: dict
+    misfire_grace_time: int | None = None
 
 
 # The schedule, as data. Frequent tick recomputes pending/retryable investors;
@@ -70,12 +81,18 @@ _JOBS: tuple[_Job, ...] = (
         func=run_daily_extend_tick,
         trigger="cron",
         trigger_args={"hour": 2, "minute": 0},
+        misfire_grace_time=_DAILY_MISFIRE_GRACE_SECONDS,
     ),
 )
 
 
 def _add_jobs(scheduler):
     for job in _JOBS:
+        extra = (
+            {"misfire_grace_time": job.misfire_grace_time}
+            if job.misfire_grace_time is not None
+            else {}
+        )
         scheduler.add_job(
             job.func,
             job.trigger,
@@ -83,9 +100,28 @@ def _add_jobs(scheduler):
             max_instances=1,
             coalesce=True,
             replace_existing=True,
+            **extra,
             **job.trigger_args,
         )
     return scheduler
+
+
+def _add_catch_up_job(scheduler) -> None:
+    """Register the launch catch-up as a one-shot job (no trigger → run once, now).
+
+    It must run **on the scheduler thread** right after start, never inline on the
+    caller: ``start_background_scheduler`` is invoked from ``AppConfig.ready`` (desktop),
+    where a DB query trips Django's "queries during app initialization" warning and can
+    grab a SQLite write lock against the still-starting process. ``misfire_grace_time
+    =None`` so the brief gap before the scheduler picks the job up never skips it."""
+    scheduler.add_job(
+        run_catch_up_tick,
+        id="catch_up_on_launch",
+        max_instances=1,
+        coalesce=True,
+        replace_existing=True,
+        misfire_grace_time=None,
+    )
 
 
 _background: BackgroundScheduler | None = None
@@ -98,6 +134,7 @@ def start_background_scheduler() -> BackgroundScheduler:
         return _background
     sched = BackgroundScheduler(timezone=str(settings.TIME_ZONE))
     _add_jobs(sched)
+    _add_catch_up_job(sched)  # runs on the scheduler thread, not during AppConfig.ready
     sched.start()
     _background = sched
     logger.info("folioman background scheduler started (in-process)")
@@ -108,5 +145,6 @@ def run_blocking_scheduler() -> None:
     """Run a blocking scheduler in the foreground (server `run_scheduler` process)."""
     sched = BlockingScheduler(timezone=str(settings.TIME_ZONE))
     _add_jobs(sched)
+    _add_catch_up_job(sched)  # one-shot on the scheduler thread, fires once start() loops
     logger.info("folioman scheduler running (blocking)")
-    sched.start()
+    sched.start()  # blocks

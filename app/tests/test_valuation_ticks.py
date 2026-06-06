@@ -81,6 +81,57 @@ def test_scheduler_registry_points_at_ticks():
     assert by_id["enqueue_daily_extend"].trigger == "cron"
 
 
+def test_daily_cron_has_misfire_grace():
+    # A process asleep across 02:00 must still fire the missed daily extend on wake;
+    # the interval tick keeps APScheduler's tight default (no stale catch-up wanted).
+    by_id = {job.id: job for job in scheduler._JOBS}
+    daily = by_id["enqueue_daily_extend"]
+    assert daily.misfire_grace_time == scheduler._DAILY_MISFIRE_GRACE_SECONDS
+    assert daily.misfire_grace_time > 0
+    assert by_id["process_pending_valuations"].misfire_grace_time is None
+
+
+def test_add_jobs_applies_misfire_grace_and_coalesce():
+    recorded = []
+
+    class _FakeSched:
+        def add_job(self, func, trigger, **kw):
+            recorded.append(kw)
+
+    scheduler._add_jobs(_FakeSched())
+    by_id = {kw["id"]: kw for kw in recorded}
+    assert all(kw["coalesce"] and kw["max_instances"] == 1 for kw in recorded)
+    grace = by_id["enqueue_daily_extend"]["misfire_grace_time"]
+    assert grace == scheduler._DAILY_MISFIRE_GRACE_SECONDS
+    # The interval tick keeps APScheduler's default — no misfire_grace_time passed.
+    assert "misfire_grace_time" not in by_id["process_pending_valuations"]
+
+
+def test_background_start_schedules_catch_up_off_the_init_thread(monkeypatch):
+    """Catch-up must be a one-shot job on the scheduler thread — never invoked inline
+    during AppConfig.ready, where its DB query warns and can lock SQLite at startup."""
+    added = []
+    invoked = {"n": 0}
+
+    class _FakeSched:
+        def add_job(self, func, *a, **k):
+            added.append((func, k.get("id")))
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(scheduler, "_background", None)
+    monkeypatch.setattr(scheduler, "BackgroundScheduler", lambda **kw: _FakeSched())
+    monkeypatch.setattr(scheduler, "run_catch_up_tick", lambda: invoked.__setitem__("n", 1) or 0)
+
+    scheduler.start_background_scheduler()
+
+    catch_up = [(f, jid) for f, jid in added if jid == "catch_up_on_launch"]
+    assert len(catch_up) == 1  # scheduled once as a one-shot job
+    assert catch_up[0][0] is scheduler.run_catch_up_tick
+    assert invoked["n"] == 0  # not called inline on the init thread
+
+
 def test_no_scheduler_import_leaks_into_neutral_modules():
     # The job + tick modules must stay broker/clock-free so they run from a bare
     # manage.py process and inside the pure-Python desktop build.
