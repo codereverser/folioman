@@ -19,6 +19,7 @@ from folioman_app.models import (
     Holding,
     Investor,
     InvestorValue,
+    PartialBlock,
     Security,
     SecurityIntegrityStatus,
     Transaction,
@@ -264,6 +265,106 @@ def test_open_zero_but_unreconciled_rows_snapshotted_with_reason(make_investor):
     sec = Security.objects.get(amfi_code="103504")
     assert Transaction.objects.filter(investor=inv, security=sec).count() == 1
     assert Transaction.objects.cost_basis().filter(investor=inv, security=sec).count() == 0
+    assert SecurityIntegrityStatus.objects.get(investor=inv, security=sec).status == "snapshot_only"
+
+
+def _converge_a() -> MfCasStatement:
+    """Earlier window, since inception: buys 50, closes 50 (folio 777/33)."""
+    security = CoreSecurity(
+        type=SecurityType.MF,
+        name="Axis Bluechip",
+        amfi_code="120503",
+        isin="INF846K01EW2",
+        metadata={"equity_oriented": True, "fund_type": "EQUITY", "amc": "Axis Mutual Fund"},
+    )
+    folio = CoreFolio(folio_type="mf", number="777/33", amc_code="AXIS")
+    block = MfCasSchemeBlock(
+        folio=folio,
+        security=security,
+        opening_units="0",
+        closing_units="50",
+        transactions=[
+            MfCasLineItem(
+                date=dt.date(2020, 6, 1),
+                transaction_type=TransactionType.BUY,
+                units="50",
+                nav="60",
+                amount="3000",
+            ),
+        ],
+    )
+    return MfCasStatement(
+        statement_from=dt.date(2020, 1, 1), statement_to=dt.date(2021, 12, 31), schemes=[block]
+    )
+
+
+def _converge_b() -> MfCasStatement:
+    """Later window for the same scheme/folio: opens at A's close (50), buys 20,
+    closes 70. Chains onto A — together they're a complete 0→70 history."""
+    security = CoreSecurity(
+        type=SecurityType.MF,
+        name="Axis Bluechip",
+        amfi_code="120503",
+        isin="INF846K01EW2",
+        metadata={"equity_oriented": True, "fund_type": "EQUITY", "amc": "Axis Mutual Fund"},
+    )
+    folio = CoreFolio(folio_type="mf", number="777/33", amc_code="AXIS")
+    block = MfCasSchemeBlock(
+        folio=folio,
+        security=security,
+        opening_units="50",
+        closing_units="70",
+        transactions=[
+            MfCasLineItem(
+                date=dt.date(2022, 6, 1),
+                transaction_type=TransactionType.BUY,
+                units="20",
+                nav="90",
+                amount="1800",
+            ),
+        ],
+    )
+    return MfCasStatement(
+        statement_from=dt.date(2022, 1, 1), statement_to=dt.date(2023, 12, 31), schemes=[block]
+    )
+
+
+@pytest.mark.parametrize("order", [("A", "B"), ("B", "A")])
+def test_history_converges_regardless_of_import_order(make_investor, order):
+    """Contiguous statements converge to the same complete ledger in any order. A→B
+    chains at import; B→A persists B partial, then A supplies the prior history and
+    B is upgraded — both end at a full 0→70 history with no lingering partial block."""
+    inv = make_investor()
+    stmts = {"A": _converge_a(), "B": _converge_b()}
+    for key in order:
+        persist_mf_statement(inv, stmts[key], source_ref=key)
+
+    sec = Security.objects.get(amfi_code="120503")
+    assert Transaction.objects.cost_basis().filter(investor=inv, security=sec).count() == 2
+    assert not PartialBlock.objects.filter(investor=inv, security=sec).exists()
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec)
+    assert status.status == "full_history"
+    assert status.tax_safe is True
+    assert status.units_from_transactions == Decimal("70")
+
+    # Re-importing in the same order is idempotent — no dupes, no regression.
+    for key in order:
+        persist_mf_statement(inv, stmts[key], source_ref=key)
+    assert Transaction.objects.cost_basis().filter(investor=inv, security=sec).count() == 2
+    assert not PartialBlock.objects.filter(investor=inv, security=sec).exists()
+
+
+def test_genuinely_broken_partial_is_not_falsely_upgraded(make_investor):
+    """A block whose own rows don't reach its reported close (a missing row *within* the
+    block) must never upgrade — even though its prior ledger trivially matches (opening
+    0 == prior 0), the rows-reconcile guard keeps it partial. The upgrade pass runs on
+    this very import, so this proves the guard, not just the absence of a trigger."""
+    inv = make_investor()
+    persist_mf_statement(inv, _unreconciled_statement(), source_ref="u")  # opening 0, rows≠close
+    sec = Security.objects.get(amfi_code="103504")
+
+    assert Transaction.objects.cost_basis().filter(investor=inv, security=sec).count() == 0
+    assert PartialBlock.objects.filter(investor=inv, security=sec).exists()  # stays unresolved
     assert SecurityIntegrityStatus.objects.get(investor=inv, security=sec).status == "snapshot_only"
 
 

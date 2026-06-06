@@ -22,10 +22,10 @@ from folioman_core.cas_reader import read_cas
 from folioman_core.fifo import net_units_from_transactions
 from folioman_core.models import HoldingSource, TransactionSource
 from folioman_core.models.cas import MfCasLineItem, MfCasSchemeBlock, MfCasStatement
-from folioman_core.parser import scheme_history_gap
+from folioman_core.parser import _HISTORY_TOLERANCE, scheme_history_gap
 
 from folioman_app.mappers import to_core_transaction
-from folioman_app.models import Folio, Holding, ImportJob, Security, Transaction
+from folioman_app.models import Folio, Holding, ImportJob, PartialBlock, Security, Transaction
 from folioman_app.models.jobs import ImportKind
 from folioman_app.services.imports import register_processor
 from folioman_app.tasks._upsert import upsert_folio, upsert_security
@@ -52,6 +52,61 @@ def _prior_ledger_balance(
     return net_units_from_transactions(
         [to_core_transaction(t) for t in qs.select_related("security", "folio")]
     )
+
+
+def _resolve_partial_block(investor, pb: PartialBlock) -> bool:
+    """Upgrade one partial block if it now chains. It chains when the complete ledger
+    reaches its opening AND its own rows carry that opening to its close (the same two
+    checks ``scheme_history_gap`` made, re-run against the now-larger ledger). On
+    success its rows flip to ``cost_basis_complete=True`` and the record is dropped.
+    Returns whether it resolved."""
+    flagged = investor.transactions.filter(
+        security_id=pb.security_id, folio_id=pb.folio_id, cost_basis_complete=False
+    )
+    rows = list(flagged.select_related("security", "folio"))
+    if not rows:
+        pb.delete()  # no flagged rows left — a stale record
+        return False
+    prior = _prior_ledger_balance(investor, pb.security, pb.folio, pb.statement_from)
+    if abs(prior - pb.opening_units) > _HISTORY_TOLERANCE:
+        return False  # the ledger still doesn't reach this block's opening
+    # A block whose own rows don't carry opening -> close is internally broken (a
+    # missing row), not merely missing prior history — earlier statements must not
+    # "fix" it into a false full history.
+    net = net_units_from_transactions([to_core_transaction(t) for t in rows])
+    if (
+        pb.closing_units is not None
+        and abs(pb.opening_units + net - pb.closing_units) > _HISTORY_TOLERANCE
+    ):
+        return False
+    flagged.update(cost_basis_complete=True)
+    # The block's closing snapshot is now redundant — the complete ledger supersedes
+    # it. Dropping it makes B→A land in the same state as A→B (ledger-only, not a
+    # ledger-plus-snapshot "reconciled"): a single converged full history.
+    Holding.objects.filter(
+        investor=investor,
+        security_id=pb.security_id,
+        folio_id=pb.folio_id,
+        source=HoldingSource.CAS_PDF.value,
+    ).delete()
+    pb.delete()
+    return True
+
+
+def upgrade_chained_partials(investor) -> set[int]:
+    """Re-evaluate every recorded partial block and upgrade those that now chain onto
+    the ledger. Loops to a fixpoint so a chain (an earliest statement completing a
+    middle one, which then completes a later one) converges in a single import,
+    regardless of order. Returns the security ids whose rows were upgraded."""
+    affected: set[int] = set()
+    while True:
+        progressed = False
+        for pb in list(investor.partial_blocks.select_related("security", "folio")):
+            if _resolve_partial_block(investor, pb):
+                affected.add(pb.security_id)
+                progressed = True
+        if not progressed:
+            return affected
 
 
 def _canon_decimal(value: Decimal | None) -> str:
@@ -220,6 +275,18 @@ def persist_mf_statement(investor, statement: MfCasStatement, *, source_ref: str
                     investor, security, folio, block, statement=statement, source_ref=source_ref
                 ):
                     summary["holdings_snapshotted"] += 1
+                # Record what the gap check saw so a later earlier-window statement can
+                # re-evaluate and upgrade this block (see upgrade_chained_partials).
+                PartialBlock.objects.update_or_create(
+                    investor=investor,
+                    security=security,
+                    folio=folio,
+                    defaults={
+                        "opening_units": block.opening_units or _ZERO,
+                        "closing_units": block.closing_units,
+                        "statement_from": statement.statement_from,
+                    },
+                )
                 summary["incomplete_history"].append(
                     {
                         "security": security.name,
@@ -236,6 +303,12 @@ def persist_mf_statement(investor, statement: MfCasStatement, *, source_ref: str
                         else None,
                     }
                 )
+
+        # This statement may have supplied the prior history a previously-partial
+        # block was missing — re-evaluate and upgrade any that now chain (cascades
+        # included). Makes the ledger order-independent. Still inside the atomic block.
+        for upgraded_id in upgrade_chained_partials(investor):
+            securities_by_id.setdefault(upgraded_id, Security.objects.get(id=upgraded_id))
 
     summary["securities"] = len(securities_by_id)
     # Reconcile per affected security after the import commits. A reconcile

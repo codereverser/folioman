@@ -13,6 +13,7 @@ from folioman_app.models.ledger import (
     Holding,
     Investor,
     InvestorValue,
+    PartialBlock,
     Transaction,
     ValuationStatus,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "InvestorValue",
     "License",
     "NAVHistory",
+    "PartialBlock",
     "Security",
     "SecurityIntegrityStatus",
     "Transaction",

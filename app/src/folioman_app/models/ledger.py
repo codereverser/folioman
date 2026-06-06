@@ -299,6 +299,41 @@ class Holding(TimeStampedModel):
         return f"{self.units} units @ {self.as_of_date}"
 
 
+class PartialBlock(TimeStampedModel):
+    """A partial-history scheme block: an import whose opening balance didn't chain
+    onto the ledger, so its rows were kept ``cost_basis_complete=False`` and its close
+    snapshotted. Records the opening/closing/window the gap check used so a later
+    *earlier-window* statement can re-evaluate it: once the ledger reaches this
+    opening, the block chains and its rows upgrade to complete. That makes history
+    order-independent (B-then-A converges to the same full ledger as A-then-B). The
+    row is deleted once the block resolves. One per (investor, security, folio); a
+    later partial import of the same scheme overwrites it (latest close wins)."""
+
+    investor = models.ForeignKey(Investor, on_delete=models.CASCADE, related_name="partial_blocks")
+    security = models.ForeignKey(Security, on_delete=models.CASCADE, related_name="partial_blocks")
+    folio = models.ForeignKey(
+        Folio, null=True, blank=True, on_delete=models.CASCADE, related_name="partial_blocks"
+    )
+    # The opening/closing the original gap check saw — re-checked verbatim so a
+    # block that's genuinely internally broken (rows don't reach the close) is never
+    # falsely upgraded just because the prior ledger now matches its opening.
+    opening_units = models.DecimalField(max_digits=24, decimal_places=8)
+    closing_units = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    # The statement's start — the cutoff for "prior ledger" when re-evaluating.
+    statement_from = models.DateField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["investor", "security", "folio"],
+                name="uniq_partialblock_inv_sec_folio",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"partial {self.opening_units}->{self.closing_units} (sec {self.security_id})"
+
+
 class InvestorValue(TimeStampedModel):
     """One day's net-worth point for an investor — the persisted day-wise series.
 
