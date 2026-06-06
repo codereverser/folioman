@@ -222,6 +222,7 @@ def _rollup(valuation, meta_by_security: dict, extras: dict[int, dict] | None = 
                 "units": row.units,
                 "value_inr": row.value_inr,
                 "invested_inr": invested,
+                "latest_nav": extra.get("latest_nav"),
                 "return_pct": return_pct,
                 "xirr": extra.get("xirr"),
                 "day_change_inr": extra.get("day_change_inr"),
@@ -314,6 +315,7 @@ def _holding_extras(investors: list[Investor], as_of: date) -> dict[int, dict]:
 
         extras[sec_id] = {
             "invested_inr": invested,
+            "latest_nav": latest,  # the price the holding is valued at (for display)
             "day_change_inr": day_change_inr,
             "day_change_pct": day_change_pct,
             "xirr": xirr,

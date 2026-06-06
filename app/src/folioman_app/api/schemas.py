@@ -97,6 +97,7 @@ class HoldingValueRow(Schema):
     units: Decimal
     value_inr: Decimal | None
     invested_inr: Decimal | None = None  # FIFO cost basis of the units still held
+    latest_nav: Decimal | None = None  # current NAV the units are valued at
     return_pct: float | None = None  # (value - invested) / invested, as a fraction
     # money-weighted annualized return of this fund alone (its cashflows + current
     # value), as a fraction. None for snapshot-only or held-but-unpriced holdings.

@@ -7,7 +7,7 @@ import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import type { FundRow } from '@/composables/useDashboard'
-import { formatInr, formatInrCompact, formatPercent } from '@/utils/format'
+import { formatInr, formatInrCompact, formatNav, formatPercent } from '@/utils/format'
 
 const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
@@ -112,7 +112,27 @@ const sortedFunds = computed(() => {
             <span class="grp">{{ data[groupField] }}</span>
             <span class="grp-total">{{ formatInrCompact(groupTotals.get(data[groupField]) ?? 0) }}</span>
           </template>
-          <Column field="name" header="Fund" />
+          <Column field="name" header="Fund">
+            <template #body="{ data }">
+              <div class="fund-cell">
+                <span class="fund-name">{{ data.name }}</span>
+                <span class="fund-meta">
+                  <span v-if="data.nav != null">NAV {{ formatNav(data.nav) }}</span>
+                  <span v-if="data.avgNav != null">· Avg NAV {{ formatNav(data.avgNav) }}</span>
+                  <span
+                    v-if="data.dayChangeAmount != null"
+                    class="day"
+                    :class="data.dayChangeAmount >= 0 ? 'up' : 'down'"
+                  >
+                    · 1D {{ formatInr(data.dayChangeAmount) }}
+                    <template v-if="data.dayChangePercent != null"
+                      >({{ formatPercent(data.dayChangePercent) }})</template
+                    >
+                  </span>
+                </span>
+              </div>
+            </template>
+          </Column>
           <Column header="Value" class="num">
             <template #body="{ data }">{{ formatInr(data.value) }}</template>
           </Column>
@@ -262,6 +282,30 @@ const sortedFunds = computed(() => {
 }
 .muted {
   color: var(--fm-text-muted);
+}
+
+/* Fund cell: name + a secondary line of NAV / avg cost / 1-day move. */
+.fund-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.fund-name {
+  font-weight: 600;
+}
+.fund-meta {
+  font-size: 0.75rem;
+  color: var(--fm-text-muted);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.fund-meta .day.up {
+  color: var(--fm-gain);
+}
+.fund-meta .day.down {
+  color: var(--fm-loss);
 }
 
 @media (max-width: 900px) {

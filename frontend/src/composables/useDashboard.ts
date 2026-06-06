@@ -39,6 +39,11 @@ export interface FundRow extends HoldingRow {
   category: string
   xirr: number | null // percent; null when not computable
   gain: number | null // value − invested, in ₹; null when cost basis is unknown
+  // Per-scheme secondary-line details (NAV / Avg cost-per-unit / 1-day move).
+  nav: number | null // current NAV the units are valued at
+  avgNav: number | null // average cost per unit = invested / units
+  dayChangeAmount: number | null // 1-day INR change for this holding
+  dayChangePercent: number | null // 1-day % NAV move
 }
 
 export interface DashboardSummary {
@@ -305,6 +310,13 @@ export function useDashboard(investorId: Ref<number>) {
         returnPct: h.return_pct == null ? null : h.return_pct * 100,
         xirr: h.xirr == null ? null : h.xirr * 100,
         gain: h.invested_inr == null ? null : num(h.value_inr) - num(h.invested_inr),
+        nav: h.latest_nav == null ? null : num(h.latest_nav),
+        avgNav:
+          h.invested_inr == null || num(h.units) === 0
+            ? null
+            : num(h.invested_inr) / num(h.units),
+        dayChangeAmount: h.day_change_inr == null ? null : num(h.day_change_inr),
+        dayChangePercent: h.day_change_pct == null ? null : h.day_change_pct * 100,
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
       mfByCategory: toSlices(mfMix((h) => h.category), categoryColor),

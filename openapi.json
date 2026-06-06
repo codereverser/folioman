@@ -637,6 +637,18 @@
             ],
             "title": "Invested Inr"
           },
+          "latest_nav": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Nav"
+          },
           "name": {
             "title": "Name",
             "type": "string"

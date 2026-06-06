@@ -64,6 +64,13 @@ export function formatUnits(v: number | string | null | undefined): string {
   return units4.format(toNumber(v))
 }
 
+const nav4 = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+
+/** A NAV / per-unit price to 4 dp, no currency symbol (e.g. 705.4251). */
+export function formatNav(v: number | string | null | undefined): string {
+  return nav4.format(toNumber(v))
+}
+
 /** ▲ / ▼ / · directional glyph for a delta. */
 export function trendGlyph(v: number | string | null | undefined): '▲' | '▼' | '·' {
   const n = toNumber(v)

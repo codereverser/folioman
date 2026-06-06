@@ -900,6 +900,8 @@ export interface components {
             day_change_pct?: number | null;
             /** Invested Inr */
             invested_inr?: string | null;
+            /** Latest Nav */
+            latest_nav?: string | null;
             /** Name */
             name: string;
             /** Return Pct */
