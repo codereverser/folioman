@@ -60,6 +60,15 @@ from folioman_app.tasks.refresh_navs import backfill_missing_history, refresh_na
 
 _MAX_ATTEMPTS = 8
 
+# The persisted ``InvestorValue`` series is always **daily** — one point per calendar
+# day from the start date to today. The upsert in ``_upsert_series`` relies on this:
+# daily sampling covers every date in ``[start, today]``, so each existing row in that
+# window is overwritten and none is left orphaned (a sparser granularity would strand
+# stale rows the old delete-then-rebuild used to sweep). Charts can downsample on read;
+# the stored series stays daily-contiguous. Do not change without making the upsert
+# sweep dates no longer in the computed set (see test_recompute_leaves_no_orphan_rows).
+_SERIES_GRANULARITY = "daily"
+
 
 def queue_recompute(
     investor: Investor,
@@ -167,21 +176,25 @@ def _mark_error(inv: Investor, message: str) -> None:
     )
 
 
-def _swap_series(inv: Investor, start: dt.date, points: list[dict]) -> None:
-    """Atomically replace the investor's ``InvestorValue`` rows from ``start`` onward
-    with the freshly-computed ``points``.
+def _upsert_series(inv: Investor, points: list[dict]) -> None:
+    """Upsert the freshly-computed daily ``points`` into the investor's
+    ``InvestorValue`` series, keyed on (investor, date).
 
-    Compute-then-swap: the caller computes ``points`` *first*, so this only ever runs
-    once a full new series is in hand. The destructive delete and the insert share one
-    transaction, so a failure mid-swap rolls the delete back — a recompute that throws
-    here never blanks the investor; the prior (and any provisional) series survives and
-    the attempt is left retryable. Empty ``points`` is treated as "nothing to roll
-    forward" and skips the delete entirely, so the swap can never replace a series with
-    nothing."""
+    Compute-then-upsert: the caller computes ``points`` *first*, so this only runs once
+    a full new series is in hand. There is no destructive delete — every row is inserted
+    or updated in place, so a failure here can never blank the investor; the prior (and
+    any provisional) series survives and the attempt is left retryable. Provisional rows
+    are superseded because ``is_provisional`` is in ``update_fields`` (the conflict path
+    resets it to False). One ``atomic()`` so a large series batched across statements is
+    seen all-or-nothing by a concurrent reader. Empty ``points`` is a no-op.
+
+    Relies on the series being daily-contiguous (see ``_SERIES_GRANULARITY``): daily
+    sampling covers every date in the recomputed window, so no prior row in range is
+    left stale. With a sparser granularity this would need to also delete dates no
+    longer in the computed set."""
     if not points:
         return
     with db_transaction.atomic():
-        InvestorValue.objects.filter(investor=inv, date__gte=start).delete()
         InvestorValue.objects.bulk_create(
             [
                 InvestorValue(
@@ -189,9 +202,13 @@ def _swap_series(inv: Investor, start: dt.date, points: list[dict]) -> None:
                     date=p["date"],
                     invested_inr=p["invested_inr"],
                     value_inr=p["value_inr"],
+                    is_provisional=False,
                 )
                 for p in points
-            ]
+            ],
+            update_conflicts=True,
+            unique_fields=["investor", "date"],
+            update_fields=["invested_inr", "value_inr", "is_provisional", "updated_at"],
         )
 
 
@@ -253,10 +270,10 @@ def recompute_investor_valuation(
                 return ValuationStatus.ERROR
             # else: only structurally-unpriceable left (or retries exhausted) — degrade.
 
-        # Compute the full new series first, then swap it in atomically — a failure
-        # in either step leaves the prior/provisional series intact (see _swap_series).
-        points = _value_series([inv], start, today, "daily")
-        _swap_series(inv, start, points)
+        # Compute the full new series first, then upsert it — a failure in either step
+        # leaves the prior/provisional series intact (see _upsert_series).
+        points = _value_series([inv], start, today, _SERIES_GRANULARITY)
+        _upsert_series(inv, points)
         _mark_ready(inv, today)
         return ValuationStatus.READY
     except Exception as exc:

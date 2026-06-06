@@ -92,7 +92,7 @@ def test_recompute_supersedes_the_provisional_point(
 def test_recompute_failure_midway_keeps_prior_series(
     monkeypatch, make_investor, make_security, make_folio, make_transaction
 ):
-    """Compute-then-swap resilience: a failure during the swap must never blank the
+    """Compute-then-upsert resilience: a failure during the upsert must never blank the
     investor — the prior (and provisional) values survive, status goes ERROR."""
     inv = make_investor()
     mf = make_security(security_type=SecurityType.MF.value)
@@ -120,7 +120,7 @@ def test_recompute_failure_midway_keeps_prior_series(
     )
 
     def boom(*a, **k):
-        raise RuntimeError("insert blew up mid-swap")
+        raise RuntimeError("upsert blew up midway")
 
     monkeypatch.setattr(InvestorValue.objects, "bulk_create", boom)
 
@@ -129,24 +129,61 @@ def test_recompute_failure_midway_keeps_prior_series(
     assert status == ValuationStatus.ERROR
     inv.refresh_from_db()
     assert inv.valuation_status == ValuationStatus.ERROR
-    # The destructive delete is part of the swap — rolled back, so prior values remain.
+    # The upsert has no destructive delete, so a failed attempt leaves prior rows as-is.
     vals = _values(inv)
     assert vals[dt.date(2025, 1, 1)] == Decimal("7777")
     assert vals[dt.date(2025, 1, 2)] == Decimal("8888")
     assert InvestorValue.objects.filter(investor=inv, is_provisional=True).exists()
 
 
-def test_swap_series_never_replaces_with_nothing(make_investor):
-    """The swap guards 'never blank': an empty computed series skips the delete, so a
-    prior series is left untouched rather than wiped."""
+def test_upsert_series_empty_is_a_noop(make_investor):
+    """An empty computed series leaves a prior series untouched (never blanks)."""
     inv = make_investor()
     InvestorValue.objects.create(
         investor=inv, date=dt.date(2025, 1, 1), value_inr=Decimal("5000"), invested_inr=Decimal("0")
     )
 
-    valuation_jobs._swap_series(inv, dt.date(2025, 1, 1), [])
+    valuation_jobs._upsert_series(inv, [])
 
     assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("5000")
+
+
+def test_recompute_leaves_no_orphan_rows_and_stays_daily_contiguous(
+    make_investor, make_security, make_folio, make_transaction
+):
+    """Upsert contract: the stored series exactly matches the recomputed daily set —
+    one row per calendar day, no gaps, no duplicates, no stale rows. A second recompute
+    with a corrected NAV overwrites in place rather than appending."""
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    folio = make_folio(investor=inv)
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    nav = NAVHistory.objects.create(security=mf, date=dt.date(2025, 1, 1), nav=Decimal("10"))
+
+    valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+    first = _values(inv)
+    today = timezone.localdate()
+    expected_days = (today - dt.date(2025, 1, 1)).days + 1
+    assert len(first) == expected_days  # one row per calendar day, contiguous
+    assert min(first) == dt.date(2025, 1, 1) and max(first) == today
+    assert all(v == Decimal("1000") for v in first.values())  # 100 units x NAV 10
+
+    # Correct the NAV and recompute from the same start: rows overwrite in place,
+    # leaving no orphan/duplicate rows from the prior series.
+    nav.nav = Decimal("12")
+    nav.save()
+    valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+    second = _values(inv)
+    assert len(second) == expected_days  # no extra rows appended
+    assert set(second) == set(first)  # identical date set — nothing orphaned
+    assert all(v == Decimal("1200") for v in second.values())  # corrected NAV applied
 
 
 def test_unpriced_mf_errors_then_recovers_on_retry(
