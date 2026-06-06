@@ -35,6 +35,21 @@ def ensure_settings_module() -> None:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", DEFAULT_SETTINGS)
 
 
+def _point_at_bundled_spa() -> None:
+    """In a packaged build the SPA is bundled next to this module; point Django at it.
+
+    The Nuitka spec bundles ``frontend/dist`` as ``folioman_desktop/frontend_dist``,
+    so it resolves from ``__file__`` in both standalone and onefile modes. A no-op
+    in dev (no such dir) — settings then falls back to the repo's ``frontend/dist``.
+    Honours an explicit ``FOLIOMAN_FRONTEND_DIST`` override.
+    """
+    if os.environ.get("FOLIOMAN_FRONTEND_DIST"):
+        return
+    bundled = Path(__file__).resolve().parent / "frontend_dist"
+    if bundled.is_dir():
+        os.environ["FOLIOMAN_FRONTEND_DIST"] = str(bundled)
+
+
 def resolve_data_dir() -> Path:
     """Resolve the writable user-data dir and create it (plus ``logs/``).
 
@@ -86,6 +101,7 @@ def bootstrap() -> Path:
     ensure_settings_module()
     # The launcher starts the scheduler itself, after migrate (see apps.py).
     os.environ.setdefault("FOLIOMAN_DEFER_SCHEDULER", "1")
+    _point_at_bundled_spa()
     data_dir = resolve_data_dir()
 
     import django

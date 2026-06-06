@@ -13,11 +13,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Build-time only; activated when desktop packaging lands.
+# Build-time only — the Nuitka compiler toolchain (see desktop/build.py). Not a
+# runtime dependency of the binary; installed with `uv sync --extra build` or
+# `uv run --extra build python desktop/build.py`.
 build = [
-    # "nuitka",
-    # "ordered-set",
-    # "zstandard",
+    "nuitka>=2.4",
+    "ordered-set>=4.1",  # Nuitka uses it; pure-Python wheel avoids a build step
+    "zstandard>=0.22",  # onefile payload compression
 ]
 
 [build-system]
