@@ -55,16 +55,15 @@ _EXCLUDE_IMPORTS = (
     "gunicorn",
 )
 
-# Django resolves these by dotted string at runtime, so import-following misses
-# them. Name them explicitly so the engine + migrations land in the binary.
-_FORCE_INCLUDE_MODULES = (
-    "django.db.backends.sqlite3",
-    "django.db.backends.sqlite3.base",
-)
-
-# Whole packages (their submodules + package data) we depend on dynamically:
-# migrations are imported by module path, templates/static are read as data.
+# Whole packages (their submodules + package data) pulled in by dotted-string /
+# lazy imports that Nuitka's static import-following can't see:
+#  - django: the ORM lazily imports e.g. django.db.models.sql.compiler the first
+#    time a query is compiled, plus dozens more submodules + the sqlite backend
+#    and migration framework. Including the whole package once avoids whack-a-mole
+#    over individual modules (each miss = another multi-minute rebuild).
+#  - folioman_app/_core: our own packages; migrations are imported by module path.
 _FORCE_INCLUDE_PACKAGES = (
+    "django",
     "folioman_app",
     "folioman_core",
 )
@@ -89,7 +88,6 @@ def build_command(*, onefile: bool) -> list[str]:
         cmd.append("--onefile")  # single self-extracting binary (Linux/Windows)
 
     cmd += [f"--nofollow-import-to={name}" for name in _EXCLUDE_IMPORTS]
-    cmd += [f"--include-module={name}" for name in _FORCE_INCLUDE_MODULES]
     cmd += [f"--include-package={name}" for name in _FORCE_INCLUDE_PACKAGES]
     cmd += [f"--include-package-data={name}" for name in _FORCE_INCLUDE_PACKAGES]
 

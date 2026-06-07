@@ -29,9 +29,10 @@ def test_excludes_the_server_only_stack():
 def test_force_includes_django_dynamic_imports_and_app_packages():
     cmd = _load_build().build_command(onefile=False)
     joined = " ".join(cmd)
-    # Django resolves the sqlite backend + migrations by string — import-following
-    # misses them, so they must be named explicitly.
-    assert "--include-module=django.db.backends.sqlite3" in joined
+    # Django's ORM/migrations/backends are imported by dotted string — import-
+    # following misses them, so the whole package is force-included (+ data).
+    assert "--include-package=django" in joined
+    assert "--include-package-data=django" in joined
     assert "--include-package=folioman_app" in joined
     assert "--include-package-data=folioman_app" in joined
 

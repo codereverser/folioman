@@ -473,7 +473,7 @@ build = [
 [package.metadata]
 requires-dist = [
     { name = "folioman-app", editable = "app" },
-    { name = "nuitka", marker = "extra == 'build'", specifier = ">=2.4" },
+    { name = "nuitka", marker = "extra == 'build'", specifier = ">=4.0" },
     { name = "ordered-set", marker = "extra == 'build'", specifier = ">=4.1" },
     { name = "pywebview", specifier = ">=5.0" },
     { name = "rich", marker = "extra == 'build'", specifier = ">=13.0" },
