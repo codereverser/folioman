@@ -325,14 +325,17 @@ def process_pending_valuations() -> int:
 
 
 def enqueue_daily_extend() -> int:
-    """Daily tick: roll every ready series forward to today, and re-queue errored
-    investors (so a recovered feed gets retried). Returns how many were queued."""
-    today = timezone.localdate()
-    rolled = Investor.objects.filter(
-        valuation_status=ValuationStatus.READY, valuation_computed_through__lt=today
-    ).update(
+    """Revalue tick (every 6h): re-queue every READY series and re-queue errored
+    investors (so a recovered feed gets retried). Returns how many were queued.
+
+    Re-queues *all* READY investors, not only those behind today: re-doing the last
+    computed day is what picks up a NAV that posted late (some MFs publish mid-morning,
+    after the 02:00 run). The pending tick re-fetches NAVs for the batch before
+    recomputing, so a later run in the day applies the freshly-published price. A
+    series already at today re-does just today; a behind one extends to today."""
+    rolled = Investor.objects.filter(valuation_status=ValuationStatus.READY).update(
         valuation_status=ValuationStatus.PENDING,
-        # re-do the last computed day (catches late NAVs) and extend to today
+        # re-do from the last computed day (catches late NAVs) and extend to today
         valuation_recompute_from=F("valuation_computed_through"),
     )
     retried = Investor.objects.filter(valuation_status=ValuationStatus.ERROR).update(
@@ -343,19 +346,34 @@ def enqueue_daily_extend() -> int:
     return rolled + retried
 
 
+def _book_navs_stale() -> bool:
+    """Are the freshest NAVs across all held securities behind the last trading day?
+
+    Reuses the same business-day-aware staleness rule the dashboard surfaces, but over
+    every investor's book (not one). ``False`` when nothing is priced yet (a fresh
+    install — the unpriced case, not staleness)."""
+    from folioman_app.services.valuation import _book_navs_as_of, _navs_stale
+
+    today = timezone.localdate()
+    investors = list(Investor.objects.all())
+    if not investors:
+        return False
+    return _navs_stale(_book_navs_as_of(investors, today), today)
+
+
 def enqueue_catch_up_if_stale() -> int:
-    """Launch-time catch-up. The 02:00 ``enqueue_daily_extend`` cron only fires while
-    a scheduler is running, so a desktop app that was closed overnight (or a process
-    asleep across 02:00) leaves READY investors at their last-computed day with no
-    PENDING flag for the interval tick to act on. On scheduler start, if any READY
-    series is behind today, run the daily extend **once** so the next interval tick
-    brings everyone current. Idempotent and quiet: a no-op (returns 0) when every
-    READY series is already at today — the same flag-then-tick path, just kicked at
-    startup, so no duplicate work if current."""
+    """Launch-time catch-up. The 6-hourly ``enqueue_daily_extend`` cron only fires while
+    a scheduler is running, so a desktop app that was closed (or a process asleep across
+    the scheduled hour) leaves READY investors at their last-computed day with no PENDING
+    flag for the interval tick to act on. On scheduler start, kick the revalue **once**
+    if either a READY series is behind today *or* the price feed is stale (a NAV posted
+    while the app was closed) — so opening the app fetches the latest NAVs in the
+    background. Idempotent and quiet: a no-op (returns 0) when everything is current and
+    prices are fresh."""
     today = timezone.localdate()
     behind = Investor.objects.filter(
         valuation_status=ValuationStatus.READY, valuation_computed_through__lt=today
     ).exists()
-    if not behind:
+    if not (behind or _book_navs_stale()):
         return 0
     return enqueue_daily_extend()

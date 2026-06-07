@@ -381,6 +381,44 @@ def test_catch_up_is_noop_when_all_current(make_investor):
     assert inv.valuation_status == ValuationStatus.READY
 
 
+def test_daily_extend_redoes_a_current_ready_investor(make_investor):
+    """The 6-hourly revalue re-queues even a series already at today (re-doing today)
+    so a NAV that posted after the last run is picked up the same day."""
+    today = timezone.localdate()
+    inv = make_investor()
+    inv.valuation_status = ValuationStatus.READY
+    inv.valuation_computed_through = today
+    inv.save()
+
+    queued = valuation_jobs.enqueue_daily_extend()
+
+    assert queued == 1
+    inv.refresh_from_db()
+    assert inv.valuation_status == ValuationStatus.PENDING
+    assert inv.valuation_recompute_from == today  # re-do today, not a no-op
+
+
+def test_catch_up_fires_when_navs_stale_even_if_valuation_current(
+    make_investor, make_security, make_holding
+):
+    """Force a refresh on open when the feed is stale: a series valued through today
+    but whose freshest NAV is days old still gets kicked, so opening the app fetches
+    the latest prices in the background."""
+    today = timezone.localdate()
+    old = today - dt.timedelta(days=10)  # comfortably >1 trading day behind today
+    inv = make_investor()
+    inv.valuation_status = ValuationStatus.READY
+    inv.valuation_computed_through = today
+    inv.save()
+    mf = make_security(security_type=SecurityType.MF.value)
+    make_holding(investor=inv, security=mf, units=Decimal("100"), as_of_date=old)
+    NAVHistory.objects.create(security=mf, date=old, nav=Decimal("50"))
+
+    assert valuation_jobs.enqueue_catch_up_if_stale() > 0
+    inv.refresh_from_db()
+    assert inv.valuation_status == ValuationStatus.PENDING
+
+
 def test_queue_recompute_seeds_provisional_and_marks_computing(make_investor):
     inv = make_investor()
     valuation_jobs.queue_recompute(

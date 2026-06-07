@@ -87,6 +87,21 @@ export const useUiStore = defineStore('ui', () => {
     return pending
   }
 
+  // Tell the user (once per session) that stale NAVs are being refreshed in the
+  // background — the launch catch-up kicks the refresh; this just sets expectation.
+  // Guarded so switching investors / remounting the dashboard doesn't re-toast.
+  let navRefreshNotified = false
+  function notifyNavRefreshOnce(): void {
+    if (navRefreshNotified) return
+    navRefreshNotified = true
+    notify({
+      severity: 'info',
+      summary: 'Updating prices',
+      detail: 'Fetching the latest NAVs in the background — values will refresh shortly.',
+      life: 6000,
+    })
+  }
+
   // --- active scope: investor XOR family ------------------------------------
   const initial = loadScope()
   const selectedInvestorId = ref<number | null>(initial.investorId)
@@ -193,6 +208,7 @@ export const useUiStore = defineStore('ui', () => {
     withLoading,
     toasts: readonly(toasts),
     notify,
+    notifyNavRefreshOnce,
     drainToasts,
     selectedInvestorId,
     selectedFamilyId,

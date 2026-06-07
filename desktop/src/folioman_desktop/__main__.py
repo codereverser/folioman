@@ -51,6 +51,26 @@ def run_refresh_navs() -> int:
     return 0
 
 
+def _set_macos_app_name() -> None:
+    """Make the macOS menu bar / dock read "Folioman", not the module name.
+
+    Unbundled (dev) runs show the process/module name ("folioman_desktop"); the menu
+    title comes from the main bundle's CFBundleName. Override it before the Cocoa app
+    builds its menu (i.e. before webview.start()). No-op off macOS or if pyobjc isn't
+    importable."""
+    if sys.platform != "darwin":
+        return
+    try:
+        from Foundation import NSBundle
+
+        bundle = NSBundle.mainBundle()
+        info = bundle.localizedInfoDictionary() or bundle.infoDictionary()
+        if info is not None:
+            info["CFBundleName"] = _WINDOW_TITLE
+    except Exception:  # cosmetic only — never block startup over the menu title
+        logger.debug("could not set macOS app name", exc_info=True)
+
+
 def run_gui() -> None:
     from folioman_desktop.bootstrap import bootstrap
 
@@ -68,6 +88,7 @@ def run_gui() -> None:
 
     from folioman_desktop.webview_api import WebviewApi
 
+    _set_macos_app_name()  # before the Cocoa menu is built
     bridge = WebviewApi()
     window = webview.create_window(
         _WINDOW_TITLE,

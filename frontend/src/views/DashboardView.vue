@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, toRef } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
@@ -57,6 +57,15 @@ const investorName = computed(() => roster.investorName(investorId.value) ?? 'In
 
 // Live summary + net-worth series; the range toggle re-fetches the series.
 const { summary, rollup, range, setRange, valuationReady } = useDashboard(investorId)
+
+// When prices are stale on open, the launch catch-up is already refreshing them in
+// the background — tell the user once so the wait makes sense (values update on the
+// next tick). Guarded in the store against re-toasting across investor switches.
+watch(
+  () => summary.value?.navsStale,
+  (stale) => stale && ui.notifyNavRefreshOnce(),
+  { immediate: true },
+)
 const integrityTo = computed(() => ({
   name: 'integrity',
   params: { investorId: investorId.value },

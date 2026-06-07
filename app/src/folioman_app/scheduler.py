@@ -43,12 +43,17 @@ logger = logging.getLogger(__name__)
 
 _INTERVAL_SECONDS = 30
 
-# How late the 02:00 daily-extend may fire and still run. APScheduler's in-memory
-# jobstore has no record of runs missed while no scheduler existed, so a cold start
-# (desktop closed all night) is covered by the launch catch-up below; this grace
-# covers the "process alive but asleep across 02:00" case — a machine that wakes a
-# few hours late still fires the missed run (coalesced to once).
-_DAILY_MISFIRE_GRACE_SECONDS = 6 * 60 * 60
+# Revalue every 6 hours from 02:00 (02/08/14/20). Most MF NAVs post just after
+# midnight, but some only mid-morning (~09:00), so a single 02:00 run misses them
+# for the day; the later runs re-fetch and re-do the current day to pick them up.
+_REVALUE_HOURS = "2,8,14,20"
+# How late a revalue tick may fire and still run. APScheduler's in-memory jobstore
+# has no record of runs missed while no scheduler existed, so a cold start (desktop
+# closed) is covered by the launch catch-up below; this grace covers the "process
+# alive but asleep across the scheduled hour" case — a machine that wakes a few
+# hours late still fires the missed run (coalesced to once). Kept under the 6h gap
+# so a missed run never collides with the next one.
+_DAILY_MISFIRE_GRACE_SECONDS = 4 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -68,7 +73,7 @@ class _Job:
 
 
 # The schedule, as data. Frequent tick recomputes pending/retryable investors;
-# the daily tick rolls every series forward and re-queues errors.
+# the 6-hourly tick re-fetches NAVs and rolls every series forward, re-queuing errors.
 _JOBS: tuple[_Job, ...] = (
     _Job(
         id="process_pending_valuations",
@@ -80,7 +85,7 @@ _JOBS: tuple[_Job, ...] = (
         id="enqueue_daily_extend",
         func=run_daily_extend_tick,
         trigger="cron",
-        trigger_args={"hour": 2, "minute": 0},
+        trigger_args={"hour": _REVALUE_HOURS, "minute": 0},
         misfire_grace_time=_DAILY_MISFIRE_GRACE_SECONDS,
     ),
 )
