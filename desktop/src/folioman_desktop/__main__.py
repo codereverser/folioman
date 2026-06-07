@@ -1,6 +1,6 @@
 """``python -m folioman_desktop`` — the desktop launcher.
 
-Wires the three pieces together in order:
+With no arguments it opens the GUI, wiring the pieces in order:
 
 1. First-run bootstrap (data dir, migrate, local user, encryption key).
 2. Start the in-process valuation scheduler (deferred past migrate).
@@ -9,11 +9,16 @@ Wires the three pieces together in order:
 On window close, tear down cleanly in reverse: stop the scheduler, stop the
 server. The launcher owns this lifecycle (rather than ``AppConfig.ready``) so the
 shutdown path is explicit and the scheduler never runs against an unmigrated DB.
+
+A ``refresh-navs`` subcommand runs the NAV backfill + refresh headlessly (no
+window, no scheduler) and exits — this is what the OS scheduler templates in
+``scheduler/`` invoke so NAVs stay current even when the app isn't open.
 """
 
 from __future__ import annotations
 
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +26,32 @@ _WINDOW_TITLE = "Folioman"
 _MIN_SIZE = (1024, 720)
 
 
-def main() -> None:
+def run_refresh_navs() -> int:
+    """Headless NAV maintenance for the OS scheduler: bootstrap, then backfill any
+    gaps and refresh the latest point. No window, no in-process scheduler."""
+    from folioman_desktop.bootstrap import bootstrap
+
+    bootstrap()  # ensure settings + a migrated DB; never starts the scheduler
+
+    from folioman_app.tasks.refresh_navs import backfill_missing_history, refresh_navs
+
+    # Backfill first so the latest-point refresh sees a contiguous tail (a desktop
+    # opened rarely catches up gaplessly), then top up today's point.
+    backfilled = backfill_missing_history()
+    refreshed = refresh_navs()
+    logger.info(
+        "NAV maintenance: backfilled %s points across %s securities; "
+        "refreshed %s, skipped %s, errors %s",
+        backfilled["points"],
+        backfilled["securities"],
+        refreshed["updated"],
+        refreshed["skipped"],
+        refreshed["errors"],
+    )
+    return 0
+
+
+def run_gui() -> None:
     from folioman_desktop.bootstrap import bootstrap
 
     bootstrap()
@@ -65,5 +95,13 @@ def main() -> None:
         server.shutdown()
 
 
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "refresh-navs":
+        return run_refresh_navs()
+    run_gui()
+    return 0
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

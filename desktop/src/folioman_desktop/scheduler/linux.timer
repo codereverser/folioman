@@ -1,0 +1,12 @@
+# systemd user timer: fire the NAV refresh daily at @@HOUR@@:@@MINUTE@@ local time.
+# Persistent=true runs a missed job once on next boot/login (laptop closed at the
+# scheduled time). install.py enables it with `systemctl --user enable --now`.
+[Unit]
+Description=Daily Folioman NAV refresh
+
+[Timer]
+OnCalendar=*-*-* @@HOUR@@:@@MINUTE@@:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- launchd LaunchAgent: refresh NAVs daily even when the app isn't open.
+     install.py fills the placeholders and writes this to
+     ~/Library/LaunchAgents/in.folioman.navrefresh.plist, then `launchctl load`s it. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>in.folioman.navrefresh</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>@@EXECUTABLE@@</string>
+        <string>refresh-navs</string>
+    </array>
+    <!-- Daily at @@HOUR@@:@@MINUTE@@ local time. launchd runs it at the next
+         wake if the machine was asleep at the scheduled moment. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>@@HOUR@@</integer>
+        <key>Minute</key>
+        <integer>@@MINUTE@@</integer>
+    </dict>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>@@LOG@@</string>
+    <key>StandardErrorPath</key>
+    <string>@@LOG@@</string>
+</dict>
+</plist>

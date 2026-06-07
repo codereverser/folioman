@@ -18,10 +18,10 @@ What it encodes, and why:
   app is single-user SQLite with no network auth, so pulling Postgres drivers or
   the JWT library in would only bloat the binary. ``--nofollow-import-to`` drops
   them; ``api/auth.py`` already imports ninja_jwt lazily so nothing breaks.
-* **Bundles** the built SPA (``frontend/dist``) and the whole ``folioman_app`` /
-  ``folioman_core`` packages including their data — Django imports migrations and
-  the SQLite backend dynamically (by dotted string), which static import-following
-  can't see, so we force-include the packages and name the backend modules.
+* **Bundles** the built SPA (``frontend/dist``) and force-includes whole packages
+  reached by dotted-string / lazy imports that static following misses — ``django``
+  (ORM, migrations, SQLite backend), ``whitenoise`` (SPA serving), and our own
+  ``folioman_app`` / ``folioman_core`` — plus their package data.
 
 Build-from-source only in v1 (unsigned). Signing/notarization is a later step;
 see BUILD.md for the Gatekeeper / SmartScreen first-run notes.
@@ -66,6 +66,7 @@ _FORCE_INCLUDE_PACKAGES = (
     "django",
     "folioman_app",
     "folioman_core",
+    "whitenoise",
 )
 
 

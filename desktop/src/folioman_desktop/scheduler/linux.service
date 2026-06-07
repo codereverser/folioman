@@ -1,0 +1,9 @@
+# systemd user service: one NAV refresh run. Paired with linux.timer.
+# install.py fills the placeholders and writes both to
+# ~/.config/systemd/user/folioman-navrefresh.{service,timer}.
+[Unit]
+Description=Folioman NAV refresh
+
+[Service]
+Type=oneshot
+ExecStart=@@EXECUTABLE@@ refresh-navs

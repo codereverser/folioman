@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!-- Windows Task Scheduler definition: refresh NAVs daily even when the app
+     isn't open. install.py fills the placeholders and registers it with
+     `schtasks /create /xml <file> /tn Folioman-NAVRefresh`. -->
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Folioman NAV refresh</Description>
+    <URI>\Folioman-NAVRefresh</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2024-01-01T@@HOUR@@:@@MINUTE@@:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <!-- A missed run (machine off at the scheduled time) fires once on next logon. -->
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>@@EXECUTABLE@@</Command>
+      <Arguments>refresh-navs</Arguments>
+    </Exec>
+  </Actions>
+</Task>
