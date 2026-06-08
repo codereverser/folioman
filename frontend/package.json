@@ -1,7 +1,8 @@
 {
   "name": "folioman-frontend",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
   "type": "module",
   "description": "Folioman Vue 3 SPA — shared bundle for desktop and hosted.",
   "engines": {

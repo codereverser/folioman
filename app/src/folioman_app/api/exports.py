@@ -1,9 +1,9 @@
 """Exports router (per investor). Capital-gains worksheet, plus holdings /
 transactions CSV.
 
-The capital-gains worksheet (internally Schedule 112A) is free — it's a draft you
-take to your tax professional, not a filed return, and every response carries that
-framing (title + disclaimer + is_draft). Not gated on any licence.
+The capital-gains worksheet (internally Schedule 112A) is a draft you take to your
+tax professional, not a filed return, and every response carries that framing
+(title + disclaimer + is_draft).
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def _csv_response(text: str, filename: str) -> HttpResponse:
 
 @router.get("/{investor_id}/exports/holdings")
 def export_holdings(request, investor_id: int):
-    """Current holdings + valuation as a downloadable CSV (free tier)."""
+    """Current holdings + valuation as a downloadable CSV."""
     investor = get_owned_investor(request, investor_id)
     return _csv_response(build_holdings_csv(investor), f"holdings_{investor_id}.csv")
 
@@ -47,7 +47,7 @@ def export_transactions(request, investor_id: int):
 @router.post("/{investor_id}/exports/schedule-112a", response=Schedule112AResponse)
 def schedule_112a(request, investor_id: int, payload: Schedule112ARequest):
     """A capital-gains worksheet (Schedule 112A shape) to review with your tax
-    professional — free, and only built from tax-ready folios."""
+    professional — built only from tax-ready folios."""
     investor = get_owned_investor(request, investor_id)
     try:
         return build_schedule_112a(

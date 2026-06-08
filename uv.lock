@@ -73,7 +73,7 @@ wheels = [
 [[package]]
 name = "casparser"
 version = "1.0.0"
-source = { git = "https://github.com/codereverser/casparser?branch=feature%2Fv1.0#3446d745d9bb4df9b7f033e485667f14a7c3f24a" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "casparser-isin" },
     { name = "click" },
@@ -82,6 +82,10 @@ dependencies = [
     { name = "pypdfium2" },
     { name = "python-dateutil" },
     { name = "rich" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/74/c6/f1560466e89b1bdb6d7f9aa3ef7f4cbaf4afc2f4c7ad4e3410ebc5f5ae41/casparser-1.0.0.tar.gz", hash = "sha256:dc998ab93b1daac79455fcd8cbc8f18aedb3f26b9d302eba6e9758d9d0150f80", size = 67194, upload-time = "2026-06-08T12:22:08.63Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/77/bc/2992cb5aa1793d4cb03c09631144b9ed560fa4b8d5f98577a68b5d85f0d7/casparser-1.0.0-py3-none-any.whl", hash = "sha256:a304ba91deec2a278782bbd708e15613cce013f571ffc630c66dd22f3d1e06b8", size = 77753, upload-time = "2026-06-08T12:22:07.556Z" },
 ]
 
 [[package]]
@@ -402,7 +406,7 @@ wheels = [
 
 [[package]]
 name = "folioman-app"
-version = "0.0.0"
+version = "1.0.0"
 source = { editable = "app" }
 dependencies = [
     { name = "apscheduler" },
@@ -438,7 +442,7 @@ provides-extras = ["server"]
 
 [[package]]
 name = "folioman-core"
-version = "0.0.0"
+version = "1.0.0"
 source = { editable = "core" }
 dependencies = [
     { name = "casparser" },
@@ -449,7 +453,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "casparser", git = "https://github.com/codereverser/casparser?branch=feature%2Fv1.0" },
+    { name = "casparser", specifier = ">=1.0.0" },
     { name = "casparser-isin" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.7" },
@@ -457,7 +461,7 @@ requires-dist = [
 
 [[package]]
 name = "folioman-desktop"
-version = "0.0.0"
+version = "1.0.0"
 source = { editable = "desktop" }
 dependencies = [
     { name = "folioman-app" },
@@ -485,7 +489,7 @@ provides-extras = ["build"]
 
 [[package]]
 name = "folioman-server"
-version = "0.0.0"
+version = "1.0.0"
 source = { editable = "server" }
 dependencies = [
     { name = "folioman-app", extra = ["server"] },

@@ -295,7 +295,7 @@ export interface paths {
         };
         /**
          * Export Holdings
-         * @description Current holdings + valuation as a downloadable CSV (free tier).
+         * @description Current holdings + valuation as a downloadable CSV.
          */
         get: operations["folioman_app_api_exports_export_holdings"];
         put?: never;
@@ -318,7 +318,7 @@ export interface paths {
         /**
          * Schedule 112A
          * @description A capital-gains worksheet (Schedule 112A shape) to review with your tax
-         *     professional — free, and only built from tax-ready folios.
+         *     professional — built only from tax-ready folios.
          */
         post: operations["folioman_app_api_exports_schedule_112a"];
         delete?: never;

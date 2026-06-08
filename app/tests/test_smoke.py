@@ -6,7 +6,7 @@ import pytest
 def test_version_exposed():
     import folioman_app
 
-    assert folioman_app.__version__ == "0.0.0"
+    assert folioman_app.__version__ == "1.0.0"
 
 
 def test_django_is_lts_line():
@@ -20,7 +20,7 @@ def test_core_is_importable():
     # enforces this at startup, and this asserts the workspace wiring directly.
     import folioman_core
 
-    assert folioman_core.__version__ == "0.0.0"
+    assert folioman_core.__version__ == "1.0.0"
 
 
 def test_settings_use_indian_timezone():

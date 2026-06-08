@@ -1,7 +1,8 @@
 [project]
 name = "folioman-desktop"
-version = "0.0.0"
+version = "1.0.0"
 description = "Folioman desktop launcher (PyWebView shell, packaged via Nuitka)."
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.13"
 dependencies = [
     "folioman-app",

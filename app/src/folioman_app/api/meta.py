@@ -34,7 +34,7 @@ def app_meta(request):
     is_local = "sqlite" in db.get("ENGINE", "")
     key_path = getattr(settings, "FERNET_KEY_PATH", None)
     return AppMetaOut(
-        version=getattr(settings, "FOLIOMAN_VERSION", "0.0.0"),
+        version=getattr(settings, "FOLIOMAN_VERSION", "1.0.0"),
         storage="local" if is_local else "server",
         data_location=str(db.get("NAME", "")) if is_local else "",
         key_location=str(key_path) if (is_local and key_path) else "",

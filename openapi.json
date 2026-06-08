@@ -3326,7 +3326,7 @@
     },
     "/api/investors/{investor_id}/exports/holdings": {
       "get": {
-        "description": "Current holdings + valuation as a downloadable CSV (free tier).",
+        "description": "Current holdings + valuation as a downloadable CSV.",
         "operationId": "folioman_app_api_exports_export_holdings",
         "parameters": [
           {
@@ -3352,7 +3352,7 @@
     },
     "/api/investors/{investor_id}/exports/schedule-112a": {
       "post": {
-        "description": "A capital-gains worksheet (Schedule 112A shape) to review with your tax\nprofessional \u2014 free, and only built from tax-ready folios.",
+        "description": "A capital-gains worksheet (Schedule 112A shape) to review with your tax\nprofessional \u2014 built only from tax-ready folios.",
         "operationId": "folioman_app_api_exports_schedule_112a",
         "parameters": [
           {

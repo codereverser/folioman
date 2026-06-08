@@ -1,7 +1,8 @@
 [project]
 name = "folioman-server"
-version = "0.0.0"
+version = "1.0.0"
 description = "Folioman self-hosted server entrypoint (gunicorn + Postgres + JWT)."
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.13"
 # The server entrypoint needs the full server stack: Postgres driver, JWT, and
 # gunicorn all come in via the app's `server` extra (single source of truth).

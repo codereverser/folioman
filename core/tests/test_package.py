@@ -5,7 +5,7 @@ from folioman_core.models import SecurityType
 
 
 def test_version_exposed():
-    assert folioman_core.__version__ == "0.0.0"
+    assert folioman_core.__version__ == "1.0.0"
 
 
 def test_models_package_reexports():
