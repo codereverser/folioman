@@ -2,9 +2,11 @@
 
 - [`install-docker.md`](install-docker.md) — self-host the server (app + Postgres)
   with Docker, including optional automatic-HTTPS.
-- [`valuation-scheduler.md`](valuation-scheduler.md) — how the day-wise valuation
+- [`developer/valuation-scheduler.md`](developer/valuation-scheduler.md) — how the day-wise valuation
   worker is triggered, and how to move the trigger off the in-process scheduler
   (external cron / k8s) when a deployment scales.
+- [`developer/`](developer/) — technical reference for building, modifying, and
+  operating Folioman.
 
 Planned documents:
 
