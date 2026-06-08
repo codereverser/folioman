@@ -1,5 +1,7 @@
 # Folioman documentation
 
+- [`install-docker.md`](install-docker.md) — self-host the server (app + Postgres)
+  with Docker, including optional automatic-HTTPS.
 - [`release-smoke-test.md`](release-smoke-test.md) — manual end-to-end QA pass to
   run before tagging a release (desktop + mobile PWA + Lighthouse).
 - [`valuation-scheduler.md`](valuation-scheduler.md) — how the day-wise valuation
@@ -8,7 +10,6 @@
 
 Planned documents:
 
-- `install-docker.md` — primary install path
 - `install-build-from-source.md`
 - `install-cli.md` — power users
 - `pm-pro-license.md`

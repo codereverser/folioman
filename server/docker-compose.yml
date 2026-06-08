@@ -1,13 +1,87 @@
-# Folioman self-hosted PM Pro stack.
-# Placeholder — not yet fleshed out.
+# Folioman self-hosted stack: app (gunicorn) + scheduler + Postgres 17.
+#
+#   cp server/.env.example server/.env   # then fill in the secrets
+#   docker compose -f server/docker-compose.yml up -d --build
+#
+# The app entrypoint migrates, then serves; it waits for the DB to be healthy.
+# Variables come from server/.env (compose loads it automatically). A public
+# deployment terminates TLS at the commented proxy below (see 9.6 / Phase 10).
+
+# Environment shared by the app and the scheduler — both run server settings and
+# need the same secrets + DB connection. The HTTP app writes recompute markers to
+# Postgres; the scheduler polls them (no broker — see folioman_app/scheduler.py).
+x-folioman-env: &folioman-env
+  # Required — no safe defaults; compose errors if unset (see .env.example).
+  FOLIOMAN_SECRET_KEY: ${FOLIOMAN_SECRET_KEY:?set FOLIOMAN_SECRET_KEY in server/.env}
+  FOLIOMAN_FERNET_KEY: ${FOLIOMAN_FERNET_KEY:?set FOLIOMAN_FERNET_KEY in server/.env}
+  FOLIOMAN_DB_PASSWORD: ${FOLIOMAN_DB_PASSWORD:?set FOLIOMAN_DB_PASSWORD in server/.env}
+  # Hostnames the browser will use to reach the app (comma-separated).
+  FOLIOMAN_ALLOWED_HOSTS: ${FOLIOMAN_ALLOWED_HOSTS:-localhost,127.0.0.1}
+  # Postgres connection — host is the compose service name.
+  FOLIOMAN_DB_HOST: db
+  FOLIOMAN_DB_NAME: ${FOLIOMAN_DB_NAME:-folioman}
+  FOLIOMAN_DB_USER: ${FOLIOMAN_DB_USER:-folioman}
 
 services:
   app:
     build:
       context: ..
       dockerfile: server/Dockerfile
-    # ports, env, depends_on TBD
+    image: folioman-self:local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: *folioman-env
+    ports:
+      - "${FOLIOMAN_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # The single dedicated valuation worker (30s pending tick + 6-hourly revalue).
+  # Reuses the app image; overrides the entrypoint to skip migrate (the app owns
+  # that) and start only after the app is healthy (i.e. migrations applied).
+  # DO NOT scale to >1 — the pending select is unguarded, so two would
+  # double-process the same investor (see folioman_app/tasks/valuation_jobs.py).
+  scheduler:
+    image: folioman-self:local
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment: *folioman-env
+    entrypoint: ["python", "-m", "folioman_server", "run-scheduler"]
+    # The image HEALTHCHECK probes :8000, which this process doesn't serve —
+    # disable it; liveness is the process + restart policy.
+    healthcheck:
+      disable: true
 
   db:
-    image: postgres:16
-    # volumes, env TBD
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${FOLIOMAN_DB_NAME:-folioman}
+      POSTGRES_USER: ${FOLIOMAN_DB_USER:-folioman}
+      POSTGRES_PASSWORD: ${FOLIOMAN_DB_PASSWORD:?set FOLIOMAN_DB_PASSWORD in server/.env}
+    volumes:
+      - folioman_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FOLIOMAN_DB_USER:-folioman} -d ${FOLIOMAN_DB_NAME:-folioman}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # For automatic-HTTPS in front of the app, layer on the Caddy override:
+  #   docker compose -f server/docker-compose.yml -f deploy/hosted/compose.caddy.yml up -d
+  # See deploy/hosted/ and docs/install-docker.md.
+
+volumes:
+  folioman_pgdata:

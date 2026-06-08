@@ -1,0 +1,34 @@
+# TLS override: a Caddy reverse proxy with automatic HTTPS in front of the app.
+# Layer it on top of the base stack (run from the repo root):
+#
+#   cp deploy/hosted/Caddyfile.example server/Caddyfile   # then set your domain in it
+#   docker compose -f server/docker-compose.yml -f deploy/hosted/compose.caddy.yml up -d --build
+#
+# The first -f is server/docker-compose.yml, so the compose project directory stays
+# `server/`: `./Caddyfile` resolves to server/Caddyfile and server/.env is still
+# auto-loaded. Point the domain's DNS A/AAAA record at this host before starting —
+# Caddy provisions the certificate on boot.
+#
+# Hardening: with Caddy terminating TLS you usually don't want the app's plain-HTTP
+# port reachable from outside. Either firewall port 8000, or change the app `ports`
+# entry in server/docker-compose.yml to "127.0.0.1:8000:8000".
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      FOLIOMAN_DOMAIN: ${FOLIOMAN_DOMAIN:?set FOLIOMAN_DOMAIN in server/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

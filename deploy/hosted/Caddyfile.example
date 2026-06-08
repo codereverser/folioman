@@ -1,0 +1,14 @@
+# Folioman — Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
+#
+# Copy this to server/Caddyfile, set FOLIOMAN_DOMAIN in server/.env, point your
+# domain's DNS at this host, then bring the stack up with the TLS override:
+#
+#   cp deploy/hosted/Caddyfile.example server/Caddyfile
+#   docker compose -f server/docker-compose.yml -f deploy/hosted/compose.caddy.yml up -d --build
+#
+# Caddy provisions and renews the certificate automatically on first boot.
+
+{$FOLIOMAN_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:8000
+}

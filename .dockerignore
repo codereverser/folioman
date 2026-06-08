@@ -1,0 +1,40 @@
+# Build-context hygiene for the server image (context = repo root). Keep this
+# lean: without it the daemon ships node_modules, the old archive, and .git.
+.git
+.github
+archive/
+plans/
+
+# Reproduced inside the image, never copied in:
+**/node_modules/
+**/dist/
+**/.venv/
+.venv/
+build/
+**/*.build/
+**/*.dist/
+**/*.onefile-build/
+
+# Caches / local cruft
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/.mypy_cache/
+.coverage
+htmlcov/
+*.log
+.DS_Store
+
+# Local data + secrets (never bake into an image)
+**/*.sqlite3
+**/*.sqlite3-shm
+**/*.sqlite3-wal
+.env
+.env.*
+!.env.example
+secrets/
+
+# Editor / OS
+.idea/
+.vscode/
