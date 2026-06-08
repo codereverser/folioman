@@ -21,14 +21,21 @@ class AppMetaOut(Schema):
     # Absolute path of the local database file when storage == "local"; empty for
     # the server build (we never expose server paths to the client).
     data_location: str
+    # Absolute path of the PAN-encryption key file when storage == "local" (the
+    # other file a local user must back up — losing it makes PANs unrecoverable).
+    # Empty for the server build: there the key is an env var, not a path, and we
+    # never expose server paths.
+    key_location: str
 
 
 @router.get("/meta", response=AppMetaOut)
 def app_meta(request):
     db = settings.DATABASES["default"]
     is_local = "sqlite" in db.get("ENGINE", "")
+    key_path = getattr(settings, "FERNET_KEY_PATH", None)
     return AppMetaOut(
         version=getattr(settings, "FOLIOMAN_VERSION", "0.0.0"),
         storage="local" if is_local else "server",
         data_location=str(db.get("NAME", "")) if is_local else "",
+        key_location=str(key_path) if (is_local and key_path) else "",
     )

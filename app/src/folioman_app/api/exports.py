@@ -2,8 +2,8 @@
 transactions CSV.
 
 The capital-gains worksheet (internally Schedule 112A) is free — it's a draft you
-take to your CA, not a filed return, and every response carries that framing
-(title + disclaimer + is_draft). Not gated on any licence.
+take to your tax professional, not a filed return, and every response carries that
+framing (title + disclaimer + is_draft). Not gated on any licence.
 """
 
 from __future__ import annotations
@@ -46,8 +46,8 @@ def export_transactions(request, investor_id: int):
 
 @router.post("/{investor_id}/exports/schedule-112a", response=Schedule112AResponse)
 def schedule_112a(request, investor_id: int, payload: Schedule112ARequest):
-    """A capital-gains worksheet (Schedule 112A shape) to review with your CA —
-    free, and only built from tax-ready folios."""
+    """A capital-gains worksheet (Schedule 112A shape) to review with your tax
+    professional — free, and only built from tax-ready folios."""
     investor = get_owned_investor(request, investor_id)
     try:
         return build_schedule_112a(

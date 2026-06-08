@@ -81,6 +81,12 @@ NINJA_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 }
 
+# Optional one-time token gating the browser first-admin setup (LAN hardening).
+# The container entrypoint autogenerates one and prints it to the console on first
+# boot; an operator may pin a stable value via this env var. Empty ⇒ the setup
+# endpoint falls back to its zero-users gate only (dev / non-Docker runs).
+FOLIOMAN_SETUP_TOKEN = os.environ.get("FOLIOMAN_SETUP_TOKEN", "")
+
 # Console always (so `docker logs` captures output); plus a rotating file when
 # FOLIOMAN_LOG_DIR is set (e.g. a mounted volume). No telemetry, ever.
 _log_dir = os.environ.get("FOLIOMAN_LOG_DIR")

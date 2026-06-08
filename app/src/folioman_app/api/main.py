@@ -14,17 +14,21 @@ from ninja import NinjaAPI
 from folioman_app.api.auth import FoliomanAuth
 from folioman_app.api.exports import router as exports_router
 from folioman_app.api.families import router as families_router
+from folioman_app.api.health import router as health_router
 from folioman_app.api.imports import cas_router
 from folioman_app.api.imports import router as imports_router
 from folioman_app.api.integrity import router as integrity_router
 from folioman_app.api.investors import router as investors_router
 from folioman_app.api.jobs import router as jobs_router
 from folioman_app.api.meta import router as meta_router
+from folioman_app.api.setup import router as setup_router
 from folioman_app.api.tokens import router as tokens_router
 
 api = NinjaAPI(title="Folioman API", version="1.0.0", auth=FoliomanAuth())
 
 api.add_router("/auth", tokens_router)  # public login + refresh (server mode)
+api.add_router("", setup_router)  # /setup/* — public first-admin bootstrap (server, gated)
+api.add_router("", health_router)  # /health — unauthenticated liveness/readiness probe
 api.add_router("", meta_router)  # /meta — app version + data location
 api.add_router("", jobs_router)  # /jobs — advisor-wide import + valuation activity
 api.add_router("/investors", investors_router)

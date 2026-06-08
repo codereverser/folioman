@@ -138,6 +138,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health
+         * @description Report process + database health for external probes.
+         */
+        get: operations["folioman_app_api_health_health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/imports/cas": {
         parameters: {
             query?: never;
@@ -297,8 +317,8 @@ export interface paths {
         put?: never;
         /**
          * Schedule 112A
-         * @description A capital-gains worksheet (Schedule 112A shape) to review with your CA —
-         *     free, and only built from tax-ready folios.
+         * @description A capital-gains worksheet (Schedule 112A shape) to review with your tax
+         *     professional — free, and only built from tax-ready folios.
          */
         post: operations["folioman_app_api_exports_schedule_112a"];
         delete?: never;
@@ -612,6 +632,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/setup/admin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create First Admin
+         * @description Create the first admin (superuser) and return a token pair to sign in.
+         *
+         *     Refuses unless in server mode with zero existing users. When the server has a
+         *     setup token configured (the console-printed one), it must match.
+         */
+        post: operations["folioman_app_api_setup_create_first_admin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/setup/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Setup State
+         * @description Whether the first-admin setup screen should be shown, and if it needs a token.
+         */
+        get: operations["folioman_app_api_setup_setup_state"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -635,6 +698,8 @@ export interface components {
         AppMetaOut: {
             /** Data Location */
             data_location: string;
+            /** Key Location */
+            key_location: string;
             /** Storage */
             storage: string;
             /** Version */
@@ -691,7 +756,7 @@ export interface components {
         CapitalGainsOut: {
             /**
              * Disclaimer
-             * @default Heads up — this isn't tax advice. folioman builds a capital-gains worksheet from the transactions you import, so you and your CA have a starting point. It doesn't file anything, it's no substitute for a Chartered Accountant, and we can't promise the numbers are right or complete — a misparsed or incomplete statement can throw them off. Always check every figure with a qualified CA before you file. Provided as-is, no warranty; we're not liable for any filing, penalty, or loss that comes from using it.
+             * @default Heads up — this isn't tax advice. folioman builds a capital-gains worksheet from the transactions you import, so you and your tax professional have a starting point. It doesn't file anything, it's no substitute for a qualified tax professional, and we can't promise the numbers are right or complete — a misparsed or incomplete statement can throw them off. Always check every figure with a qualified tax professional before you file. Provided as-is, no warranty; we're not liable for any filing, penalty, or loss that comes from using it.
              */
             disclaimer: string;
             /** Fy */
@@ -753,6 +818,23 @@ export interface components {
              * @default 0
              */
             transaction_count: number;
+        };
+        /** CreateAdminIn */
+        CreateAdminIn: {
+            /**
+             * Email
+             * @default
+             */
+            email: string;
+            /** Password */
+            password: string;
+            /**
+             * Token
+             * @default
+             */
+            token: string;
+            /** Username */
+            username: string;
         };
         /** FamilyAggregateOut */
         FamilyAggregateOut: {
@@ -881,6 +963,13 @@ export interface components {
             id: number;
             /** Number */
             number: string;
+        };
+        /** HealthOut */
+        HealthOut: {
+            /** Database */
+            database: string;
+            /** Status */
+            status: string;
         };
         /** HoldingValueRow */
         HoldingValueRow: {
@@ -1255,7 +1344,7 @@ export interface components {
             columns: string[];
             /**
              * Disclaimer
-             * @default Heads up — this isn't tax advice. folioman builds a capital-gains worksheet from the transactions you import, so you and your CA have a starting point. It doesn't file anything, it's no substitute for a Chartered Accountant, and we can't promise the numbers are right or complete — a misparsed or incomplete statement can throw them off. Always check every figure with a qualified CA before you file. Provided as-is, no warranty; we're not liable for any filing, penalty, or loss that comes from using it.
+             * @default Heads up — this isn't tax advice. folioman builds a capital-gains worksheet from the transactions you import, so you and your tax professional have a starting point. It doesn't file anything, it's no substitute for a qualified tax professional, and we can't promise the numbers are right or complete — a misparsed or incomplete statement can throw them off. Always check every figure with a qualified tax professional before you file. Provided as-is, no warranty; we're not liable for any filing, penalty, or loss that comes from using it.
              */
             disclaimer: string;
             /** Fy */
@@ -1363,6 +1452,13 @@ export interface components {
             security_type: string;
             /** Symbol */
             symbol: string;
+        };
+        /** SetupStateOut */
+        SetupStateOut: {
+            /** Needs Admin */
+            needs_admin: boolean;
+            /** Token Required */
+            token_required: boolean;
         };
         /** TokenObtainIn */
         TokenObtainIn: {
@@ -1849,6 +1945,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValueSeriesOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_health_health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthOut"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthOut"];
                 };
             };
         };
@@ -2528,6 +2653,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AppMetaOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_setup_create_first_admin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAdminIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenPairOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_setup_setup_state: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStateOut"];
                 };
             };
         };
