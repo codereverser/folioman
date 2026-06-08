@@ -1,9 +1,23 @@
+<p align="center">
+  <img src="frontend/public/logo-lockup.svg" alt="Folioman — Networth Tracker" width="380">
+</p>
+
 # Folioman
 
 A private net-worth tracker and tax helper for Indian investors — runs on your own
 computer or your own server.
 
 > **Status: v1.0 — first stable release.**
+
+## 👀 Try the live demo
+
+Take Folioman for a spin — a sample five-year portfolio, no install required:
+
+> **[folioman.atomcoder.com](https://folioman.atomcoder.com/)** — sign in with **`demo`** / **`demo-password`**
+
+It's a **read-only** instance preloaded with example data (mutual funds, equities,
+capital gains across a few years), so you can explore every screen freely. Imports
+and edits are disabled.
 
 ## What you get
 

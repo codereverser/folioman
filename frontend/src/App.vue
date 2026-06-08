@@ -8,9 +8,11 @@ import { useToast } from 'primevue/usetoast'
 import ScopeSwitcher from '@/components/ScopeSwitcher.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import PwaInstallPrompt from '@/components/PwaInstallPrompt.vue'
+import DemoBanner from '@/components/DemoBanner.vue'
 import { useUiStore } from '@/stores/ui'
 import { useRosterStore } from '@/stores/roster'
 import { useIntegrityStore } from '@/stores/integrity'
+import { useMetaStore } from '@/stores/meta'
 
 interface NavLink {
   label: string
@@ -22,6 +24,7 @@ interface NavLink {
 const ui = useUiStore()
 const roster = useRosterStore()
 const integrity = useIntegrityStore()
+const meta = useMetaStore()
 const toast = useToast()
 const route = useRoute()
 
@@ -108,6 +111,7 @@ onMounted(() => {
   stopViewport = ui.startViewportTracking()
   stopTheme = ui.startThemeTracking()
   void roster.ensureLoaded()
+  void meta.ensureLoaded()
 })
 onBeforeUnmount(() => {
   stopViewport()
@@ -156,6 +160,7 @@ onBeforeUnmount(() => {
     </aside>
 
     <main class="app-main">
+      <DemoBanner />
       <ProgressBar v-if="ui.loading" mode="indeterminate" class="loading-bar" />
       <header class="context-bar">
         <div class="ctx-scope">

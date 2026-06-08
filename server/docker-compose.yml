@@ -17,6 +17,9 @@ x-folioman-env: &folioman-env
   FOLIOMAN_DB_PASSWORD: ${FOLIOMAN_DB_PASSWORD:?set FOLIOMAN_DB_PASSWORD in server/.env}
   # Hostnames the browser will use to reach the app (comma-separated).
   FOLIOMAN_ALLOWED_HOSTS: ${FOLIOMAN_ALLOWED_HOSTS:-localhost,127.0.0.1}
+  # Hosted-demo read-only mode (0/1). When 1, DemoReadOnlyMiddleware refuses every
+  # state-changing API request server-side (see folioman_app/middleware.py).
+  FOLIOMAN_DEMO: ${FOLIOMAN_DEMO:-0}
   # Postgres connection — host is the compose service name.
   FOLIOMAN_DB_HOST: db
   FOLIOMAN_DB_NAME: ${FOLIOMAN_DB_NAME:-folioman}
@@ -52,6 +55,9 @@ services:
   # DO NOT scale to >1 — the pending select is unguarded, so two would
   # double-process the same investor (see folioman_app/tasks/valuation_jobs.py).
   scheduler:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
     image: folioman-self:local
     restart: unless-stopped
     depends_on:

@@ -700,6 +700,8 @@ export interface components {
             data_location: string;
             /** Key Location */
             key_location: string;
+            /** Read Only */
+            read_only: boolean;
             /** Storage */
             storage: string;
             /** Version */

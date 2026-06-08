@@ -29,5 +29,12 @@ def test_meta_hides_key_path_when_unset(client, settings):
     assert client.get("/api/meta").json()["key_location"] == ""
 
 
+def test_meta_read_only_reflects_demo_mode(client, settings):
+    # Drives the frontend read-only demo banner; off by default, on under FOLIOMAN_DEMO.
+    assert client.get("/api/meta").json()["read_only"] is False
+    settings.DEMO_MODE = True
+    assert client.get("/api/meta").json()["read_only"] is True
+
+
 def test_meta_is_in_openapi(client):
     assert "/api/meta" in client.get("/api/openapi.json").json()["paths"]

@@ -26,6 +26,9 @@ class AppMetaOut(Schema):
     # Empty for the server build: there the key is an env var, not a path, and we
     # never expose server paths.
     key_location: str
+    # True when this instance runs in read-only demo mode (FOLIOMAN_DEMO=1): the
+    # backend refuses every write, and the UI shows a read-only banner.
+    read_only: bool
 
 
 @router.get("/meta", response=AppMetaOut)
@@ -38,4 +41,5 @@ def app_meta(request):
         storage="local" if is_local else "server",
         data_location=str(db.get("NAME", "")) if is_local else "",
         key_location=str(key_path) if (is_local and key_path) else "",
+        read_only=bool(getattr(settings, "DEMO_MODE", False)),
     )

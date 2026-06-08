@@ -48,6 +48,8 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # Enforces read-only mode for the public hosted demo (no-op unless DEMO_MODE).
+    "folioman_app.middleware.DemoReadOnlyMiddleware",
 ]
 
 # --- API auth mode (api/auth.py) -------------------------------------------
@@ -65,6 +67,13 @@ FOLIOMAN_API_AUTH = "local"
 # endpoint and create_manual_transaction() stay in the tree — flip this on
 # (FOLIOMAN_MANUAL_TXNS=1) to re-enable, no code change needed.
 MANUAL_TRANSACTIONS_ENABLED = os.environ.get("FOLIOMAN_MANUAL_TXNS", "0") == "1"
+
+# Hosted-demo read-only mode. When on (FOLIOMAN_DEMO=1), DemoReadOnlyMiddleware
+# refuses every state-changing API request with 403 — server-side, so it holds no
+# matter what the frontend exposes. Off everywhere by default; the demo deployment
+# (and `seed_demo`-backed stacks) flip it on. Auth-token routes stay open so the
+# JWT demo can still issue read tokens.
+DEMO_MODE = os.environ.get("FOLIOMAN_DEMO", "0") == "1"
 
 # Day-wise valuation scheduler. Off by default (base/server) — the server runs one
 # dedicated `manage.py run_scheduler` process, never one per gunicorn worker. The

@@ -44,6 +44,10 @@
             "title": "Key Location",
             "type": "string"
           },
+          "read_only": {
+            "title": "Read Only",
+            "type": "boolean"
+          },
           "storage": {
             "title": "Storage",
             "type": "string"
@@ -57,7 +61,8 @@
           "version",
           "storage",
           "data_location",
-          "key_location"
+          "key_location",
+          "read_only"
         ],
         "title": "AppMetaOut",
         "type": "object"
