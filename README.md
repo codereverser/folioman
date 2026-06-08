@@ -59,14 +59,14 @@ desktop build can point elsewhere with `FOLIOMAN_FRONTEND_DIST`.
 ## Not tax advice
 
 Folioman can build a **capital-gains worksheet** from the transactions you
-import, to give you and your CA a starting point. That's all it is:
+import, to give you and your tax professional a starting point. That's all it is:
 
 > Heads up — this isn't tax advice. The worksheet doesn't file anything, it's no
-> substitute for a Chartered Accountant, and we can't promise the numbers are
-> right or complete — a misparsed or incomplete statement can throw them off.
-> Always check every figure with a qualified CA before you file. Provided as-is,
-> no warranty; we're not liable for any filing, penalty, or loss that comes from
-> using it.
+> substitute for a qualified tax professional, and we can't promise the numbers
+> are right or complete — a misparsed or incomplete statement can throw them off.
+> Always check every figure with a qualified tax professional before you file.
+> Provided as-is, no warranty; we're not liable for any filing, penalty, or loss
+> that comes from using it.
 
 ## License
 
