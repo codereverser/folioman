@@ -19,14 +19,16 @@ dependencies = [
 ]
 
 # Server-mode-only runtime deps. The desktop Nuitka build excludes these:
-# a single-user SQLite desktop app needs neither Postgres nor JWT. Installed in
-# the dev workspace via the root `server` dependency-group; in production via
-# `pip install folioman-app[server]` for self-hosted / Docker deployments;
-# gunicorn joins here later.
+# a single-user SQLite desktop app needs neither Postgres, JWT, nor a WSGI
+# server. Installed via `uv sync --extra server` in dev, or
+# `pip install folioman-app[server]` for self-hosted / Docker deployments.
 [project.optional-dependencies]
 server = [
     "psycopg[binary]>=3.2",
     "django-ninja-jwt>=5.4",
+    # WSGI server for the self-hosted deployment (gthread workers behind a
+    # reverse proxy). Pure Python.
+    "gunicorn>=23.0",
 ]
 
 [build-system]
