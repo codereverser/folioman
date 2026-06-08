@@ -15,6 +15,11 @@ class Command(BaseCommand):
     help = "Run the folioman background scheduler (day-wise valuation worker)."
 
     def handle(self, *args, **options) -> None:
+        # Seed + point CASPARSER_ISIN_DB at the writable copy so this process's daily
+        # ISIN refresh writes in place (no-op when no writable path is configured).
+        from folioman_app.services.isin_db import ensure_isin_db
+
+        ensure_isin_db()
         self.stdout.write(self.style.SUCCESS("Starting folioman valuation scheduler…"))
         try:
             run_blocking_scheduler()

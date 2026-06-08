@@ -33,6 +33,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 from django.conf import settings
 
+from folioman_app.tasks.isin_ticks import run_isin_catch_up_tick, run_isin_update_tick
 from folioman_app.tasks.valuation_ticks import (
     run_catch_up_tick,
     run_daily_extend_tick,
@@ -88,6 +89,15 @@ _JOBS: tuple[_Job, ...] = (
         trigger_args={"hour": _REVALUE_HOURS, "minute": 0},
         misfire_grace_time=_DAILY_MISFIRE_GRACE_SECONDS,
     ),
+    # Refresh the casparser-isin reference DB once a day, offset from the 02:00
+    # revalue. A cheap version check that downloads only when the remote is newer.
+    _Job(
+        id="update_isin_db",
+        func=run_isin_update_tick,
+        trigger="cron",
+        trigger_args={"hour": 2, "minute": 30},
+        misfire_grace_time=_DAILY_MISFIRE_GRACE_SECONDS,
+    ),
 )
 
 
@@ -122,6 +132,15 @@ def _add_catch_up_job(scheduler) -> None:
     scheduler.add_job(
         run_catch_up_tick,
         id="catch_up_on_launch",
+        max_instances=1,
+        coalesce=True,
+        replace_existing=True,
+        misfire_grace_time=None,
+    )
+    # ISIN-DB launch catch-up (its daily run is skipped if the app was shut at 02:30).
+    scheduler.add_job(
+        run_isin_catch_up_tick,
+        id="isin_catch_up_on_launch",
         max_instances=1,
         coalesce=True,
         replace_existing=True,

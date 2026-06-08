@@ -6,6 +6,28 @@ Private, self-hostable Indian-investor net-worth tracker and tax helper.
 > The v1 codebase has been moved to [`archive/`](archive/) for reference and
 > will be removed once the rewrite reaches feature parity.
 
+## Privacy & network
+
+Folioman is **local-first**: no account, no sign-up, no analytics, and no
+telemetry. Your CAS statements, holdings, transactions, and PANs live only where
+the app runs (PANs are encrypted at rest), and **none of your data is ever sent
+anywhere**.
+
+To actually value your portfolio, though, the app fetches **public market and
+reference data** over the network — never anything that identifies you:
+
+| What | From | Sent | Privacy note |
+|------|------|------|--------------|
+| Mutual-fund NAVs | mfapi.in (AMFI data) | the fund's AMFI code | per-fund requests reveal *which* funds you hold to that service |
+| ISIN / AMFI reference DB (casparser-isin) | casparser.atomcoder.com | nothing identifying | fetched as one whole file — reveals nothing about your holdings |
+| Equities / crypto quotes *(planned)* | Yahoo / NSE / CoinGecko | the ticker / coin id | per-symbol requests, same holdings caveat as NAVs |
+
+These requests carry **no account, no PAN, no portfolio** — only the public
+symbol/code needed to price a holding. We prefer **bulk** feeds (the whole ISIN
+DB, AMFI's full NAV file) over per-symbol calls precisely because they leak
+nothing about what you own. The app still works **offline** — it values from your
+last imported statement and the bundled reference data; prices just won't update.
+
 ## Stack (v2.0)
 
 | Layer        | Pick                                          |

@@ -66,5 +66,10 @@ STATIC_ROOT = DATA_DIR / "staticfiles"
 # PAN encryption key: auto-generate (0600) under the user-data dir on first run.
 # No dev fallback in real desktop mode — the generated key is authoritative.
 FERNET_KEY_PATH = DATA_DIR / "fernet.key"
+
+# Writable casparser-isin DB under the data dir so the daily updater can refresh it
+# (the bundled copy is read-only). Seeded from the bundle on first run by
+# services/isin_db.ensure_isin_db() (called from the desktop bootstrap).
+FOLIOMAN_ISIN_DB_PATH = DATA_DIR / "isin.db"
 FERNET_KEY_AUTOGEN = True
 DEV_FERNET_KEY = None

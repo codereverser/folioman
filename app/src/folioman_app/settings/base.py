@@ -142,3 +142,10 @@ FERNET_KEY_REQUIRED = False
 DEV_FERNET_KEY = os.environ.get(
     "FOLIOMAN_FERNET_KEY", "lxS4L-1mmiEwlCCHsqgXzByglZ7TWlgcV3XeG7mTmY0="
 )
+
+# --- casparser-isin database -----------------------------------------------
+# Writable location for the ISIN/AMFI reference DB so the daily updater can refresh
+# it in place (the bundled copy is read-only). `None` (dev default) → use the
+# bundled DB read-only, no auto-update. Desktop/server set a real path; the seed +
+# CASPARSER_ISIN_DB env wiring is `services/isin_db.ensure_isin_db()`.
+FOLIOMAN_ISIN_DB_PATH = None

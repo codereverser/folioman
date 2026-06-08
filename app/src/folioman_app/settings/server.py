@@ -87,6 +87,12 @@ NINJA_JWT = {
 # endpoint falls back to its zero-users gate only (dev / non-Docker runs).
 FOLIOMAN_SETUP_TOKEN = os.environ.get("FOLIOMAN_SETUP_TOKEN", "")
 
+# Writable casparser-isin DB path (a mounted volume) so the daily updater can
+# refresh it in place. Unset → use the bundled DB read-only, no auto-update.
+# ensure_isin_db() (called from run_scheduler / the web entrypoint) seeds it.
+_isin_db = os.environ.get("FOLIOMAN_ISIN_DB")
+FOLIOMAN_ISIN_DB_PATH = Path(_isin_db) if _isin_db else None
+
 # Console always (so `docker logs` captures output); plus a rotating file when
 # FOLIOMAN_LOG_DIR is set (e.g. a mounted volume). No telemetry, ever.
 _log_dir = os.environ.get("FOLIOMAN_LOG_DIR")

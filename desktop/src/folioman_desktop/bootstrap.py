@@ -97,6 +97,14 @@ def _ensure_fernet_key() -> None:
     resolve_fernet_key()
 
 
+def _ensure_isin_db() -> None:
+    """Seed the writable casparser-isin DB + point CASPARSER_ISIN_DB at it, so CAS
+    parsing and the daily updater use the writable copy (not the read-only bundle)."""
+    from folioman_app.services.isin_db import ensure_isin_db
+
+    ensure_isin_db()
+
+
 def bootstrap() -> Path:
     """Stand up (or verify) the local install. Returns the resolved data dir.
 
@@ -115,5 +123,6 @@ def bootstrap() -> Path:
     _migrate_if_behind()
     _ensure_local_user()
     _ensure_fernet_key()
+    _ensure_isin_db()
     logger.info("desktop bootstrap complete (data dir: %s)", data_dir)
     return data_dir
