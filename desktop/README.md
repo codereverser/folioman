@@ -29,5 +29,7 @@ The window serves `frontend/dist`, so build the SPA first (`make frontend-build`
 make desktop   # builds the SPA, then compiles with Nuitka → dist/
 ```
 
-The Nuitka build spec is [`build.py`](build.py); prerequisites and the
-Gatekeeper / SmartScreen first-run notes are in [`BUILD.md`](../BUILD.md).
+The Nuitka build spec is [`build.py`](build.py); the build-and-run guide is
+[`BUILD.md`](../BUILD.md), and the build internals (excludes, cross-platform
+notes, smoke checklist) are in
+[`docs/developer/desktop-build.md`](../docs/developer/desktop-build.md).

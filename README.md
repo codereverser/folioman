@@ -1,8 +1,20 @@
 # Folioman
 
-Private, self-hostable Indian-investor net-worth tracker and tax helper.
+A private net-worth tracker and tax helper for Indian investors — runs on your own
+computer or your own server.
 
 > **Status: v1.0 — first stable release.**
+
+## What you get
+
+- **All your investments in one place.** Import your mutual-fund CAS statement and
+  see every folio and your total net worth together.
+- **How your money is doing over time.** Charts of your portfolio's value and
+  per-fund history.
+- **A head start on taxes.** Build a capital-gains worksheet you can take to your
+  tax advisor (see *Not tax advice* below).
+- **Your data stays yours.** Everything lives on the machine you run it on —
+  no account, no sign-up, nothing uploaded.
 
 ## Privacy & network
 
@@ -26,53 +38,24 @@ DB, AMFI's full NAV file) over per-symbol calls precisely because they leak
 nothing about what you own. The app still works **offline** — it values from your
 last imported statement and the bundled reference data; prices just won't update.
 
-## Stack
+## Ways to run Folioman
 
-| Layer        | Pick                                          |
-|--------------|-----------------------------------------------|
-| Backend      | Django 5.2 + Django Ninja                     |
-| Frontend     | Vue 3 + Pinia + Vite + ECharts                |
-| Desktop      | PyWebView + Nuitka (build-from-source)        |
-| Server       | gunicorn + Docker Compose                     |
-| Database     | SQLite (desktop) / Postgres 16 (hosted)       |
-| Scheduling   | OS-native (launchd / Task Scheduler / cron)   |
+There are two ways to use Folioman. Pick the one that fits you:
 
-## Layout
+### 1. On your own computer — *best for tracking your own or your family's portfolio*
 
-```
-core/      Shared domain logic — no Django, no I/O frameworks
-app/       Django app + Django Ninja API (shared by desktop and server)
-frontend/  Vue 3 SPA (same bundle for desktop and hosted)
-desktop/   PyWebView launcher + Nuitka build spec
-server/    gunicorn entrypoint + Dockerfile
-deploy/    Release notes + hosted deploy templates
-docs/      User and developer documentation
-```
+A desktop app that runs entirely on your Mac, Windows, or Linux machine. There's
+no one-click installer yet, so you set it up once from source (about five
+commands).
 
-See [`BUILD.md`](BUILD.md) for build instructions.
+➡️ **[Run Folioman on your own computer](BUILD.md)**
 
-## Running
+### 2. On a server you control — *best for hosting for a family or small team*
 
-**Development** — two servers, one origin in the browser:
+Run Folioman as a small web app on your own server or home machine using Docker,
+and reach it from any browser.
 
-```
-make frontend-dev     # Vite on :5173, proxies /api → http://localhost:8000
-uv run app/manage.py runserver   # Django API on :8000
-```
-
-The Vite proxy means the SPA talks to `/api` same-origin, so there's no CORS to
-configure. (Point the proxy elsewhere with `VITE_DEV_API_TARGET`.)
-
-**Production / single origin** — Django serves both the API and the built SPA:
-
-```
-make frontend-build   # → frontend/dist/
-uv run app/manage.py runserver   # / serves the SPA, /api/ the API
-```
-
-WhiteNoise serves the hashed assets from `frontend/dist`, and any non-`/api`
-route falls back to the SPA shell (Vue Router handles it client-side). A packaged
-desktop build can point elsewhere with `FOLIOMAN_FRONTEND_DIST`.
+➡️ **[Self-host Folioman with Docker](docs/install-docker.md)**
 
 ## Not tax advice
 
@@ -92,3 +75,8 @@ Folioman is free and open source under the **GNU Affero General Public License
 v3.0 or later** (see [`LICENSE`](LICENSE)). You're free to use, study, share, and
 modify it; if you run a modified version as a network service, the AGPL asks you
 to make your changes available to its users.
+
+## For developers
+
+Building from source, hacking on the code, or operating a server? The technical
+reference lives in [`docs/developer/`](docs/developer/README.md).

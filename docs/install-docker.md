@@ -3,8 +3,7 @@
 Run the full Folioman server — the web UI and API on one origin, backed by
 Postgres — on your own machine or VPS. This is the path for hosting Folioman for
 yourself or a team; if you just want a local app on one computer, the
-[desktop build](../BUILD.md#desktop-build-nuitka) is simpler (no server, no
-Postgres, no login).
+[desktop app](../BUILD.md) is simpler (no server, no Postgres, no login).
 
 > v1 ships **unsigned and ungated** — every feature is available, there are no
 > paid tiers. Your data stays on your server; nothing phones home.
@@ -15,7 +14,7 @@ Three containers, defined in [`server/docker-compose.yml`](../server/docker-comp
 
 - **app** — gunicorn serving the SPA + API (Django + Django Ninja).
 - **scheduler** — one worker that keeps NAVs and valuations fresh. **Never scale
-  it past one** (see [valuation-scheduler.md](valuation-scheduler.md)).
+  it past one** (see [valuation-scheduler.md](developer/valuation-scheduler.md)).
 - **db** — Postgres 17, with a persistent data volume.
 
 The app waits for the database, applies migrations on boot, then serves.
@@ -198,5 +197,5 @@ docker compose -f server/docker-compose.yml down -v
 ## Configuration reference
 
 All environment variables are documented in
-[BUILD.md → Backup & data export](../BUILD.md#backup--data-export) and
+[the developer reference](developer/README.md#environment-variables) and
 [server/.env.example](../server/.env.example).
