@@ -162,7 +162,7 @@ standalone binary with [Nuitka](https://nuitka.net). One command builds the SPA
 and compiles:
 
 ```bash
-make desktop          # → dist/folioman.app (macOS) or dist/folioman[.exe]
+make desktop          # → dist/Folioman.app (macOS) or dist/folioman[.exe]
 ```
 
 Under the hood that runs `desktop/build.py` (the build spec — the single source of
@@ -219,7 +219,7 @@ uninstall — dragging an app to the Trash runs no hook on any OS.
 
 v1 targets macOS primarily; Linux/Windows are buildable from the same spec.
 
-- **macOS (primary)** — `make desktop` → `dist/folioman.app`. Must build on a
+- **macOS (primary)** — `make desktop` → `dist/Folioman.app`. Must build on a
   system/Homebrew CPython, not uv's python-build-standalone (see Prerequisites).
 - **Linux** — same `make desktop` (use `--onefile` for a single binary). PyWebView
   needs WebKitGTK at runtime (`gir1.2-webkit2-4.1` / `python3-gi`); install those on
@@ -249,7 +249,7 @@ Windows). The OS will warn on first launch:
 - **macOS** — "Folioman can't be opened because it is from an unidentified
   developer." Right-click the `.app` → **Open** → **Open** (once), or
   System Settings → Privacy & Security → **Open Anyway**. `xattr -dr
-  com.apple.quarantine dist/folioman.app` also clears it.
+  com.apple.quarantine dist/Folioman.app` also clears it.
 - **Windows** — SmartScreen shows "Windows protected your PC." Click **More info**
   → **Run anyway**.
 - **Linux** — no gatekeeper; `chmod +x` the binary if needed.
@@ -267,7 +267,7 @@ Your data never leaves your machine, so back it up yourself:
   `fernet.key` in the same dir — **without it, encrypted PANs are unrecoverable.**
 - **Server (Postgres):** `pg_dump` the database (and keep `FOLIOMAN_FERNET_KEY` safe).
 
-Per-investor data is also exportable as CSV from the API (free tier, no Tax Pack):
+Per-investor data is also exportable as CSV from the API:
 
 - `GET /api/investors/{id}/exports/holdings` — current holdings + valuation.
 - `GET /api/investors/{id}/exports/transactions` — full ledger, in the CSV-import
@@ -285,8 +285,6 @@ Per-investor data is also exportable as CSV from the API (free tier, no Tax Pack
 
 ## Secrets & keys
 
-Two independent keys, both with a deliberate lifecycle:
-
 **Fernet key — PAN encryption at rest.** Resolution order:
 `FOLIOMAN_FERNET_KEY` env → `FERNET_KEY_PATH` file → dev fallback (tests only).
 - **Desktop**: auto-generated on first run at `FOLIOMAN_DATA_DIR/fernet.key`
@@ -298,13 +296,6 @@ Two independent keys, both with a deliberate lifecycle:
   they are encrypted at rest. Back it up. Rotation is manual in v1 (decrypt-all
   with the old key, re-encrypt with the new).
 
-**ed25519 keypair — license signing.** Generated once by the developer:
-`python app/manage.py generate_license_keypair` writes the private key to a
-git-ignored `secrets/` file (0600) and prints the public key. Keep the private
-key offline; distribute the public key via `FOLIOMAN_LICENSE_PUBLIC_KEY` or
-`licensing/keys.py::EMBEDDED_LICENSE_PUBLIC_KEY_B64`. The app verifies `.license`
-files against the public key; empty public key ⇒ everything stays free tier.
-
 The dev `SECRET_KEY` / Fernet fallbacks are local-only; never use them in production.
 
 ## Quick start
@@ -315,13 +306,13 @@ cd folioman
 make install        # uv sync + pre-commit hook
 make frontend-install
 make test           # core/ + app/ pytest
-make desktop        # produces dist/folioman.app (macOS) or dist/folioman[.exe]
+make desktop        # produces dist/Folioman.app (macOS) or dist/folioman[.exe]
 ```
 
 ## Install paths
 
 1. **Build from source** — `make desktop` for a native window (v1, unsigned)
-2. **Docker Compose** — self-hosted PM Pro server (Phase 9)
+2. **Docker Compose** — self-hosted server
 3. **`pip install folioman-cli`** — power users / scripting (later)
 
 Detailed per-platform instructions will land with the desktop packaging work.

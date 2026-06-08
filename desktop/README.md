@@ -2,8 +2,7 @@
 
 PyWebView launcher over the embedded Django app. The same WSGI app the hosted
 build serves is hosted on a loopback port; a native OS-webview window points at
-it. Build-from-source only in v1 (Nuitka spec lands later — see
-[`BUILD.md`](../BUILD.md)).
+it. Build-from-source in v1 (unsigned) — see [`BUILD.md`](../BUILD.md).
 
 ## Run (dev)
 

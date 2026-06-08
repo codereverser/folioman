@@ -42,18 +42,4 @@ Thumbs.db
 *.license
 secrets/
 
-# Legacy ignores still relevant for archive/
-archive/docker/cache
-archive/docker/db
-archive/docker/node_modules
-archive/docker/static
-archive/.nuxt
-archive/ui/.output
-archive/ui/.yarn/*
-!archive/ui/.yarn/patches
-!archive/ui/.yarn/plugins
-!archive/ui/.yarn/releases
-!archive/ui/.yarn/sdks
-!archive/ui/.yarn/versions
-
 graphify-out/

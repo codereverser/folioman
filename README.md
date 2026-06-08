@@ -2,9 +2,7 @@
 
 Private, self-hostable Indian-investor net-worth tracker and tax helper.
 
-> **Status: v2.0 rewrite in progress.** This repository is currently a skeleton.
-> The v1 codebase has been moved to [`archive/`](archive/) for reference and
-> will be removed once the rewrite reaches feature parity.
+> **Status: v1.0 — first stable release.**
 
 ## Privacy & network
 
@@ -28,7 +26,7 @@ DB, AMFI's full NAV file) over per-symbol calls precisely because they leak
 nothing about what you own. The app still works **offline** — it values from your
 last imported statement and the bundled reference data; prices just won't update.
 
-## Stack (v2.0)
+## Stack
 
 | Layer        | Pick                                          |
 |--------------|-----------------------------------------------|
@@ -38,7 +36,6 @@ last imported statement and the bundled reference data; prices just won't update
 | Server       | gunicorn + Docker Compose                     |
 | Database     | SQLite (desktop) / Postgres 16 (hosted)       |
 | Scheduling   | OS-native (launchd / Task Scheduler / cron)   |
-| Licensing    | Offline ed25519-signed license files          |
 
 ## Layout
 
@@ -50,10 +47,9 @@ desktop/   PyWebView launcher + Nuitka build spec
 server/    gunicorn entrypoint + Dockerfile
 deploy/    Release notes + hosted deploy templates
 docs/      User and developer documentation
-archive/   Legacy v1 code — read-only, reference only
 ```
 
-See [`BUILD.md`](BUILD.md) for build instructions (TBD).
+See [`BUILD.md`](BUILD.md) for build instructions.
 
 ## Running
 
@@ -92,4 +88,7 @@ import, to give you and your tax professional a starting point. That's all it is
 
 ## License
 
-[MIT](LICENSE)
+Folioman is free and open source under the **GNU Affero General Public License
+v3.0 or later** (see [`LICENSE`](LICENSE)). You're free to use, study, share, and
+modify it; if you run a modified version as a network service, the AGPL asks you
+to make your changes available to its users.

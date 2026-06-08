@@ -20,7 +20,7 @@ dev = [
 line-length = 100
 target-version = "py313"
 # Generated Django migrations are not hand-edited; don't lint/format them.
-extend-exclude = ["archive", "**/migrations"]
+extend-exclude = ["**/migrations"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
