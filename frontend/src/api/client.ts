@@ -22,6 +22,10 @@ export const api = createClient<paths>({
   baseUrl: import.meta.env.VITE_API_BASE ?? '',
 })
 
+// The JWT auth interceptor is registered from `api/authInterceptor.ts` (imported
+// once in main.ts), kept separate so it can statically import the auth store +
+// router without the client↔auth module cycle (the auth store imports this client).
+
 /**
  * Narrow an openapi-fetch `{ data, error }` result to its payload, throwing a
  * labelled error otherwise. For bodyless responses (e.g. DELETE) check `error`

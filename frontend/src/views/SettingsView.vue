@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import SelectButton from 'primevue/selectbutton'
 import Button from 'primevue/button'
 import { api, type Schemas } from '@/api/client'
 import { useUiStore, type ThemePreference } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
 import { useRosterStore } from '@/stores/roster'
 import { downloadText } from '@/utils/csv'
 import { formatDate } from '@/utils/format'
@@ -26,7 +27,17 @@ const SPONSOR_LINKS: { label: string; url: string }[] = [
 ]
 
 const ui = useUiStore()
+const auth = useAuthStore()
 const roster = useRosterStore()
+const router = useRouter()
+
+// The Account card (sign out) is server-mode only: in desktop/local mode there's
+// no login, so the auth store never holds a token.
+const showAccount = computed(() => auth.isAuthenticated)
+function signOut(): void {
+  auth.logout()
+  void router.push({ name: 'login' })
+}
 
 const themeOptions: { label: string; value: ThemePreference; icon: string }[] = [
   { label: 'Light', value: 'light', icon: 'pi pi-sun' },
@@ -188,6 +199,17 @@ async function exportTransactions(): Promise<void> {
               <strong>Backup:</strong> copy that file somewhere safe. To restore, put it back before
               launching Folioman. That one file is your whole portfolio.
             </p>
+            <template v-if="isLocal && meta.key_location">
+              <p class="hint">
+                <strong>Encryption key:</strong> your PANs are encrypted at rest with a key stored
+                separately, here:
+              </p>
+              <code class="path">{{ meta.key_location }}</code>
+              <p class="hint">
+                Back this up too — without it, encrypted PANs can't be recovered. Keep it somewhere
+                different from the database file.
+              </p>
+            </template>
           </template>
           <p v-else class="hint">Loading…</p>
         </div>
@@ -224,6 +246,25 @@ async function exportTransactions(): Promise<void> {
             :disabled="investorId == null"
             :loading="exporting === 'transactions'"
             @click="exportTransactions"
+          />
+        </div>
+      </article>
+
+      <!-- Account (server mode only) -->
+      <article v-if="showAccount" class="card setting">
+        <div class="setting-text">
+          <h2><i class="pi pi-user" /> Account</h2>
+          <p>Signed in to the hosted Folioman server.</p>
+        </div>
+        <div class="actions">
+          <Button
+            class="signout"
+            label="Sign out"
+            icon="pi pi-sign-out"
+            severity="secondary"
+            outlined
+            size="small"
+            @click="signOut"
           />
         </div>
       </article>
@@ -417,6 +458,14 @@ async function exportTransactions(): Promise<void> {
   display: flex;
   gap: var(--fm-space-2);
   flex-shrink: 0;
+}
+/* Sign out: same neutral palette as the export buttons, just a touch more
+   present — a faint filled surface behind the outline so it reads as solid. */
+.actions :deep(.signout) {
+  background: var(--fm-surface-raised);
+}
+.actions :deep(.signout:hover) {
+  background: var(--fm-surface-overlay);
 }
 
 .kv {

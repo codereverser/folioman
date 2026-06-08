@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import type { RouteMeta, RouteRecordRaw } from 'vue-router'
+import type { RouteLocationRaw, RouteMeta, RouteRecordRaw } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
+import { useAuthStore } from '@/stores/auth'
+import { fetchSetupNeeded } from '@/api/setup'
 import DashboardView from '@/views/DashboardView.vue'
 import FamilyView from '@/views/FamilyView.vue'
 import SchemeDetailView from '@/views/SchemeDetailView.vue'
@@ -15,6 +17,30 @@ declare module 'vue-router' {
 /** Edit/import routes redirect to a "desktop only" notice when on a phone. */
 export function blockedOnMobile(meta: RouteMeta, isMobile: boolean): boolean {
   return isMobile && meta.desktopOnly === true
+}
+
+/** Resolve a visit to the `/login` or `/setup` screen. Pure so it's unit-tested.
+ *
+ * - Signed in → neither screen applies: login returns the saved `redirect` (else
+ *   home), setup returns home.
+ * - Not signed in, server needs its first admin → force `/setup` (bounce login → setup).
+ * - Not signed in, no setup pending → login is the place (bounce setup → login).
+ *
+ * Returns `true` to let the navigation through unchanged. */
+export function authRouteTarget(
+  toName: 'login' | 'setup',
+  isAuthenticated: boolean,
+  needsSetup: boolean,
+  redirect: unknown,
+): RouteLocationRaw | true {
+  if (isAuthenticated) {
+    if (toName === 'login') {
+      return typeof redirect === 'string' && redirect ? redirect : { name: 'home' }
+    }
+    return { name: 'home' }
+  }
+  if (needsSetup) return toName === 'setup' ? true : { name: 'setup' }
+  return toName === 'setup' ? { name: 'login' } : true
 }
 
 // Scope lives in the URL: `/investors/:investorId/...` for a single investor,
@@ -100,6 +126,22 @@ const routes: RouteRecordRaw[] = [
     name: 'desktop-only',
     component: () => import('@/views/DesktopOnlyView.vue'),
   },
+  {
+    // Server-mode sign-in. Never reached in desktop/local mode (no request 401s),
+    // so it stays out of the way there.
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/Login.vue'),
+    meta: { bare: true },
+  },
+  {
+    // Server-mode first-run admin creation. The guard routes here when the server
+    // has no users yet; never reached in desktop/local mode.
+    path: '/setup',
+    name: 'setup',
+    component: () => import('@/views/SetupView.vue'),
+    meta: { bare: true },
+  },
   // Unknown paths fall back to the scope resolver.
   { path: '/:pathMatch(.*)*', redirect: { name: 'home' } },
 ]
@@ -109,9 +151,30 @@ export const router = createRouter({
   routes,
 })
 
+/** Send the user to the login screen, remembering where they were so the form can
+ * return them there. Called by the API client's 401 interceptor. A no-op if we're
+ * already on /login (e.g. the login POST itself 401s on bad credentials). */
+export function redirectToLogin(): void {
+  const current = router.currentRoute.value
+  if (current.name === 'login') return
+  void router.push({ name: 'login', query: { redirect: current.fullPath } })
+}
+
 // Keep the ui store's active scope in sync with the URL, so a reload on a scoped
 // route (or a deep link) restores the selection that drives the switcher and nav.
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
+  // Govern the /login and /setup screens together. Unauthenticated access to
+  // other routes is NOT pre-blocked here — that would wrongly bounce desktop/local
+  // users (no token, no login). The API client's 401 interceptor sends them to
+  // /login only when the server demands it; this guard then forwards to /setup if
+  // the server has no admin yet. The setup probe runs only on these two routes
+  // (and only when signed out), so there's no cost on the happy path or desktop.
+  if (to.name === 'login' || to.name === 'setup') {
+    const auth = useAuthStore()
+    const needsSetup = auth.isAuthenticated ? false : await fetchSetupNeeded()
+    return authRouteTarget(to.name, auth.isAuthenticated, needsSetup, to.query.redirect)
+  }
+
   const ui = useUiStore()
   const investorId = to.params.investorId
   const familyId = to.params.familyId

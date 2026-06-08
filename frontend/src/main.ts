@@ -28,6 +28,7 @@ import './style.css'
 
 import App from './App.vue'
 import { router } from './router'
+import '@/api/authInterceptor' // registers the JWT request/401 middleware on the api client
 import { FoliomanPreset } from './theme/folioman-preset'
 import { registerServiceWorker } from './pwa/registerServiceWorker'
 

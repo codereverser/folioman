@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
-import type { RouteLocationRaw } from 'vue-router'
+import { useRoute, type RouteLocationRaw } from 'vue-router'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import ProgressBar from 'primevue/progressbar'
@@ -23,6 +23,12 @@ const ui = useUiStore()
 const roster = useRosterStore()
 const integrity = useIntegrityStore()
 const toast = useToast()
+const route = useRoute()
+
+// Auth/setup screens render full-screen, outside the app shell (no sidebar, no
+// scope switcher) — they provide their own centered layout. Flagged per-route
+// with `meta.bare`.
+const bare = computed(() => route.meta.bare === true)
 
 // Selected investor's items-needing-attention (mismatches) — drives the nav badge.
 const attentionCount = computed(() =>
@@ -110,7 +116,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-mobile': ui.isMobile, 'is-collapsed': ui.sidebarCollapsed && !ui.isMobile }">
+  <!-- Full-screen auth/setup pages: no shell chrome, just the page + global overlays. -->
+  <template v-if="bare">
+    <RouterView />
+    <Toast />
+    <ConfirmDialog />
+  </template>
+
+  <div v-else class="app-shell" :class="{ 'is-mobile': ui.isMobile, 'is-collapsed': ui.sidebarCollapsed && !ui.isMobile }">
     <aside class="app-nav">
       <div class="brand">
         <img src="/logo.svg" alt="" width="28" height="28" />

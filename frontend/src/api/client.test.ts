@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Stub openapi-fetch so the real `importCas`/`previewCas`/`unwrap` run against a
 // spy client. `vi.hoisted` defines the spy in the same hoisted scope as `vi.mock`.
 const { post } = vi.hoisted(() => ({ post: vi.fn() }))
-vi.mock('openapi-fetch', () => ({ default: () => ({ POST: post, GET: vi.fn() }) }))
+// `use` is stubbed to complete the openapi-fetch shape; the auth interceptor now
+// lives in api/authInterceptor.ts (registered from main.ts), not imported here.
+vi.mock('openapi-fetch', () => ({ default: () => ({ POST: post, GET: vi.fn(), use: vi.fn() }) }))
 
 import { importCas, previewCas } from '@/api/client'
 
