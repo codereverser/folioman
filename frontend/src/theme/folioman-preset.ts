@@ -106,4 +106,32 @@ export const FoliomanPreset = definePreset(Aura, {
       },
     },
   },
+  components: {
+    // Aura's secondary buttons (outlined + text) read `color: {surface.500}` with
+    // no dark override. In our dark ramp surface.500 (#2A3A55) is nearly the card
+    // colour, so the label vanishes; its hover/active also point at *light*
+    // surfaces (50/100), which flash on a dark canvas. Re-point the dark variants
+    // at a readable slate + dark hover. Light mode is fine and left untouched.
+    button: {
+      colorScheme: {
+        dark: {
+          outlined: {
+            secondary: {
+              color: '{surface.50}',
+              borderColor: '{surface.200}',
+              hoverBackground: '{surface.700}',
+              activeBackground: '{surface.600}',
+            },
+          },
+          text: {
+            secondary: {
+              color: '{surface.50}',
+              hoverBackground: '{surface.700}',
+              activeBackground: '{surface.600}',
+            },
+          },
+        },
+      },
+    },
+  },
 })
