@@ -3,14 +3,6 @@
 # This root is a "virtual" uv workspace (no [project]); it only carries
 # workspace membership, shared dev tooling, and tool configuration.
 
-# Prefer a system/Homebrew CPython over uv's downloaded python-build-standalone.
-# The PBS interpreter deadlocks Nuitka's import-detection step on macOS (its
-# verbose-import subprocess fills a 16 KB pipe), so the desktop build needs a
-# normal CPython. "system" still falls back to a managed download if no suitable
-# system Python is present, so this doesn't break contributors without one.
-[tool.uv]
-python-preference = "system"
-
 [tool.uv.workspace]
 members = ["core", "app", "desktop", "server"]
 
