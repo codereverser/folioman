@@ -62,11 +62,18 @@ _EXCLUDE_IMPORTS = (
 #    and migration framework. Including the whole package once avoids whack-a-mole
 #    over individual modules (each miss = another multi-minute rebuild).
 #  - folioman_app/_core: our own packages; migrations are imported by module path.
+#  - casparser_isin: ships a ~46 MB bundled `isin.db` SQLite file resolved via
+#    `Path(__file__).parent / "isin.db"`. Nuitka doesn't bundle package *data*
+#    files by default, so without --include-package-data the frozen app hits
+#    `sqlite3.OperationalError: unable to open database file` the first time a CAS
+#    parse calls isin_search. casparser also carries package data, included for safety.
 _FORCE_INCLUDE_PACKAGES = (
     "django",
     "folioman_app",
     "folioman_core",
     "whitenoise",
+    "casparser",
+    "casparser_isin",
 )
 
 

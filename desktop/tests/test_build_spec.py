@@ -37,6 +37,14 @@ def test_force_includes_django_dynamic_imports_and_app_packages():
     assert "--include-package-data=folioman_app" in joined
 
 
+def test_bundles_casparser_isin_database():
+    # casparser_isin's ~46 MB isin.db is a package *data* file resolved via
+    # __file__; without --include-package-data the frozen app can't open it and
+    # every CAS parse 500s on isin_search. Guard the include so it can't regress.
+    joined = " ".join(_load_build().build_command(onefile=False))
+    assert "--include-package-data=casparser_isin" in joined
+
+
 def test_bundles_the_spa_where_bootstrap_resolves_it():
     cmd = " ".join(_load_build().build_command(onefile=False))
     # bootstrap._point_at_bundled_spa() looks for folioman_desktop/frontend_dist.

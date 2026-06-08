@@ -57,6 +57,12 @@ DATABASES = {
 # data dir is ensured to exist before the first log record is written.
 LOGGING = make_logging(DATA_DIR / "logs" / "folioman.log")
 
+# Django static lives under the writable data dir, not the read-only app bundle.
+# v1 desktop serves nothing from /static/ (no admin; Ninja docs use a CDN; the SPA
+# is served from FRONTEND_DIST), but WhiteNoise scans STATIC_ROOT at startup and
+# warns "No directory at …" if it's missing — so the bootstrap creates this dir.
+STATIC_ROOT = DATA_DIR / "staticfiles"
+
 # PAN encryption key: auto-generate (0600) under the user-data dir on first run.
 # No dev fallback in real desktop mode — the generated key is authoritative.
 FERNET_KEY_PATH = DATA_DIR / "fernet.key"

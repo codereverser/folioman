@@ -61,6 +61,10 @@ def resolve_data_dir() -> Path:
 
     data_dir = Path(os.environ.get("FOLIOMAN_DATA_DIR") or user_data_dir("folioman", "folioman"))
     (data_dir / "logs").mkdir(parents=True, exist_ok=True)
+    # WhiteNoise scans STATIC_ROOT (settings.desktop → data_dir/staticfiles) at
+    # startup and warns if it's missing; create it so the scan is quiet. v1 serves
+    # nothing from /static/, so it stays empty unless a future build collects into it.
+    (data_dir / "staticfiles").mkdir(parents=True, exist_ok=True)
     os.environ["FOLIOMAN_DATA_DIR"] = str(data_dir)
     return data_dir
 

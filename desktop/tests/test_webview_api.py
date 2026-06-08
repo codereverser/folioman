@@ -54,3 +54,7 @@ def test_pick_single_selection_only(tmp_path):
     api.pick_cas_file()
 
     assert window.calls[0]["allow_multiple"] is False
+    # Use the non-deprecated FileDialog enum (not the legacy webview.OPEN_DIALOG).
+    import webview
+
+    assert window.calls[0]["dialog_type"] == webview.FileDialog.OPEN

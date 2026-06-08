@@ -45,9 +45,15 @@ class WebviewApi:
         """
         import webview
 
+        # pywebview 5.x moved the dialog kind to the `FileDialog` enum; the old
+        # `webview.OPEN_DIALOG` constant is deprecated (and slated for removal).
+        # Prefer the enum, fall back for older pywebview.
+        open_dialog = getattr(webview, "FileDialog", None)
+        open_dialog = open_dialog.OPEN if open_dialog is not None else webview.OPEN_DIALOG
+
         window = self._window or webview.active_window()
         selection = window.create_file_dialog(
-            webview.OPEN_DIALOG,
+            open_dialog,
             allow_multiple=False,
             file_types=_PDF_FILE_TYPES,
         )
