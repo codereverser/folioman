@@ -12,6 +12,8 @@ import {
   type Schemas,
 } from '@/api/client'
 import { useUiStore } from '@/stores/ui'
+import { useRosterStore } from '@/stores/roster'
+import { useIntegrityStore } from '@/stores/integrity'
 import { formatDate } from '@/utils/format'
 import { importSummary } from '@/utils/jobs'
 import { isDesktopShell, pickCasFile } from '@/utils/desktop'
@@ -19,6 +21,8 @@ import JobStatusBadge from '@/components/JobStatusBadge.vue'
 
 const router = useRouter()
 const ui = useUiStore()
+const roster = useRosterStore()
+const integrity = useIntegrityStore()
 
 // Recent imports across all investors, so a past outcome / re-import is visible in
 // context on the landing step. Reuses the advisor-wide /api/jobs endpoint; the full
@@ -157,6 +161,11 @@ async function submit(confirm = false): Promise<void> {
     if (succeeded.value) {
       ui.notify({ severity: 'success', summary: 'Import complete', detail: file.value.name })
       void loadHistory() // reflect the just-completed import in the recent list
+      // An import resolves/creates an investor by PAN and changes its holdings —
+      // refresh the cached roster (so the switcher + Investors list show it) and
+      // drop the integrity cache (so the affected investor re-fetches on next view).
+      void roster.reload()
+      integrity.clear()
     }
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Import failed'
@@ -429,6 +438,7 @@ function goToDashboard(): void {
 <style scoped>
 .import-page {
   max-width: 44rem;
+  margin: 0 auto;
   padding: var(--fm-space-6);
 }
 .page-head {

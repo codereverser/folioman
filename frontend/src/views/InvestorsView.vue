@@ -49,7 +49,9 @@ onMounted(async () => {
   // (value read from the persisted InvestorValue), so there's no per-investor
   // /summary fan-out.
   void metrics.loadRosterAggregate()
-  await roster.ensureLoaded()
+  // Refetch the roster on every visit (not ensureLoaded's once-only) so an investor
+  // created/changed elsewhere — e.g. a just-completed CAS import — shows up here.
+  await roster.reload()
   grouped.value = hasFamilies.value
   for (const f of roster.families) void metrics.loadFamilyAggregate(f.id)
 })
@@ -108,6 +110,11 @@ function openInvestor(id: number): void {
 function openFamily(familyId: number): void {
   ui.selectFamily(familyId)
   void router.push({ name: 'family', params: { familyId } })
+}
+// The preferred way to add an investor: a CAS import creates them automatically
+// from the statement (by PAN), with real holdings — vs. an empty manual record.
+function goImport(): void {
+  void router.push({ name: 'import' })
 }
 
 // --- per-row metrics --------------------------------------------------------
@@ -335,7 +342,9 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
       </div>
       <div v-if="!ui.isMobile" class="actions">
         <Button label="New family" icon="pi pi-sitemap" severity="secondary" outlined size="small" @click="openCreateFamily" />
-        <Button label="New investor" icon="pi pi-user-plus" size="small" @click="openCreateInvestor()" />
+        <Button label="Add manually" icon="pi pi-user-plus" severity="secondary" outlined size="small" @click="openCreateInvestor()" />
+        <!-- Primary path: an import creates the investor from the CAS automatically. -->
+        <Button label="Import CAS" icon="pi pi-file-pdf" size="small" @click="goImport" />
       </div>
     </header>
 
@@ -367,8 +376,14 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
     <div v-if="roster.isEmpty" class="empty">
       <i class="pi pi-inbox" />
       <p>No investors yet.</p>
-      <p class="muted">Add an investor, then import a CAS to get started.</p>
-      <Button v-if="!ui.isMobile" label="Add investor" icon="pi pi-user-plus" @click="openCreateInvestor()" />
+      <p class="muted">
+        Import a CAS to get started — the investor is created automatically from the
+        statement, with their full holdings.
+      </p>
+      <div v-if="!ui.isMobile" class="empty-actions">
+        <Button label="Import CAS" icon="pi pi-file-pdf" @click="goImport" />
+        <Button label="Add manually" icon="pi pi-user-plus" severity="secondary" text @click="openCreateInvestor()" />
+      </div>
     </div>
 
     <template v-else>
@@ -661,6 +676,16 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
 }
 .empty p {
   margin: var(--fm-space-2) 0 var(--fm-space-4);
+}
+.empty .muted {
+  max-width: 28rem;
+  margin-inline: auto;
+  color: var(--fm-text-muted);
+}
+.empty-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fm-space-2);
 }
 
 .toolbar {
