@@ -1,0 +1,41 @@
+# Dependabot version updates.
+#
+# A `cooldown` is set so Dependabot waits before opening update PRs for a
+# freshly published release. This mirrors the install-time supply-chain
+# cool-down enforced at `pnpm install` (minimumReleaseAge): a newly published
+# package — direct or pulled in transitively when the lockfile is recomputed —
+# is the prime window for a compromised release to be caught and yanked, so we
+# let releases age before adopting them.
+#
+# Note: for npm the cooldown gates the dependency being updated, which in turn
+# delays lockfile recomputation and gives transitive deps time to age. The
+# install-time guard remains the hard guarantee. For the `uv` ecosystem the
+# cooldown is currently best-effort upstream (dependabot-core #13631, #14544).
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 5
+
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
