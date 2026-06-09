@@ -34,7 +34,7 @@
     "workbox-window": "^7.3.0"
   },
   "devDependencies": {
-    "@types/node": "^24",
+    "@types/node": "^25",
     "@vite-pwa/assets-generator": "^1.0.0",
     "@vitejs/plugin-vue": "^6",
     "@vue/test-utils": "^2.4.11",
