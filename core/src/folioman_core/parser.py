@@ -233,32 +233,34 @@ def _opposite(a: Decimal | None, b: Decimal | None) -> bool:
 def _reversal_match(scheme_txns: Sequence, j: int, dropped: set[int]) -> int | None:
     """Index of the buy/sell that the REVERSAL at ``j`` voids, or ``None``.
 
-    Scans backwards (a reversal voids an *earlier* row) for the nearest not-yet-
-    paired buy/sell whose units are equal and opposite. A NAV-confirmed match
-    (the reversal carries its original's NAV) is preferred and wins outright;
-    otherwise the nearest units-only match is the fallback, so same-size lots at
-    different NAVs still pair to the closest one. NAV is never a hard gate — some
-    RTAs stamp the reversal at a different NAV — so units are the source of truth
-    and the nearest match is the best available guess at the original lot.
+    A reversal carries the **exact date and NAV** of the row it cancels — true for
+    every reversal across the sample CAS corpus — so the pair key is: equal and
+    opposite units, same date, same NAV. That triple is strong enough that a
+    coincidental same-magnitude SIP can't be mistaken for the original (it would
+    need the same date *and* NAV too). The RTA may list the reversal either before
+    or after its original, so we search outward in both directions and take the
+    nearest not-yet-paired match. No match (e.g. the original is in a prior
+    statement window) → ``None`` → the reversal stays and the scheme is snapshotted.
     """
     rev = scheme_txns[j]
     rev_units = getattr(rev, "units", None)
     if rev_units is None:
         return None
-    units_only: int | None = None
-    for i in range(j - 1, -1, -1):
-        if i in dropped:
-            continue
-        cand = scheme_txns[i]
-        if cand.type not in _REVERSIBLE_TXNS:
-            continue
-        if not _opposite(getattr(cand, "units", None), rev_units):
-            continue
-        if units_only is None:
-            units_only = i
-        if _close(cand.nav, rev.nav):
-            return i  # exact units+NAV match — this is the original lot
-    return units_only
+    n = len(scheme_txns)
+    for dist in range(1, n):  # widening radius: nearest match wins, ties prefer earlier
+        for i in (j - dist, j + dist):
+            if i < 0 or i >= n or i in dropped:
+                continue
+            cand = scheme_txns[i]
+            if cand.type not in _REVERSIBLE_TXNS:
+                continue
+            if (
+                _opposite(getattr(cand, "units", None), rev_units)
+                and cand.date == rev.date
+                and _close(getattr(cand, "nav", None), rev.nav)
+            ):
+                return i
+    return None
 
 
 def _cancel_reversals(scheme_txns: Sequence) -> list:
