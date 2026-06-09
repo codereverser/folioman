@@ -11,7 +11,7 @@ balance accumulates, so units/amounts are taken as magnitudes here.
 from __future__ import annotations
 
 import io
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from decimal import Decimal
 
 import casparser
@@ -61,9 +61,16 @@ _DIVIDEND_TXNS = frozenset({CTxn.DIVIDEND_PAYOUT})
 # Charges / no unit impact — dropped from the ledger view (casparser surfaces
 # STT and stamp duty separately in its 112A).
 _SKIP_TXNS = frozenset({CTxn.STT_TAX, CTxn.STAMP_DUTY_TAX, CTxn.TDS_TAX, CTxn.MISC, CTxn.UNKNOWN})
-# Rare, unit-affecting, ambiguous to map 1:1 — fail loud rather than silently
-# corrupt the unit balance. Tracked as a v1 limitation (reversals/segregation).
+# Unit-affecting but not a plain buy/sell. A REVERSAL voids an earlier row and
+# is netted out against it before mapping (see ``_cancel_reversals``); only an
+# *unpaired* reversal — one whose original isn't in this statement's window —
+# reaches ``_map_line`` and fails loud (→ snapshot fallback). SEGREGATION
+# (side-pocketing into a separate portfolio) stays unsupported. Failing loud
+# beats silently corrupting the unit balance / cost basis.
 _UNSUPPORTED_TXNS = frozenset({CTxn.REVERSAL, CTxn.SEGREGATION})
+# Buy/sell rows a reversal can void (the only rows that move units 1:1).
+_REVERSIBLE_TXNS = _BUY_TXNS | _SELL_TXNS
+_PAIR_TOLERANCE = Decimal("0.0001")
 
 _TYPE_MAP: dict[CTxn, TransactionType] = (
     dict.fromkeys(_BUY_TXNS, TransactionType.BUY)
@@ -197,6 +204,85 @@ def _collect_per_index_charges(scheme_txns) -> tuple[dict, dict]:
     return stt_for_idx, stamp_for_idx
 
 
+def _close(a: Decimal | None, b: Decimal | None) -> bool:
+    """True iff ``a ≈ b`` within tolerance. ``None`` on either side never matches."""
+    if a is None or b is None:
+        return False
+    return abs(a - b) <= _PAIR_TOLERANCE
+
+
+def _opposite(a: Decimal | None, b: Decimal | None) -> bool:
+    """True iff ``a ≈ -b`` within tolerance. ``None`` on either side never matches."""
+    if a is None or b is None:
+        return False
+    return abs(a + b) <= _PAIR_TOLERANCE
+
+
+def _reversal_match(scheme_txns: Sequence, j: int, dropped: set[int]) -> int | None:
+    """Index of the buy/sell that the REVERSAL at ``j`` voids, or ``None``.
+
+    Scans backwards (a reversal voids an *earlier* row) for the nearest not-yet-
+    paired buy/sell whose units are equal and opposite. A NAV-confirmed match
+    (the reversal carries its original's NAV) is preferred and wins outright;
+    otherwise the nearest units-only match is the fallback, so same-size lots at
+    different NAVs still pair to the closest one. NAV is never a hard gate — some
+    RTAs stamp the reversal at a different NAV — so units are the source of truth
+    and the nearest match is the best available guess at the original lot.
+    """
+    rev = scheme_txns[j]
+    rev_units = getattr(rev, "units", None)
+    if rev_units is None:
+        return None
+    units_only: int | None = None
+    for i in range(j - 1, -1, -1):
+        if i in dropped:
+            continue
+        cand = scheme_txns[i]
+        if cand.type not in _REVERSIBLE_TXNS:
+            continue
+        if not _opposite(getattr(cand, "units", None), rev_units):
+            continue
+        if units_only is None:
+            units_only = i
+        if _close(cand.nav, rev.nav):
+            return i  # exact units+NAV match — this is the original lot
+    return units_only
+
+
+def _cancel_reversals(scheme_txns: Sequence) -> list:
+    """Drop each REVERSAL row together with the transaction it voids.
+
+    A reversal undoes an earlier transaction — a bounced/returned purchase, or a
+    reversed redemption — and the statement's closing balance already excludes
+    it. Mapping a reversal to a SELL would book a phantom capital gain (FIFO
+    would consume the wrong, oldest lot); mapping it to a BUY would mint a phantom
+    lot. The tax-correct treatment is that the voided pair simply never happened,
+    so we remove both rows: FIFO then replays the surviving rows with the
+    original lots' cost basis and acquisition dates intact, and no spurious
+    disposal.
+
+    Non-reversal rows are returned untouched and in their original order, so the
+    positional STT/stamp pairing in ``_collect_per_index_charges`` still lines up.
+    An *unpaired* reversal (its original isn't in this window) is left in place so
+    ``_map_line`` raises ``UnsupportedCASTransaction`` and the scheme is recorded
+    as a snapshot instead of a (would-be-wrong) tax ledger.
+    """
+    reversal_idxs = [
+        i for i, t in enumerate(scheme_txns) if getattr(t, "type", None) is CTxn.REVERSAL
+    ]
+    if not reversal_idxs:
+        return list(scheme_txns)
+
+    dropped: set[int] = set()
+    for j in reversal_idxs:
+        match = _reversal_match(scheme_txns, j, dropped)
+        if match is not None:
+            dropped.update((match, j))
+    if not dropped:
+        return list(scheme_txns)
+    return [t for k, t in enumerate(scheme_txns) if k not in dropped]
+
+
 def _scheme_map_reason(exc: Exception) -> str:
     """A PII-free reason for a scheme-mapping failure.
 
@@ -228,12 +314,15 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
         mapped_folio = _map_folio(folio)
         for scheme_pos, scheme in enumerate(folio.schemes, start=1):
             try:
-                stt_for_idx, stamp_for_idx = _collect_per_index_charges(scheme.transactions)
+                # Net out REVERSAL rows against the transactions they void before
+                # building the ledger (a reversal isn't a real buy or sell).
+                scheme_txns = _cancel_reversals(scheme.transactions)
+                stt_for_idx, stamp_for_idx = _collect_per_index_charges(scheme_txns)
                 lines = [
                     li
                     for li in (
                         _map_line(t, i, stt_for_idx=stt_for_idx, stamp_for_idx=stamp_for_idx)
-                        for i, t in enumerate(scheme.transactions)
+                        for i, t in enumerate(scheme_txns)
                     )
                     if li is not None
                 ]

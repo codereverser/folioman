@@ -171,8 +171,75 @@ def test_charge_rows_skipped():
     assert len(lines) == 1  # only the purchase survives
 
 
-def test_unsupported_transaction_raises():
+def test_orphan_reversal_raises():
+    # A reversal whose original isn't in this window can't be netted -> raises
+    # (so the scheme is snapshotted rather than persisted as a wrong ledger).
     cas = _cas([_txn(date(2024, 8, 1), CTxn.REVERSAL, "10", "10", "100")])
+    with pytest.raises(parser.UnsupportedCASTransaction, match="REVERSAL"):
+        parser.map_cas_data(cas)
+
+
+def test_reversal_of_purchase_is_netted_out():
+    # A bounced purchase (+30) and its reversal (-30) both vanish; only the real
+    # buy survives, and the block reconciles open 0 -> close 100.
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000"),
+            _txn(date(2022, 2, 1), CTxn.PURCHASE, "30", "12", "360"),
+            _txn(date(2022, 2, 3), CTxn.REVERSAL, "-30", "12", "-360"),
+        ],
+        open_units="0",
+        close_units="100",
+    )
+    block = parser.map_cas_data(cas).schemes[0]
+    assert [li.transaction_type for li in block.transactions] == [TransactionType.BUY]
+    assert block.transactions[0].units == Decimal("100")
+    assert parser.scheme_has_full_history(block)  # net 100 == close 100
+
+
+def test_reversal_of_redemption_restores_lots():
+    # A redemption (-40) reversed (+40): both drop, leaving the original buy
+    # intact -> no phantom disposal, no realized gain.
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000"),
+            _txn(date(2024, 8, 1), CTxn.REDEMPTION, "-40", "25", "-1000"),
+            _txn(date(2024, 8, 5), CTxn.REVERSAL, "40", "25", "1000"),
+        ],
+        open_units="0",
+        close_units="100",
+    )
+    block = parser.map_cas_data(cas).schemes[0]
+    assert [li.transaction_type for li in block.transactions] == [TransactionType.BUY]
+    assert parser.scheme_has_full_history(block)
+
+
+def test_reversal_pairs_with_nav_matched_lot():
+    # Two same-size buys at different NAVs; the reversal carries NAV 20, so it
+    # voids the 20-NAV lot and the 10-NAV lot is the survivor.
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "50", "10", "500"),
+            _txn(date(2022, 2, 1), CTxn.PURCHASE, "50", "20", "1000"),
+            _txn(date(2022, 2, 3), CTxn.REVERSAL, "-50", "20", "-1000"),
+        ],
+        open_units="0",
+        close_units="50",
+    )
+    block = parser.map_cas_data(cas).schemes[0]
+    assert len(block.transactions) == 1
+    assert block.transactions[0].nav == Decimal("10")
+    assert parser.scheme_has_full_history(block)
+
+
+def test_reversal_with_no_matching_units_raises():
+    # A reversal of -50 can't pair with a +100 buy (units don't cancel) -> raises.
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000"),
+            _txn(date(2022, 2, 3), CTxn.REVERSAL, "-50", "10", "-500"),
+        ]
+    )
     with pytest.raises(parser.UnsupportedCASTransaction, match="REVERSAL"):
         parser.map_cas_data(cas)
 
