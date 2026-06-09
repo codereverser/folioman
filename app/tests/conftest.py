@@ -40,6 +40,17 @@ def _local_auth_mode(settings):
     settings.FOLIOMAN_API_AUTH = "local"
 
 
+@pytest.fixture(autouse=True)
+def _no_live_nse(monkeypatch):
+    """Equity pricing is NSE-first (see refresh_navs._fetch_point). Default the NSE
+    feed to 'no data' so equity tests deterministically fall through to their mocked
+    Yahoo feed and never make a live NSE call; tests exercising the NSE-first path
+    override this explicitly."""
+    from folioman_core.price_feeds import nse_bse
+
+    monkeypatch.setattr(nse_bse, "fetch_quote", lambda *_a, **_k: None)
+
+
 @pytest.fixture
 def user(db):
     """The single local advisor user — the one local-mode API auth resolves, so

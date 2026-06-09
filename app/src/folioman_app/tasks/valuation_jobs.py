@@ -56,7 +56,12 @@ from folioman_core.models import SecurityType
 
 from folioman_app.models import Investor, InvestorValue, NAVHistory, Security, ValuationStatus
 from folioman_app.services.valuation import _value_series
-from folioman_app.tasks.refresh_navs import backfill_missing_history, refresh_navs
+from folioman_app.tasks.refresh_navs import (
+    _QUOTE_TYPES,
+    backfill_missing_equity_history,
+    backfill_missing_history,
+    refresh_navs,
+)
 
 _MAX_ATTEMPTS = 8
 
@@ -253,31 +258,40 @@ def recompute_investor_valuation(
             backfill_missing_history(  # MF history (mfapi) — fills any gap to today
                 securities=securities.filter(security_type=SecurityType.MF.value)
             )
+            backfill_missing_equity_history(  # equity/etf/bond history (NSE-first, Yahoo)
+                securities=securities.filter(security_type__in=sorted(_QUOTE_TYPES))
+            )
             refresh_navs(securities=securities)  # current point per security (equities too)
-        # Only MF securities have a history feed. An unpriced MF splits three ways:
-        #  - **feed-pending** (has an amfi_code, feed not yet confirmed dead): a slow
-        #    or transient feed; keep erroring + retrying with backoff so it recovers.
-        #  - **unmapped** (no amfi_code → nothing to query: an eCAS demat fund the ISIN
-        #    DB can't map): retrying never helps.
-        #  - **closed** (``nav_feed_closed`` — the feed confirmed no NAV for its code:
-        #    a matured/delisted close-ended fund): permanently unpriceable, must NOT be
-        #    retried as feed-pending forever.
+        # MF (mfapi) and quote-type (NSE/Yahoo) securities both have a history feed.
+        # An unpriced one splits three ways:
+        #  - **feed-pending** (has a queryable identifier — amfi_code for MF, symbol for
+        #    a quote type — and isn't confirmed dead): a slow/transient feed; keep
+        #    erroring + retrying with backoff so it recovers.
+        #  - **unmapped** (nothing to query: an eCAS MF the ISIN DB can't map to an
+        #    amfi_code, or an equity it can't map to a symbol): retrying never helps.
+        #  - **closed** (``nav_feed_closed`` — the feed confirmed no data for its code:
+        #    a matured/delisted scrip): permanently unpriceable, must NOT be retried.
         # The latter two must NOT block the whole investor. Degrade per-security: value
         # the priceable holdings and let the unpriced ones fall out of the series
         # (``_value_series`` skips + flags them; they surface as ``stale_count`` in the
         # summary) — never blank an otherwise-valued portfolio.
+        priceable_types = {SecurityType.MF.value, *_QUOTE_TYPES}
         unpriced = _unpriced_securities(
-            {s.id for s in securities if s.security_type == SecurityType.MF.value}, today
+            {s.id for s in securities if s.security_type in priceable_types}, today
         )
         if unpriced:
             degraded = set(
                 Security.objects.filter(id__in=unpriced)
-                .filter(Q(amfi_code="") | Q(nav_feed_closed=True))
+                .filter(
+                    Q(nav_feed_closed=True)
+                    | (Q(security_type=SecurityType.MF.value) & Q(amfi_code=""))
+                    | (Q(security_type__in=sorted(_QUOTE_TYPES)) & Q(symbol=""))
+                )
                 .values_list("id", flat=True)
             )
             pending = unpriced - degraded
             if pending and inv.valuation_attempts < _MAX_ATTEMPTS:
-                _mark_error(inv, f"{len(pending)} securities awaiting NAV (feed pending)")
+                _mark_error(inv, f"{len(pending)} securities awaiting price (feed pending)")
                 return ValuationStatus.ERROR
             # else: only unmapped/closed left (or retries exhausted) — degrade.
 
@@ -316,6 +330,9 @@ def process_pending_valuations() -> int:
         # Backfill first (fills any gap to today), then the latest-point refresh —
         # see recompute_investor_valuation for why the order matters.
         backfill_missing_history(securities=securities.filter(security_type=SecurityType.MF.value))
+        backfill_missing_equity_history(
+            securities=securities.filter(security_type__in=sorted(_QUOTE_TYPES))
+        )
         refresh_navs(securities=securities)
     processed = 0
     for investor_id, recompute_from in due:

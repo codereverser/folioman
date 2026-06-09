@@ -54,6 +54,19 @@ def _backfill_identifier(security: Security, field: str, value: str) -> None:
     setattr(security, field, value)
 
 
+def _fill_if_empty(security: Security, field: str, value: str) -> None:
+    """Set a descriptive (non-unique) field only when it's currently empty.
+
+    Unlike :func:`_backfill_identifier`, no collision check — for fields with no
+    uniqueness constraint (symbol / exchange). An equity first imported before
+    symbol resolution existed (or from an eCAS the ISIN DB couldn't map) lands
+    with an empty symbol; a later import that resolves one fills it, without ever
+    clobbering a value already present."""
+    if not value or getattr(security, field):
+        return
+    setattr(security, field, value)
+
+
 def upsert_security(core_security) -> Security:
     amc = upsert_amc((core_security.metadata or {}).get("amc", ""))
     existing = _find_existing_security(core_security)
@@ -80,6 +93,10 @@ def upsert_security(core_security) -> Security:
     # later seen with its isin), constraint-safe.
     _backfill_identifier(existing, "amfi_code", core_security.amfi_code)
     _backfill_identifier(existing, "isin", core_security.isin)
+    # Symbol/exchange aren't uniquely constrained — fill when a later statement
+    # resolves a ticker the first sighting lacked, so the holding becomes priceable.
+    _fill_if_empty(existing, "symbol", core_security.symbol)
+    _fill_if_empty(existing, "exchange", core_security.exchange)
     if amc:
         existing.amc = amc
     existing.save()

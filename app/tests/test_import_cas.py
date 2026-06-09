@@ -750,6 +750,33 @@ def test_upsert_resolves_isin_only_then_amfi_plus_isin_without_collision():
     assert sec.isin == isin
 
 
+def test_upsert_backfills_symbol_for_equity_first_seen_without_one():
+    # An eCAS equity imported before symbol resolution existed lands symbol-less;
+    # a later import that resolves a ticker fills it (so it becomes priceable),
+    # without clobbering a symbol already present.
+    isin = "INE002A01018"
+    first = upsert_security(CoreSecurity(type=SecurityType.EQUITY, name="Reliance", isin=isin))
+    assert first.symbol == ""
+
+    resolved = upsert_security(
+        CoreSecurity(
+            type=SecurityType.EQUITY,
+            name="Reliance Industries",
+            isin=isin,
+            symbol="RELIANCE",
+            exchange="NSE",
+        )
+    )
+    assert resolved.pk == first.pk  # same row, matched by ISIN
+    assert resolved.symbol == "RELIANCE"
+    assert resolved.exchange == "NSE"
+
+    again = upsert_security(
+        CoreSecurity(type=SecurityType.EQUITY, name="Reliance", isin=isin, symbol="")
+    )
+    assert again.symbol == "RELIANCE"  # blank later symbol doesn't clobber
+
+
 def test_upsert_does_not_steal_isin_owned_by_another_row():
     isin = "INE002A01018"
     a = upsert_security(CoreSecurity(type=SecurityType.EQUITY, name="A", isin=isin))

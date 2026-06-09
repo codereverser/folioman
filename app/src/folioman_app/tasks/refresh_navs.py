@@ -13,6 +13,7 @@ Historical backfill on first import is covered by the backfill helpers here.
 
 from __future__ import annotations
 
+import functools
 import time
 from collections.abc import Iterable
 from datetime import date as date_cls
@@ -20,11 +21,11 @@ from datetime import date as date_cls
 from django.db.models import Max, Min
 from django.utils import timezone
 from folioman_core.models import SecurityType
-from folioman_core.price_feeds import coingecko, mfapi, nse_bse, yfinance_feed
+from folioman_core.price_feeds import coingecko, mfapi, nse_bse, nse_history, yfinance_feed
 from folioman_core.price_feeds.mfapi import NAVFetchError
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
-from folioman_app.models import NAVHistory, Security, Transaction
+from folioman_app.models import Holding, NAVHistory, Security, Transaction
 from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
 
 _QUOTE_TYPES = {
@@ -53,9 +54,17 @@ def _fetch_point(security: Security):
         point = mfapi.fetch_latest_nav(security.amfi_code)
         return (point.date, point.nav, "mfapi") if point else None
     if stype in _QUOTE_TYPES and security.symbol:
-        quote = yfinance_feed.fetch_quote(security.symbol, exchange=security.exchange)
-        if quote is None and stype != SecurityType.FOREIGN_EQUITY.value:
-            quote = nse_bse.fetch_quote(security.symbol)  # NSE fallback (Indian)
+        # NSE-first for Indian names: NSE is authoritative for NSE-listed scrips and a
+        # different provider than Yahoo, which throttles cloud IPs hard (HTTP 429) — and
+        # since Yahoo *raises* on a 429, leading with it would skip the fallback entirely.
+        # So try NSE first (it returns None, never raises) and fall back to Yahoo only
+        # when NSE has nothing. Foreign equities / non-NSE exchanges go straight to Yahoo.
+        # Mirrors the NSE-first history path (see _fetch_equity_history).
+        quote = None
+        if stype != SecurityType.FOREIGN_EQUITY.value and security.exchange in ("", "NSE"):
+            quote = nse_bse.fetch_quote(security.symbol)
+        if quote is None:
+            quote = yfinance_feed.fetch_quote(security.symbol, exchange=security.exchange)
         return (quote.as_of, quote.price, quote.source) if quote else None
     if stype == SecurityType.CRYPTO.value:
         coin_id = (security.metadata or {}).get("coin_id")
@@ -90,9 +99,11 @@ def refresh_navs(*, securities: Iterable[Security] | None = None) -> dict:
 
 
 # --- historical backfill -------------------------------------------
-# Full per-scheme NAV history (mfapi serves it). Only MF has a history feed in
-# v1 — equity/crypto history would need range endpoints the core doesn't expose
-# yet, so they keep just the latest point from refresh_navs.
+# MF history comes from mfapi (full per-scheme series in one call); equity / ETF
+# / bond history comes from Yahoo's dated chart range. Crypto still keeps only
+# the latest point from refresh_navs (no history feed wired yet). All land in the
+# shared NAVHistory table, so a quote-type holding prices into the day-wise
+# valuation series exactly like an MF.
 #
 # Backfill is a separate, resilient step (this service + the backfill_navs
 # command / the scheduler), NOT wired into the synchronous import: an import must
@@ -115,34 +126,70 @@ def backfill_nav_history(security: Security, *, since: date_cls | None = None) -
     return len(to_create)
 
 
-def backfill_missing_history(
-    *, securities: Iterable[Security] | None = None, force: bool = False
-) -> dict:
-    """Backfill history for MF securities, each bounded by its earliest transaction.
+def _fetch_equity_history(security: Security, *, since: date_cls | None, nse_client):
+    """Fetch a quote-type security's price history, NSE-first with a Yahoo fallback.
 
-    Whenever a fund's latest NAV is more than a trading day behind the last trading
-    day, re-pull the full history (mfapi serves it all) and insert every missing date
-    — so the series stays gap-free from the last stored date to today even if the app
-    only ran days or weeks ago. A fund already current (within the grace) is skipped
-    to avoid re-downloading; the cheap latest-point refresh keeps it warm meanwhile.
-
-    ``force=True`` ignores the freshness skip and re-pulls every fund — used to repair
-    pre-existing interior holes (where the *latest* point is current but earlier
-    trading days are missing), which the freshness check can't detect."""
-    qs = (
-        securities
-        if securities is not None
-        else Security.objects.filter(security_type=SecurityType.MF.value)
+    Returns ``(history, source_tag)``. NSE's security-wise feed is authoritative
+    for NSE-listed names and a different provider than Yahoo (which throttles), so
+    it leads; Yahoo covers BSE-only / foreign names and fills in when NSE is
+    unavailable or returns nothing. ``nse_client`` lets a batch reuse one warmed
+    NSE session (cookie wall); when ``None`` the NSE feed warms its own."""
+    if security.exchange in ("", "NSE"):
+        try:
+            history = nse_history.fetch_history(security.symbol, start=since, client=nse_client)
+        except PriceFetchError:
+            history = None
+        if history is not None and history.points:
+            return history, "nse"
+    return (
+        yfinance_feed.fetch_history(security.symbol, exchange=security.exchange, start=since),
+        "yfinance",
     )
+
+
+def backfill_equity_history(
+    security: Security, *, since: date_cls | None = None, nse_client=None
+) -> int:
+    """Backfill a quote-type security's price history into NAVHistory.
+
+    Covers equity / ETF / bond / foreign_equity — anything priced by a symbol.
+    NSE-first, Yahoo fallback (see :func:`_fetch_equity_history`). Returns points
+    written. A security with no symbol (e.g. an eCAS equity the ISIN database
+    couldn't map to a ticker) is a no-op; the day-wise NAV table is shared with
+    MFs, so equity closes flow into valuation through the same path."""
+    if security.security_type not in _QUOTE_TYPES or not security.symbol:
+        return 0
+    history, source = _fetch_equity_history(security, since=since, nse_client=nse_client)
+    existing = set(NAVHistory.objects.filter(security=security).values_list("date", flat=True))
+    to_create = [
+        NAVHistory(security=security, date=point.date, nav=point.nav, source=source)
+        for point in history.points
+        if point.date not in existing
+    ]
+    NAVHistory.objects.bulk_create(to_create)
+    return len(to_create)
+
+
+def _backfill_missing(qs, *, backfill_one, force: bool = False) -> dict:
+    """Shared history-backfill loop for any feed (MF NAV or equity quote).
+
+    For each security, skip when its stored series already reaches (within a
+    trading-day grace of) the last trading day — otherwise re-pull from its
+    earliest transaction and insert every missing date, so a series goes fully
+    gap-free even if the app only ran intermittently. ``backfill_one`` is the
+    per-security writer (:func:`backfill_nav_history` / :func:`backfill_equity_history`).
+
+    ``force=True`` ignores the freshness skip and re-pulls every security — used
+    to repair interior holes the freshness check (which only looks at the latest
+    stored date) can't detect."""
     summary = {"securities": 0, "points": 0, "errors": 0, "skipped": 0, "closed": 0}
     today = timezone.localdate()
     cutoff = last_trading_day(today)
     fetched = False
     for security in qs:
-        # Skip only when the series already reaches (within a grace of) the last
-        # trading day — otherwise re-pull and fill the gap. Business-day aware so we
-        # don't refetch every weekend or for a not-yet-published same-day NAV; gap
-        # aware so a fortnight-old series is brought fully current, not just nudged.
+        # Business-day aware so we don't refetch every weekend or for a not-yet-
+        # published same-day price; gap aware so a fortnight-old series is brought
+        # fully current, not just nudged.
         latest = NAVHistory.objects.filter(security=security).aggregate(m=Max("date"))["m"]
         behind = trading_days_between(latest, cutoff) if latest is not None else None
         if not force and behind is not None and behind <= _HISTORY_FRESH_TRADING_DAYS:
@@ -151,9 +198,16 @@ def backfill_missing_history(
         if fetched:
             _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
         fetched = True
-        since = Transaction.objects.filter(security=security).aggregate(first=Min("date"))["first"]
+        # Cover the whole span the valuation series needs: the earliest of any
+        # transaction date and any holding snapshot's as_of_date. A snapshot-only
+        # equity (no transactions) must still backfill back to its statement date,
+        # else the series is unpriced before it.
+        txn_first = Transaction.objects.filter(security=security).aggregate(d=Min("date"))["d"]
+        hold_first = Holding.objects.filter(security=security).aggregate(d=Min("as_of_date"))["d"]
+        candidates = [d for d in (txn_first, hold_first) if d is not None]
+        since = min(candidates) if candidates else None
         try:
-            written = backfill_nav_history(security, since=since)
+            written = backfill_one(security, since=since)
         except (NAVFetchError, PriceFetchError):
             summary["errors"] += 1  # transient: leave it feed-pending, retry next cycle
             continue
@@ -164,10 +218,48 @@ def backfill_missing_history(
                 security.nav_feed_closed = False
                 security.save(update_fields=["nav_feed_closed", "updated_at"])
         elif latest is None and not security.nav_feed_closed:
-            # The feed responded (no error) with no history for a fund we hold NO NAV
-            # for: the code is dead (matured/delisted/unmappable), not slow. Flag it so
-            # valuation degrades it instead of erroring + retrying the feed forever.
+            # The feed responded (no error) with no history for a security we hold NO
+            # price for: the code/ticker is dead (matured/delisted/unmappable), not
+            # slow. Flag it so valuation degrades it instead of erroring + retrying
+            # the feed forever.
             security.nav_feed_closed = True
             security.save(update_fields=["nav_feed_closed", "updated_at"])
             summary["closed"] += 1
     return summary
+
+
+def backfill_missing_history(
+    *, securities: Iterable[Security] | None = None, force: bool = False
+) -> dict:
+    """Backfill MF NAV history, each fund bounded by its earliest transaction.
+
+    See :func:`_backfill_missing` for the freshness / gap / ``force`` semantics
+    (mfapi serves the full per-scheme series in one call)."""
+    qs = (
+        securities
+        if securities is not None
+        else Security.objects.filter(security_type=SecurityType.MF.value)
+    )
+    return _backfill_missing(qs, backfill_one=backfill_nav_history, force=force)
+
+
+def backfill_missing_equity_history(
+    *, securities: Iterable[Security] | None = None, force: bool = False
+) -> dict:
+    """Backfill equity / ETF / bond price history via Yahoo, bounded by earliest
+    transaction. Same freshness / gap / ``force`` semantics as the MF backfill —
+    without this, quote-type holdings have at most a single latest point and so
+    contribute nothing to the *historical* valuation series."""
+    qs = (
+        securities
+        if securities is not None
+        else Security.objects.filter(security_type__in=sorted(_QUOTE_TYPES))
+    )
+    # Warm one NSE session for the whole batch (the security-wise feed sits behind
+    # a cookie wall) rather than re-warming per security.
+    nse_client = nse_history.warmed_client()
+    try:
+        backfill_one = functools.partial(backfill_equity_history, nse_client=nse_client)
+        return _backfill_missing(qs, backfill_one=backfill_one, force=force)
+    finally:
+        nse_client.close()

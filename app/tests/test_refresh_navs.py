@@ -14,7 +14,8 @@ from folioman_app.tasks import refresh_navs as refresh_navs_mod
 from folioman_app.tasks.import_csv import create_manual_transaction
 from folioman_app.tasks.refresh_navs import backfill_missing_history, refresh_navs
 from folioman_core.models import NAVPoint, Quote, SecurityType
-from folioman_core.price_feeds import coingecko, mfapi, yfinance_feed
+from folioman_core.price_feeds import coingecko, mfapi, nse_bse, yfinance_feed
+from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
 pytestmark = pytest.mark.django_db
 
@@ -70,6 +71,83 @@ def test_refresh_writes_navhistory_per_type(mocked_feeds):
     assert NAVHistory.objects.get(security=mf, date=_TODAY).nav == Decimal("75.5")
     assert NAVHistory.objects.get(security=eq, date=_TODAY).nav == Decimal("2850")
     assert NAVHistory.objects.get(security=crypto, date=_TODAY).source == "coingecko"
+
+
+def test_equity_prices_nse_first_even_when_yahoo_throttles(monkeypatch):
+    """Indian equities price from NSE first. A Yahoo 429 *raises*, so leading with Yahoo
+    would skip the fallback and freeze the price (the bug that stalled demo equity NAVs);
+    NSE-first means a throttled Yahoo never blocks an NSE-listed scrip."""
+    monkeypatch.setattr(
+        nse_bse,
+        "fetch_quote",
+        lambda symbol, **_: Quote(
+            as_of=_TODAY, price=Decimal("1234"), currency="INR", source="nse"
+        ),
+    )
+
+    def _yahoo_429(*_a, **_k):
+        raise PriceFetchError("yahoo 429")
+
+    monkeypatch.setattr(yfinance_feed, "fetch_quote", _yahoo_429)
+    eq = Security.objects.create(
+        security_type=SecurityType.EQUITY.value,
+        name="Reliance",
+        isin="INE002A01018",
+        symbol="RELIANCE",
+    )
+
+    summary = refresh_navs()
+
+    assert summary["updated"] == 1 and summary["errors"] == 0
+    point = NAVHistory.objects.get(security=eq, date=_TODAY)
+    assert point.nav == Decimal("1234")
+    assert point.source == "nse"
+
+
+def test_equity_falls_back_to_yahoo_when_nse_has_no_data(mocked_feeds):
+    """NSE miss (returns None) → Yahoo fallback. The autouse NSE stub returns None, so the
+    equity resolves via the mocked Yahoo feed."""
+    eq = Security.objects.create(
+        security_type=SecurityType.EQUITY.value,
+        name="Infosys",
+        isin="INE009A01021",
+        symbol="INFY",
+    )
+
+    summary = refresh_navs()
+
+    assert summary["updated"] == 1
+    assert NAVHistory.objects.get(security=eq, date=_TODAY).source == "yfinance"
+
+
+def test_foreign_equity_skips_nse_and_uses_yahoo(monkeypatch):
+    """Foreign equities have no NSE listing, so NSE is never queried — straight to Yahoo."""
+    nse_calls = {"n": 0}
+
+    def _nse_spy(*_a, **_k):
+        nse_calls["n"] += 1
+        return None
+
+    monkeypatch.setattr(nse_bse, "fetch_quote", _nse_spy)
+    monkeypatch.setattr(
+        yfinance_feed,
+        "fetch_quote",
+        lambda symbol, **_: Quote(
+            as_of=_TODAY, price=Decimal("190"), currency="USD", source="yfinance"
+        ),
+    )
+    eq = Security.objects.create(
+        security_type=SecurityType.FOREIGN_EQUITY.value,
+        name="Apple Inc",
+        symbol="AAPL",
+        exchange="NASDAQ",
+    )
+
+    summary = refresh_navs()
+
+    assert summary["updated"] == 1
+    assert nse_calls["n"] == 0  # foreign equity → NSE never queried
+    assert NAVHistory.objects.get(security=eq, date=_TODAY).source == "yfinance"
 
 
 def test_refresh_skips_securities_with_no_feed(mocked_feeds):
