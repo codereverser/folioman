@@ -44,7 +44,7 @@
     "vite": "^6.0.5",
     "vite-plugin-compression2": "^2.5.3",
     "vite-plugin-pwa": "^1.0.0",
-    "vitest": "^3.2.6",
+    "vitest": "^3.2.0",
     "vue-tsc": "^2.2.0"
   }
 }
