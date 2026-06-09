@@ -54,8 +54,15 @@ _Q_NAV = Decimal("0.0001")
 
 # Real mutual funds (names + ISINs + amfi_codes from the bundled casparser-isin
 # reference DB). amfi_code is populated so the live NAV feed — which keys on it —
-# refreshes these schemes: the seeded synthetic history is just the starting
-# series, extended and overwritten by real NAVs once the app fetches them.
+# refreshes these schemes once the app fetches them.
+#
+# base NAV and annual drift track each fund's ACTUAL NAV ~5 years ago (the seed's
+# `start`) and its real ~5y CAGR, so the synthetic series lands close to today's
+# real NAV. That matters because the feed only *fills* dates the seed left empty
+# (it doesn't overwrite the seeded weekly points) and writes today's real NAV on
+# refresh — if the synthetic magnitude were off, the live demo would show inflated
+# returns and a sawtooth chart where weekly-synthetic meets daily-real. Keeping
+# them realistic makes the seeded and fetched NAVs blend seamlessly.
 #   (name, isin, amfi_code, equity_oriented, base NAV, annual drift, monthly SIP ₹)
 _FUNDS = [
     (
@@ -63,8 +70,8 @@ _FUNDS = [
         "INF879O01027",
         "122639",
         True,
-        Decimal("30.00"),
-        0.18,
+        Decimal("44.50"),
+        0.148,
         8000,
     ),
     (
@@ -72,8 +79,8 @@ _FUNDS = [
         "INF769K01AX2",
         "118825",
         True,
-        Decimal("55.00"),
-        0.13,
+        Decimal("76.00"),
+        0.095,
         6000,
     ),
     (
@@ -81,8 +88,8 @@ _FUNDS = [
         "INF789F01XA0",
         "120716",
         True,
-        Decimal("90.00"),
-        0.14,
+        Decimal("106.00"),
+        0.089,
         5000,
     ),
     (
@@ -90,19 +97,17 @@ _FUNDS = [
         "INF179K01XD8",
         "118987",
         False,
-        Decimal("24.00"),
-        0.07,
+        Decimal("25.50"),
+        0.062,
         4000,
     ),
-    # A sectoral/thematic fund that underperformed (negative drift) — its
-    # redemption realises a capital *loss*, so the demo shows gains and losses.
     (
         "Nippon India Pharma Fund - Direct Plan - Growth",
         "INF204K01I50",
         "118759",
         True,
-        Decimal("90.00"),
-        -0.05,
+        Decimal("323.00"),
+        0.131,
         3000,
     ),
 ]
@@ -147,15 +152,15 @@ _DEMAT_ACCOUNTS = [
     ("1208160007654321", "Groww (Nextbillion Technology)"),
 ]
 
-# Redemptions that realise capital gains/losses across the last three financial
-# years. Keyed by fund index → (days before today, fraction of units held then).
-# Each consumes FIFO lots from the 2021 inception, so all are long-term; fund 4
-# (negative drift) sells below cost → a realised loss.
+# Partial redemptions that realise long-term capital gains across the last three
+# financial years. Keyed by fund index → (days before today, fraction of units
+# held then). Each consumes FIFO lots from the 2021 inception, so all are LTCG —
+# realistic for a 2021-2026 run where every scheme appreciated.
 _REDEMPTIONS = {
-    0: (900, Decimal("0.25")),  # ~2 FYs ago — LTCG gain (Parag Parikh Flexi)
-    1: (540, Decimal("0.20")),  # ~1 FY ago — LTCG gain (Mirae Large Cap)
-    2: (180, Decimal("0.15")),  # current FY — LTCG gain (UTI Nifty 50)
-    4: (560, Decimal("0.40")),  # ~1 FY ago — LTCG loss (Nippon Pharma underperformer)
+    0: (900, Decimal("0.25")),  # ~2 FYs ago — LTCG (Parag Parikh Flexi)
+    1: (540, Decimal("0.20")),  # ~1 FY ago — LTCG (Mirae Large Cap)
+    2: (180, Decimal("0.15")),  # current FY — LTCG (UTI Nifty 50)
+    4: (560, Decimal("0.40")),  # ~1 FY ago — LTCG (Nippon Pharma)
 }
 
 

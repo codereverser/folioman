@@ -73,7 +73,7 @@ def _fy_label(d):
 
 
 @pytest.mark.django_db
-def test_seed_demo_realises_gains_and_losses_across_three_fys():
+def test_seed_demo_realises_gains_across_three_fys():
     from folioman_app.services.tax_export import build_capital_gains
 
     call_command("seed_demo", username="demo")
@@ -87,8 +87,9 @@ def test_seed_demo_realises_gains_and_losses_across_three_fys():
     assert len(fys) >= 3  # disposals span at least three financial years
 
     gains = [g for fy in fys for g in (r["gain"] for r in build_capital_gains(mf, fy)["rows"])]
-    assert any(g > 0 for g in gains)  # at least one realised gain
-    assert any(g < 0 for g in gains)  # at least one realised loss (the underperformer)
+    # Every fund tracks its real ~5y CAGR (all positive over 2021-2026), and FIFO
+    # sells the cheapest 2021 lots first, so all disposals realise an LTCG gain.
+    assert gains and all(g > 0 for g in gains)
 
 
 @pytest.mark.django_db
