@@ -23,7 +23,7 @@ RUN pnpm gen:api && pnpm build
 
 # --- Stage 2: resolve Python deps into a venv ------------------------------
 FROM python:3.13-slim AS builder
-COPY --from=ghcr.io/astral-sh/uv:0.10.9 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.19 /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
