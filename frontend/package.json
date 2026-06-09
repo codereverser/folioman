@@ -22,7 +22,7 @@
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@fontsource/ibm-plex-sans": "^5.2.8",
-    "@primevue/themes": "^4.2.5",
+    "@primeuix/themes": "^2.0.3",
     "echarts": "^6.1.0",
     "openapi-fetch": "^0.13.4",
     "pinia": "^2.3.0",
@@ -34,11 +34,11 @@
     "workbox-window": "^7.3.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.5",
+    "@types/node": "^24",
     "@vite-pwa/assets-generator": "^1.0.0",
     "@vitejs/plugin-vue": "^5.2.1",
-    "@vue/test-utils": "^2.4.6",
-    "jsdom": "^25.0.1",
+    "@vue/test-utils": "^2.4.11",
+    "jsdom": "^29",
     "openapi-typescript": "^7.4.4",
     "typescript": "~5.6.3",
     "vite": "^6.0.5",
