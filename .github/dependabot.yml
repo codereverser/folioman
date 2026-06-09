@@ -22,6 +22,14 @@ updates:
       semver-major-days: 30
       semver-minor-days: 7
       semver-patch-days: 5
+    # Keep @types/node matched to the runtime Node major (pinned to 24 LTS via
+    # .nvmrc/engines). Its major tracks the Node major, so a major bump would pull
+    # in types for a Node we don't run. Take minor/patch; ignore majors until we
+    # move the runtime to the next LTS (Node 26), then bump this in lockstep.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "uv"
     directory: "/"
@@ -32,6 +40,16 @@ updates:
       semver-major-days: 30
       semver-minor-days: 7
       semver-patch-days: 5
+    # Stay on the Django LTS line. 5.2 is LTS (supported into 2028); 6.0/6.1 are
+    # non-LTS (~16-month support). Take patch updates (5.2.x security fixes) but
+    # ignore minor/major bumps so Dependabot never proposes a non-LTS Django. When
+    # the next LTS (6.2) lands and we're ready, bump the pin in app/pyproject.toml
+    # (>=5.2,<5.3 → >=6.2,<6.3) and adjust this rule then.
+    ignore:
+      - dependency-name: "django"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
 
   - package-ecosystem: "github-actions"
     directory: "/"
