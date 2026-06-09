@@ -244,6 +244,56 @@ def test_reversal_with_no_matching_units_raises():
         parser.map_cas_data(cas)
 
 
+def test_dividend_payout_without_units_or_nav_is_kept_as_income():
+    # A cash dividend payout carries no units/NAV (both None); keep the amount,
+    # zero the unit/NAV fields, and don't crash on abs(None).
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000"),
+            TransactionData(
+                date=date(2024, 8, 1),
+                description="DIVIDEND PAYOUT",
+                amount=Decimal("500"),
+                units=None,
+                nav=None,
+                balance=None,
+                type=CTxn.DIVIDEND_PAYOUT,
+                dividend_rate=None,
+            ),
+        ],
+        close_units="100",
+    )
+    lines = parser.map_cas_data(cas).schemes[0].transactions
+    div = lines[1]
+    assert div.transaction_type is TransactionType.DIVIDEND
+    assert div.units == Decimal("0")
+    assert div.nav == Decimal("0")
+    assert div.amount == Decimal("500")  # cash income preserved
+    # Dividends don't move units, so the block still reconciles to its close.
+    assert parser.scheme_has_full_history(parser.map_cas_data(cas).schemes[0])
+
+
+def test_buy_missing_units_or_nav_raises():
+    # A purchase with no NAV can't form a cost-basis lot -> raise (snapshot),
+    # never a phantom zero-cost lot.
+    cas = _cas(
+        [
+            TransactionData(
+                date=date(2022, 1, 1),
+                description="PURCHASE",
+                amount=None,
+                units=Decimal("100"),
+                nav=None,
+                balance=None,
+                type=CTxn.PURCHASE,
+                dividend_rate=None,
+            ),
+        ]
+    )
+    with pytest.raises(parser.UnsupportedCASTransaction, match="missing units/NAV"):
+        parser.map_cas_data(cas)
+
+
 def test_every_casparser_txn_type_is_categorised():
     covered = parser._BUY_TXNS | parser._SELL_TXNS | parser._DIVIDEND_TXNS
     covered |= parser._SKIP_TXNS | parser._UNSUPPORTED_TXNS

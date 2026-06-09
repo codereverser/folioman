@@ -103,6 +103,18 @@ def _map_line(
     if mapped is None:
         msg = f"unmapped casparser transaction type {ctype.value!r}"
         raise UnsupportedCASTransaction(msg)
+    units, nav = txn.units, txn.nav
+    if mapped is TransactionType.DIVIDEND:
+        # A dividend *payout* is a cash event: casparser carries no units or NAV
+        # for it (both ``None``). Keep the cash ``amount`` as income and zero the
+        # unit/NAV fields — FIFO treats DIVIDEND as a no-op on the lot balance.
+        units = units if units is not None else _ZERO
+        nav = nav if nav is not None else _ZERO
+    elif units is None or nav is None:
+        # A buy/sell with no units or NAV can't form a cost-basis lot; failing
+        # loud (→ snapshot) beats minting a phantom zero-cost lot.
+        msg = f"{ctype.value!r} row is missing units/NAV — cannot build a tax lot"
+        raise UnsupportedCASTransaction(msg)
     # casparser model: stamp duty rides with the *buy* (per-lot) and is pro-rated
     # to each disposal as a transfer expense. STT rides with the *sell* and is
     # pro-rated by consumed units. Both flow into col 12 of Schedule 112A and
@@ -114,8 +126,8 @@ def _map_line(
     return MfCasLineItem(
         date=txn.date,
         transaction_type=mapped,
-        units=abs(txn.units),
-        nav=txn.nav,
+        units=abs(units),
+        nav=nav,
         amount=_abs_or_none(txn.amount),
         fees=fees,
         stamp_duty=stamp_duty,
