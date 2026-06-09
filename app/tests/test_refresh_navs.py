@@ -14,7 +14,7 @@ from folioman_app.tasks import refresh_navs as refresh_navs_mod
 from folioman_app.tasks.import_csv import create_manual_transaction
 from folioman_app.tasks.refresh_navs import backfill_missing_history, refresh_navs
 from folioman_core.models import NAVPoint, Quote, SecurityType
-from folioman_core.price_feeds import coingecko, mfapi, nse_bse, yfinance_feed
+from folioman_core.price_feeds import coingecko, mfapi, nse_history, yfinance_feed
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
 pytestmark = pytest.mark.django_db
@@ -74,15 +74,14 @@ def test_refresh_writes_navhistory_per_type(mocked_feeds):
 
 
 def test_equity_prices_nse_first_even_when_yahoo_throttles(monkeypatch):
-    """Indian equities price from NSE first. A Yahoo 429 *raises*, so leading with Yahoo
-    would skip the fallback and freeze the price (the bug that stalled demo equity NAVs);
-    NSE-first means a throttled Yahoo never blocks an NSE-listed scrip."""
+    """Indian equities price from NSE first (the last row of the security-wise history).
+    A Yahoo 429 *raises*, so leading with Yahoo would skip the fallback and freeze the
+    price (the bug that stalled demo equity NAVs); NSE-first means a throttled Yahoo
+    never blocks an NSE-listed scrip."""
     monkeypatch.setattr(
-        nse_bse,
-        "fetch_quote",
-        lambda symbol, **_: Quote(
-            as_of=_TODAY, price=Decimal("1234"), currency="INR", source="nse"
-        ),
+        nse_history,
+        "fetch_history",
+        lambda *_a, **_k: SimpleNamespace(points=[NAVPoint(date=_TODAY, nav=Decimal("1234"))]),
     )
 
     def _yahoo_429(*_a, **_k):
@@ -128,7 +127,7 @@ def test_foreign_equity_skips_nse_and_uses_yahoo(monkeypatch):
         nse_calls["n"] += 1
         return None
 
-    monkeypatch.setattr(nse_bse, "fetch_quote", _nse_spy)
+    monkeypatch.setattr(nse_history, "fetch_history", _nse_spy)
     monkeypatch.setattr(
         yfinance_feed,
         "fetch_quote",

@@ -17,11 +17,12 @@ import functools
 import time
 from collections.abc import Iterable
 from datetime import date as date_cls
+from datetime import timedelta
 
 from django.db.models import Max, Min
 from django.utils import timezone
 from folioman_core.models import SecurityType
-from folioman_core.price_feeds import coingecko, mfapi, nse_bse, nse_history, yfinance_feed
+from folioman_core.price_feeds import coingecko, mfapi, nse_history, yfinance_feed
 from folioman_core.price_feeds.mfapi import NAVFetchError
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
@@ -44,6 +45,9 @@ _REQUEST_SPACING = 0.15  # seconds between live fetches
 # Beyond it we re-pull the full history and fill every missing date — so a desktop
 # opened once a fortnight catches up gaplessly instead of leaving weeks of holes.
 _HISTORY_FRESH_TRADING_DAYS = 1
+# Window pulled to read an equity's *latest* close off the last row of its NSE
+# security-wise history — wide enough to clear a long weekend / holiday run.
+_QUOTE_LOOKBACK_DAYS = 10
 _SLEEP = time.sleep
 
 
@@ -54,17 +58,21 @@ def _fetch_point(security: Security):
         point = mfapi.fetch_latest_nav(security.amfi_code)
         return (point.date, point.nav, "mfapi") if point else None
     if stype in _QUOTE_TYPES and security.symbol:
-        # NSE-first for Indian names: NSE is authoritative for NSE-listed scrips and a
-        # different provider than Yahoo, which throttles cloud IPs hard (HTTP 429) — and
-        # since Yahoo *raises* on a 429, leading with it would skip the fallback entirely.
-        # So try NSE first (it returns None, never raises) and fall back to Yahoo only
-        # when NSE has nothing. Foreign equities / non-NSE exchanges go straight to Yahoo.
-        # Mirrors the NSE-first history path (see _fetch_equity_history).
-        quote = None
+        # NSE-first for Indian names: take the latest close from the last row of the
+        # cookie-warmed security-wise history CSV. NSE's /api/quote-equity 403s from
+        # cloud IPs, so reusing the proven history endpoint keeps quotes off the
+        # rate-limited Yahoo fallback. Yahoo *raises* on a 429, so leading with it
+        # would skip the fallback; it trails and covers BSE-only / foreign names.
         if stype != SecurityType.FOREIGN_EQUITY.value and security.exchange in ("", "NSE"):
-            quote = nse_bse.fetch_quote(security.symbol)
-        if quote is None:
-            quote = yfinance_feed.fetch_quote(security.symbol, exchange=security.exchange)
+            since = last_trading_day(timezone.localdate()) - timedelta(days=_QUOTE_LOOKBACK_DAYS)
+            try:
+                history = nse_history.fetch_history(security.symbol, start=since, client=None)
+            except PriceFetchError:
+                history = None
+            if history is not None and history.points:
+                latest = history.points[-1]  # points are oldest-first
+                return (latest.date, latest.nav, "nse")
+        quote = yfinance_feed.fetch_quote(security.symbol, exchange=security.exchange)
         return (quote.as_of, quote.price, quote.source) if quote else None
     if stype == SecurityType.CRYPTO.value:
         coin_id = (security.metadata or {}).get("coin_id")

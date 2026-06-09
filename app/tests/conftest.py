@@ -42,13 +42,13 @@ def _local_auth_mode(settings):
 
 @pytest.fixture(autouse=True)
 def _no_live_nse(monkeypatch):
-    """Equity pricing is NSE-first (see refresh_navs._fetch_point). Default the NSE
-    feed to 'no data' so equity tests deterministically fall through to their mocked
-    Yahoo feed and never make a live NSE call; tests exercising the NSE-first path
-    override this explicitly."""
-    from folioman_core.price_feeds import nse_bse
+    """Equity pricing is NSE-first off the security-wise history feed (see
+    refresh_navs._fetch_point / _fetch_equity_history). Default that feed to 'no
+    data' so equity tests deterministically fall through to their mocked Yahoo feed
+    and never make a live NSE call; tests exercising the NSE-first path override it."""
+    from folioman_core.price_feeds import nse_history
 
-    monkeypatch.setattr(nse_bse, "fetch_quote", lambda *_a, **_k: None)
+    monkeypatch.setattr(nse_history, "fetch_history", lambda *_a, **_k: None)
 
 
 @pytest.fixture
