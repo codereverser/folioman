@@ -130,6 +130,36 @@ def test_seed_demo_real_navs_prices_from_fetched_history(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_real_navs_reseed_clears_stale_synthetic_navs(monkeypatch):
+    # The bug: --reset keeps the global NAVHistory and backfill only fills *missing*
+    # dates, so a synthetic seed's weekly 'demo' NAVs survived a later --real-navs
+    # reseed and showed up as a sawtooth among the real daily NAVs. Re-seeding must
+    # clear the stale synthetic points so only the real series remains.
+    import datetime as dt
+    from decimal import Decimal
+
+    import folioman_app.tasks.refresh_navs as refresh_navs
+
+    call_command("seed_demo", username="demo")  # synthetic first → writes 'demo' rows
+    assert NAVHistory.objects.filter(security__security_type="mf", source="demo").exists()
+
+    def fake_backfill(security, *, since):
+        rows, d = [], since
+        while d <= dt.date.today():
+            rows.append(NAVHistory(security=security, date=d, nav=Decimal("100"), source="mfapi"))
+            d += dt.timedelta(days=1)
+        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
+        return len(rows)
+
+    monkeypatch.setattr(refresh_navs, "backfill_nav_history", fake_backfill)
+    call_command("seed_demo", username="demo", reset=True, real_navs=True)
+
+    mf_navs = NAVHistory.objects.filter(security__security_type="mf")
+    assert not mf_navs.filter(source="demo").exists()  # no stale synthetic left
+    assert {n.nav for n in mf_navs} == {Decimal("100")}  # only the real series remains
+
+
+@pytest.mark.django_db
 def test_seed_demo_reset_rebuilds_cleanly():
     call_command("seed_demo", username="demo")
     user = get_user_model().objects.get(username="demo")

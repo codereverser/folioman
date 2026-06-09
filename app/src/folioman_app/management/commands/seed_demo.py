@@ -170,6 +170,10 @@ def _nav_on(base: Decimal, drift: float, start: dt.date, on: dt.date) -> Decimal
 
 def _weekly_history(security, base: Decimal, drift: float, start: dt.date, end: dt.date) -> int:
     """Seed a weekly NAV/price series [start, end]. Returns the row count."""
+    # Clear this security's prior synthetic points first so a re-seed doesn't leave
+    # stale weekly NAVs behind (--reset keeps the global NAVHistory, and bulk_create
+    # won't overwrite an existing date). Scoped to source="demo" — never real rows.
+    NAVHistory.objects.filter(security=security, source="demo").delete()
     rows, on = [], start
     while on <= end:
         rows.append(
@@ -196,6 +200,10 @@ def _nav_history_fn(
     if real_navs and security.amfi_code:
         from folioman_app.tasks.refresh_navs import backfill_nav_history
 
+        # Drop any stale synthetic points from an earlier seed so the real series
+        # fills those dates (backfill only writes *missing* dates) — otherwise a
+        # prior --reset leaves a sawtooth of synthetic NAVs among the real ones.
+        NAVHistory.objects.filter(security=security, source="demo").delete()
         # Any feed/network failure falls through to the synthetic series below.
         with contextlib.suppress(Exception):
             backfill_nav_history(security, since=start)
