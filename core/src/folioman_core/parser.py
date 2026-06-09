@@ -107,8 +107,8 @@ def _map_line(
     return MfCasLineItem(
         date=txn.date,
         transaction_type=mapped,
-        units=abs(txn.units),
-        nav=txn.nav,
+        units=abs(txn.units) if txn.units is not None else _ZERO,
+        nav=txn.nav if txn.nav is not None else _ZERO,
         amount=_abs_or_none(txn.amount),
         fees=fees,
         stamp_duty=stamp_duty,
@@ -249,8 +249,25 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
                     closing_cost=val_cost,
                     closing_value_date=val_date,
                 )
+            except UnsupportedCASTransaction:
+                # The scheme contains an unsupported transaction (like REVERSAL).
+                # We cannot build a tax-safe ledger for it, but we can still
+                # capture its closing balance for net worth (as a snapshot).
+                val_nav, val_value, val_cost, val_date = _scheme_valuation(scheme)
+                block = MfCasSchemeBlock(
+                    folio=mapped_folio,
+                    security=_map_security(scheme, folio.amc),
+                    transactions=[],
+                    opening_units=scheme.open,
+                    closing_units=scheme.close,
+                    closing_nav=val_nav,
+                    closing_value=val_value,
+                    closing_cost=val_cost,
+                    closing_value_date=val_date,
+                    unsupported_transaction=True,
+                )
             except CASParseError:
-                raise  # already a clean, intentional CAS error (e.g. unsupported txn)
+                raise  # already a clean, intentional CAS error
             except (ValidationError, ValueError) as exc:
                 msg = (
                     f"could not map scheme {scheme_pos} of folio {folio_pos} "
@@ -345,6 +362,8 @@ def scheme_history_gap(block: MfCasSchemeBlock, *, prior_balance: Decimal = _ZER
     A block with a gap must NOT be persisted as a ledger — record its closing
     balance as a holding snapshot instead (net-worth only, not tax-safe).
     """
+    if block.unsupported_transaction:
+        return "unsupported_transaction"
     open_units = block.opening_units if block.opening_units is not None else _ZERO
     if abs(open_units - prior_balance) > _HISTORY_TOLERANCE:
         return "opening_nonzero" if abs(prior_balance) <= _HISTORY_TOLERANCE else "history_gap"

@@ -79,6 +79,7 @@ class MfCasSchemeBlock(DomainModel):
     closing_value: OptionalDecimalField = None
     closing_cost: OptionalDecimalField = None
     closing_value_date: date | None = None
+    unsupported_transaction: bool = False
 
 
 class MfCasStatement(DomainModel):

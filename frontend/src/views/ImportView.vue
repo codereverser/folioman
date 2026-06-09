@@ -76,6 +76,7 @@ const REASON_LABELS: Record<string, string> = {
   opening_nonzero: 'Opening balance isn’t zero — earlier transactions are missing.',
   history_gap: 'Doesn’t continue from the statement already on file.',
   rows_unreconciled: 'Some rows couldn’t be matched to the closing balance.',
+  unsupported_transaction: 'Contains an unsupported transaction type (like a reversal or segregation).',
 }
 function reasonLabel(reason: string): string {
   return REASON_LABELS[reason] ?? reason

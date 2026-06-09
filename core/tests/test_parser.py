@@ -171,10 +171,13 @@ def test_charge_rows_skipped():
     assert len(lines) == 1  # only the purchase survives
 
 
-def test_unsupported_transaction_raises():
+def test_unsupported_transaction_is_marked_unsupported():
     cas = _cas([_txn(date(2024, 8, 1), CTxn.REVERSAL, "10", "10", "100")])
-    with pytest.raises(parser.UnsupportedCASTransaction, match="REVERSAL"):
-        parser.map_cas_data(cas)
+    stmt = parser.map_cas_data(cas)
+    block = stmt.schemes[0]
+
+    assert block.unsupported_transaction is True
+    assert block.transactions == []
 
 
 def test_every_casparser_txn_type_is_categorised():
