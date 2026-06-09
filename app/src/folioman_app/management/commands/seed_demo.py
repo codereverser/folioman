@@ -52,16 +52,16 @@ _Q_NAV = Decimal("0.0001")
 
 # --- Demo dataset (deterministic; no randomness so re-runs are stable) ---------
 
-# Real mutual funds (names + ISINs from the bundled casparser-isin reference DB).
-#   (name, isin, equity_oriented, base NAV, annual drift, monthly SIP ₹)
-# amfi_code is left blank on purpose: the live NAV feed keys on it, so leaving it
-# blank keeps the feed from fetching (and overwriting) these schemes — the seeded
-# synthetic history stays authoritative and internally consistent with the seeded
-# transaction prices. The names/ISINs are real so the demo looks genuine.
+# Real mutual funds (names + ISINs + amfi_codes from the bundled casparser-isin
+# reference DB). amfi_code is populated so the live NAV feed — which keys on it —
+# refreshes these schemes: the seeded synthetic history is just the starting
+# series, extended and overwritten by real NAVs once the app fetches them.
+#   (name, isin, amfi_code, equity_oriented, base NAV, annual drift, monthly SIP ₹)
 _FUNDS = [
     (
         "Parag Parikh Flexi Cap Fund - Direct Plan - Growth",
         "INF879O01027",
+        "122639",
         True,
         Decimal("30.00"),
         0.18,
@@ -70,6 +70,7 @@ _FUNDS = [
     (
         "Mirae Asset Large Cap Fund - Direct Plan - Growth",
         "INF769K01AX2",
+        "118825",
         True,
         Decimal("55.00"),
         0.13,
@@ -78,6 +79,7 @@ _FUNDS = [
     (
         "UTI Nifty 50 Index Fund - Direct Plan - Growth",
         "INF789F01XA0",
+        "120716",
         True,
         Decimal("90.00"),
         0.14,
@@ -86,6 +88,7 @@ _FUNDS = [
     (
         "HDFC Corporate Bond Fund - Direct Plan - Growth",
         "INF179K01XD8",
+        "118987",
         False,
         Decimal("24.00"),
         0.07,
@@ -96,6 +99,7 @@ _FUNDS = [
     (
         "Nippon India Pharma Fund - Direct Plan - Growth",
         "INF204K01I50",
+        "118759",
         True,
         Decimal("90.00"),
         -0.05,
@@ -264,12 +268,13 @@ class Command(BaseCommand):
         inv.save()
 
         securities = []
-        for idx, (name, isin, equity_oriented, base, drift, sip) in enumerate(_FUNDS):
+        for idx, (name, isin, amfi_code, equity_oriented, base, drift, sip) in enumerate(_FUNDS):
             security = upsert_security(
                 CoreSecurity(
                     type=SecurityType.MF,
                     name=name,
                     isin=isin,
+                    amfi_code=amfi_code,
                     currency="INR",
                     metadata={"equity_oriented": equity_oriented},
                 )
