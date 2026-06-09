@@ -24,7 +24,7 @@
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "@primeuix/themes": "^2.0.3",
     "echarts": "^6.1.0",
-    "openapi-fetch": "^0.13.4",
+    "openapi-fetch": "^0.17.0",
     "pinia": "^3",
     "primeicons": "^7.0.0",
     "primevue": "^4.2.5",
