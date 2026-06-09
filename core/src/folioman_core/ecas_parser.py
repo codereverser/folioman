@@ -42,10 +42,18 @@ def _depository_from_file_type(ft: object) -> Depository:
 
 
 def _map_equity_holding(eq: object) -> EcasHoldingLine:
-    # Equity: no symbol in casparser model; ISIN identifies the security.
+    # eCAS prints equities by ISIN only; casparser backfills the exchange trading
+    # symbol from the ISIN database (casparser.parsers._isin.batch_equity_symbols).
+    # Carry it so the holding is priceable via a symbol-keyed feed (NSE / Yahoo).
+    # ``getattr`` keeps this safe against an older casparser without the field.
     return EcasHoldingLine(
         security=Security(
-            type=SecurityType.EQUITY, name=eq.name, isin=eq.isin or "", currency="INR"
+            type=SecurityType.EQUITY,
+            name=eq.name,
+            isin=eq.isin or "",
+            symbol=(getattr(eq, "symbol", None) or ""),
+            exchange=(getattr(eq, "exchange", None) or ""),
+            currency="INR",
         ),
         units=eq.num_shares,
         value_observed=eq.value,

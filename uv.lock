@@ -72,7 +72,7 @@ wheels = [
 
 [[package]]
 name = "casparser"
-version = "1.0.0"
+version = "1.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "casparser-isin" },
@@ -83,22 +83,22 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/74/c6/f1560466e89b1bdb6d7f9aa3ef7f4cbaf4afc2f4c7ad4e3410ebc5f5ae41/casparser-1.0.0.tar.gz", hash = "sha256:dc998ab93b1daac79455fcd8cbc8f18aedb3f26b9d302eba6e9758d9d0150f80", size = 67194, upload-time = "2026-06-08T12:22:08.63Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/fb/1e5cbee5914f0d9be4693ba0bd1da5942a4edd8fba8f2a79732ffd0b1dbb/casparser-1.0.1.tar.gz", hash = "sha256:5ad01d3f57ccf85a67727b4f41db543af8a6d4fabcf088f48e9871e38d97ecf4", size = 67818, upload-time = "2026-06-09T11:29:18.073Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/77/bc/2992cb5aa1793d4cb03c09631144b9ed560fa4b8d5f98577a68b5d85f0d7/casparser-1.0.0-py3-none-any.whl", hash = "sha256:a304ba91deec2a278782bbd708e15613cce013f571ffc630c66dd22f3d1e06b8", size = 77753, upload-time = "2026-06-08T12:22:07.556Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/cd/c814cd73a3d583b849b5b65655af03ad87bc8e0873079bd213133cfb885f/casparser-1.0.1-py3-none-any.whl", hash = "sha256:2ef888d668f3dff5c7f21de1f2378bb6daea0f1df9cf534288e55ae21af1bdd3", size = 78374, upload-time = "2026-06-09T11:29:18.927Z" },
 ]
 
 [[package]]
 name = "casparser-isin"
-version = "2026.5.1"
+version = "2026.6.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "packaging" },
     { name = "rapidfuzz" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/89/62/82ac748b5db8429b4c8ccc76002f130a540818841dcdf01edf9e3f318cbe/casparser_isin-2026.5.1.tar.gz", hash = "sha256:33ee02796a86adc6e52b0deb02631d93e8d1cbfa380f71176d758e4e56cfa36f", size = 9232971, upload-time = "2026-05-22T04:29:45.441Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/9e/db0f244259c392f7f6e455882245d87c680d64c7125606a46913e36a445b/casparser_isin-2026.6.9.tar.gz", hash = "sha256:f3016463a608107a8ef48b1752fb9d04086dc340595e32f7a833009643693f1b", size = 9303746, upload-time = "2026-06-09T11:06:23.777Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/23/89/b0dc213b033475bca7224b91040c68202dafda87d3ba5a3e5fe264e58f87/casparser_isin-2026.5.1-py3-none-any.whl", hash = "sha256:7b7386000dcfce5cfe31d6dd27f71b8e20c47ea56801a63b78636192cc3aee77", size = 9343316, upload-time = "2026-05-22T04:29:48.205Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/c6/cedc318cf2c9a14e3ce57e2fff09b935a25cbc726390196baa5897aa9f30/casparser_isin-2026.6.9-py3-none-any.whl", hash = "sha256:d5d43765a3479f710914b524a452968b72d21aea6ef199ebad1839553ed7ab76", size = 9418059, upload-time = "2026-06-09T11:06:21.406Z" },
 ]
 
 [[package]]
@@ -435,7 +435,7 @@ requires-dist = [
     { name = "folioman-core", editable = "core" },
     { name = "gunicorn", marker = "extra == 'server'", specifier = ">=23.0" },
     { name = "platformdirs", specifier = ">=4.0" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'server'", specifier = ">=3.3.4" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'server'", specifier = ">=3.2" },
     { name = "whitenoise", specifier = ">=6.6" },
 ]
 provides-extras = ["server"]
@@ -453,8 +453,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "casparser", specifier = ">=1.0.0" },
-    { name = "casparser-isin" },
+    { name = "casparser", specifier = ">=1.0.1" },
+    { name = "casparser-isin", specifier = ">=2026.6.9" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.7" },
 ]

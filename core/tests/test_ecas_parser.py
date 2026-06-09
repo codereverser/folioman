@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 
 import casparser
 import pytest
@@ -231,3 +232,33 @@ def test_ecas_investor_identity_rejects_statement_spanning_multiple_pans():
     # PII-free: neither PAN appears in the message.
     assert "ABCDE1234F" not in str(exc.value)
     assert "ZZZZZ9999Z" not in str(exc.value)
+
+
+def test_equity_holding_carries_symbol_and_exchange():
+    # casparser backfills symbol/exchange onto demat equities from the ISIN DB;
+    # the mapper must carry them onto the core Security so it's priceable. The
+    # mapper takes a duck-typed object, so a stub keeps this independent of the
+    # installed casparser Equity's field set.
+    eq = SimpleNamespace(
+        name="Reliance Industries",
+        isin="INE002A01018",
+        num_shares=Decimal("10"),
+        value=Decimal("14000"),
+        symbol="RELIANCE",
+        exchange="NSE",
+    )
+    line = ecas_parser._map_equity_holding(eq)
+    assert line.security.type is SecurityType.EQUITY
+    assert line.security.symbol == "RELIANCE"
+    assert line.security.exchange == "NSE"
+
+
+def test_equity_holding_without_symbol_maps_empty():
+    # An eCAS equity the ISIN DB couldn't map (or an older casparser with no
+    # symbol field) stays symbol-less rather than crashing.
+    eq = SimpleNamespace(
+        name="Unlisted Co", isin="INE000X00X00", num_shares=Decimal("5"), value=Decimal("50")
+    )
+    line = ecas_parser._map_equity_holding(eq)
+    assert line.security.symbol == ""
+    assert line.security.exchange == ""
