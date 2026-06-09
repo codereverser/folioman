@@ -92,6 +92,7 @@ class HoldingValueRow(Schema):
     security_id: int
     name: str
     security_type: str
+    symbol: str = ""  # exchange ticker for equities/ETFs/bonds; "" for MFs
     amc: str = ""  # fund house — groups the per-fund breakdown
     category: str = ""  # equity / debt — groups the per-fund breakdown
     units: Decimal

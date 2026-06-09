@@ -76,7 +76,7 @@ const routes: RouteRecordRaw[] = [
     // All (cross-asset), `/mf` = the mutual-fund breakdown. The `(mf)` constraint
     // keeps the `dashboard` route name working for plain `{investorId}` links and
     // rejects unknown asset segments. Future asset classes widen the pattern.
-    path: '/investors/:investorId/dashboard/:assetTab(mf)?',
+    path: '/investors/:investorId/dashboard/:assetTab(mf|stocks)?',
     name: 'dashboard',
     component: DashboardView,
   },

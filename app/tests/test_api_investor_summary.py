@@ -28,6 +28,32 @@ def test_summary_values_holdings_in_inr(client, make_investor, make_security, ma
     assert body["last_import_at"] is None
 
 
+def test_summary_holdings_carry_symbol_for_equities(
+    client, make_investor, make_security, make_holding
+):
+    """The Stocks tab keys on the exchange ticker (eCAS equity names are garbled),
+    so summary holding rows must surface ``symbol`` for equities — empty for MFs."""
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    equity = make_security(
+        security_type=SecurityType.EQUITY.value,
+        name="RELIANCE INDUSTRIES LIMITED EQUITY SHARES",
+        isin="INE002A01018",
+        symbol="RELIANCE",
+        exchange="NSE",
+    )
+    make_holding(investor=inv, security=mf, units=Decimal("100"), as_of_date=dt.date(2025, 6, 1))
+    make_holding(investor=inv, security=equity, units=Decimal("10"), as_of_date=dt.date(2025, 6, 1))
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 6, 1), nav=Decimal("75"))
+    NAVHistory.objects.create(security=equity, date=dt.date(2025, 6, 1), nav=Decimal("1400"))
+
+    body = client.get(f"/api/investors/{inv.id}/summary", {"as_of": "2025-06-01"}).json()
+
+    by_type = {h["security_type"]: h for h in body["holdings"]}
+    assert by_type["equity"]["symbol"] == "RELIANCE"
+    assert by_type["mf"]["symbol"] == ""
+
+
 def test_summary_breaks_allocation_down_by_amc_and_category(
     client, make_investor, make_security, make_holding
 ):

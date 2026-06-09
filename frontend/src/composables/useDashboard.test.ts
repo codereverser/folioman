@@ -54,6 +54,19 @@ const SUMMARY = {
       return_pct: 0.65,
       xirr: 0.21,
     },
+    {
+      security_id: 2,
+      name: 'RELIANCE INDUSTRIES LIMITED EQUITY SHARES',
+      security_type: 'equity',
+      symbol: 'RELIANCE',
+      units: '10',
+      value_inr: '14000',
+      invested_inr: '10000',
+      latest_nav: '1400',
+      return_pct: 0.4,
+      day_change_inr: '120',
+      day_change_pct: 0.0086,
+    },
   ],
 }
 // A leading all-zero point (before the first holding) that must be trimmed.
@@ -145,6 +158,24 @@ describe('useDashboard', () => {
     expect(fund.returnPct).toBeCloseTo(65)
     expect(fund.gain).toBe(2500) // value 7500 − invested 5000, for the movers strip
     expect(fund.integrity).toBe('full_history') // joined from the integrity store
+  })
+
+  it('maps equity holdings into the stocks list (ticker, price, avg cost, 1D)', async () => {
+    const { summary } = useDashboard(ref(1))
+    await flush()
+    await flush()
+
+    expect(summary.value.stocks).toHaveLength(1) // only equities; the MF stays out
+    expect(summary.value.stockTotal).toBe(14000)
+    const stock = summary.value.stocks[0]
+    expect(stock).toMatchObject({ securityId: 2, symbol: 'RELIANCE', units: 10, value: 14000 })
+    expect(stock.price).toBe(1400) // latest_nav = current price
+    expect(stock.avgCost).toBe(1000) // invested 10000 / 10 shares
+    expect(stock.gain).toBe(4000) // value 14000 − invested 10000
+    expect(stock.returnPct).toBeCloseTo(40)
+    expect(stock.dayChangeAmount).toBe(120)
+    expect(stock.dayChangePercent).toBeCloseTo(0.86)
+    expect(summary.value.funds).toHaveLength(1) // MF list unaffected
   })
 
   it('maps category + AMC allocation breakdowns into coloured slices', async () => {

@@ -1001,6 +1001,11 @@ export interface components {
             security_id: number;
             /** Security Type */
             security_type: string;
+            /**
+             * Symbol
+             * @default
+             */
+            symbol: string;
             /** Units */
             units: string;
             /** Value Inr */

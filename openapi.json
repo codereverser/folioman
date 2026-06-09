@@ -728,6 +728,11 @@
             "title": "Security Type",
             "type": "string"
           },
+          "symbol": {
+            "default": "",
+            "title": "Symbol",
+            "type": "string"
+          },
           "units": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Units",

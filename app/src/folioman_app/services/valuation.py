@@ -218,6 +218,7 @@ def _rollup(valuation, meta_by_security: dict, extras: dict[int, dict] | None = 
                 "security_id": sec_id,
                 "name": name,
                 "security_type": sec_type,
+                "symbol": row.security.symbol,
                 "amc": amc_name or "Other",
                 "category": category or "Other",
                 "units": row.units,

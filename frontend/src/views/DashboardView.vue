@@ -8,6 +8,7 @@ import IntegrityHealthCard from '@/components/IntegrityHealthCard.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import DashboardFunds from '@/views/dashboard/DashboardFunds.vue'
+import DashboardStocks from '@/views/dashboard/DashboardStocks.vue'
 import { useDashboard, type RangeKey } from '@/composables/useDashboard'
 import { useCountUp } from '@/composables/useCountUp'
 import { useRosterStore } from '@/stores/roster'
@@ -102,14 +103,17 @@ const allocationData = computed(() =>
 )
 
 // Asset-class tab from the route (deep-linkable): no segment = All, `/mf` = MF.
-const activeTab = computed<'all' | 'mf'>(() => (route.params.assetTab === 'mf' ? 'mf' : 'all'))
+const activeTab = computed<'all' | 'mf' | 'stocks'>(() => {
+  if (route.params.assetTab === 'mf') return 'mf'
+  if (route.params.assetTab === 'stocks') return 'stocks'
+  return 'all'
+})
 
 // "More" tab → a popover listing planned asset classes + a link to vote on what's
 // next (a GitHub Discussions poll). Keeps the tab strip tidy and frames these as
 // "planned · vote" rather than promising delivery.
 const POLL_URL = 'https://github.com/codereverser/folioman/discussions/52'
 const plannedAssets: { label: string; icon: string }[] = [
-  { label: 'Stocks', icon: 'pi pi-chart-bar' },
   { label: 'US stocks', icon: 'pi pi-globe' },
   { label: 'Gold', icon: 'pi pi-star' },
   { label: 'Crypto', icon: 'pi pi-bitcoin' },
@@ -117,7 +121,7 @@ const plannedAssets: { label: string; icon: string }[] = [
   { label: 'Real estate', icon: 'pi pi-home' },
 ]
 const moreOp = ref<InstanceType<typeof Popover>>()
-function tabTo(asset?: 'mf') {
+function tabTo(asset?: 'mf' | 'stocks') {
   return {
     name: 'dashboard',
     params: { investorId: investorId.value, ...(asset ? { assetTab: asset } : {}) },
@@ -215,6 +219,9 @@ function openScheme(securityId: number): void {
       >
       <RouterLink class="asset-tab" :class="{ active: activeTab === 'mf' }" :to="tabTo('mf')"
         >Mutual funds</RouterLink
+      >
+      <RouterLink class="asset-tab" :class="{ active: activeTab === 'stocks' }" :to="tabTo('stocks')"
+        >Stocks</RouterLink
       >
       <button
         type="button"
@@ -381,6 +388,13 @@ function openScheme(securityId: number): void {
       :by-amc="summary.mfByAmc"
       :funds="summary.funds"
       :total="summary.mfTotal"
+      @select="openScheme"
+    />
+
+    <DashboardStocks
+      v-else-if="activeTab === 'stocks'"
+      :stocks="summary.stocks"
+      :total="summary.stockTotal"
       @select="openScheme"
     />
   </section>
