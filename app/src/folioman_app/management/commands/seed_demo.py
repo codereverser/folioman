@@ -22,6 +22,8 @@ is passed (which wipes and rebuilds the demo data).
 
 from __future__ import annotations
 
+import bisect
+import contextlib
 import datetime as dt
 import math
 from decimal import ROUND_DOWN, Decimal
@@ -188,6 +190,42 @@ def _weekly_history(security, base: Decimal, drift: float, start: dt.date, end: 
     return len(rows)
 
 
+def _nav_history_fn(
+    security, base: Decimal, drift: float, start: dt.date, today: dt.date, *, real_navs: bool
+):
+    """Populate NAVHistory for ``security`` and return a ``nav_on(date) -> Decimal``
+    as-of lookup (the NAV on a date, else the most recent prior one).
+
+    Real mode pulls the fund's actual daily series from mfapi via the app's own
+    feed, so the seeded ledger and chart are authentic and blend seamlessly with
+    later scheduled fetches. Synthetic mode seeds a smooth weekly series — offline
+    and deterministic, for tests and fresh installs. Falls back to synthetic when a
+    real fetch yields nothing (offline, delisted scheme, or no amfi_code)."""
+    if real_navs and security.amfi_code:
+        from folioman_app.tasks.refresh_navs import backfill_nav_history
+
+        # Any feed/network failure falls through to the synthetic series below.
+        with contextlib.suppress(Exception):
+            backfill_nav_history(security, since=start)
+        rows = list(
+            NAVHistory.objects.filter(security=security, date__lte=today)
+            .order_by("date")
+            .values_list("date", "nav")
+        )
+        if rows:
+            dates = [r[0] for r in rows]
+            navs = [r[1] for r in rows]
+
+            def nav_on(on: dt.date) -> Decimal:
+                i = bisect.bisect_right(dates, on) - 1
+                return navs[i if i >= 0 else 0]
+
+            return nav_on
+    # Synthetic fallback: seed a weekly series and price off the smooth curve.
+    _weekly_history(security, base, drift, start, today)
+    return lambda on: _nav_on(base, drift, start, on)
+
+
 def _month_starts(start: dt.date, end: dt.date):
     """First-of-month dates in [start, end] (SIP installment dates)."""
     y, m = start.year, start.month
@@ -216,6 +254,15 @@ class Command(BaseCommand):
             "--reset",
             action="store_true",
             help="Wipe and rebuild the demo user's data (otherwise an existing demo is kept).",
+        )
+        parser.add_argument(
+            "--real-navs",
+            action="store_true",
+            help=(
+                "Pull each fund's actual NAV history from mfapi (needs network) so the "
+                "demo is fully authentic. Without it, a deterministic synthetic series is "
+                "used (offline, test-safe). Recommended for the hosted demo."
+            ),
         )
 
     def handle(self, *args, **opts):
@@ -246,7 +293,9 @@ class Command(BaseCommand):
 
         with db_transaction.atomic():
             family = Family.objects.create(owned_by=user, name="Sharma Family")
-            mf_inv, mf_secs = self._seed_mf_investor(user, family, start, today)
+            mf_inv, mf_secs = self._seed_mf_investor(
+                user, family, start, today, real_navs=opts["real_navs"]
+            )
             ecas_inv, ecas_secs = self._seed_ecas_investor(user, family, start, today)
 
         # Reconcile each investor (so integrity shows real statuses — full_history for
@@ -267,7 +316,7 @@ class Command(BaseCommand):
 
     # --- investor builders ----------------------------------------------------
 
-    def _seed_mf_investor(self, user, family, start: dt.date, today: dt.date):
+    def _seed_mf_investor(self, user, family, start: dt.date, today: dt.date, *, real_navs: bool):
         inv = Investor(owned_by=user, name="Arjun Sharma", email="arjun@example.com", family=family)
         inv.set_pan("ABCDE1234F")
         inv.save()
@@ -288,26 +337,21 @@ class Command(BaseCommand):
             folio = upsert_folio(
                 inv, CoreFolio(folio_type=FolioType.MF, number=f"DEMO{security.id:06d}")
             )
-            _weekly_history(security, base, drift, start, today)
+            # Real (mfapi) or synthetic NAV series + the per-date pricing function the
+            # SIP/redemption ledger is built from, so units reflect the day's actual NAV.
+            nav_on = _nav_history_fn(security, base, drift, start, today, real_navs=real_navs)
 
             # Lump-sum at inception, then monthly SIPs.
-            self._buy(inv, security, folio, start, start, base, drift, Decimal(sip) * 3)
+            self._buy(inv, security, folio, start, nav_on, Decimal(sip) * 3)
             for on in _month_starts(start, today):
-                self._buy(inv, security, folio, on, start, base, drift, Decimal(sip))
+                self._buy(inv, security, folio, on, nav_on, Decimal(sip))
 
-            # Partial redemptions per the schedule → realised gains/losses across FYs.
+            # Partial redemptions per the schedule → realised gains across FYs.
             redemption = _REDEMPTIONS.get(idx)
             if redemption:
                 days, fraction = redemption
                 self._redeem_partial(
-                    inv,
-                    security,
-                    folio,
-                    today - dt.timedelta(days=days),
-                    start,
-                    base,
-                    drift,
-                    fraction,
+                    inv, security, folio, today - dt.timedelta(days=days), nav_on, fraction
                 )
         return inv, securities
 
@@ -347,8 +391,8 @@ class Command(BaseCommand):
 
     # --- ledger helpers -------------------------------------------------------
 
-    def _buy(self, inv, security, folio, on, start, base, drift, amount: Decimal) -> None:
-        nav = _nav_on(base, drift, start, on)
+    def _buy(self, inv, security, folio, on, nav_on, amount: Decimal) -> None:
+        nav = nav_on(on)
         units = (amount / nav).quantize(_Q_UNITS, rounding=ROUND_DOWN)
         Transaction.objects.create(
             investor=inv,
@@ -364,16 +408,14 @@ class Command(BaseCommand):
             narration="SIP Installment" if amount < 20000 else "Lumpsum Purchase",
         )
 
-    def _redeem_partial(
-        self, inv, security, folio, on, start, base, drift, fraction: Decimal
-    ) -> None:
+    def _redeem_partial(self, inv, security, folio, on, nav_on, fraction: Decimal) -> None:
         held = sum(
             (t.units for t in inv.transactions.filter(security=security, date__lte=on)),
             Decimal("0"),
         )
         if held <= 0:
             return
-        nav = _nav_on(base, drift, start, on)
+        nav = nav_on(on)
         units = (held * fraction).quantize(_Q_UNITS, rounding=ROUND_DOWN)
         Transaction.objects.create(
             investor=inv,

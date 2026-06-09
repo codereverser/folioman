@@ -100,6 +100,36 @@ def test_seed_demo_is_idempotent_without_reset():
 
 
 @pytest.mark.django_db
+def test_seed_demo_real_navs_prices_from_fetched_history(monkeypatch):
+    # --real-navs reuses the app's mfapi feed; mock it to a flat real series so the
+    # test stays offline and we can prove the ledger is priced from fetched NAVs.
+    import datetime as dt
+    from decimal import Decimal
+
+    import folioman_app.tasks.refresh_navs as refresh_navs
+
+    def fake_backfill(security, *, since):
+        rows, d = [], since
+        while d <= dt.date.today():
+            rows.append(NAVHistory(security=security, date=d, nav=Decimal("100"), source="mfapi"))
+            d += dt.timedelta(days=1)
+        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
+        return len(rows)
+
+    monkeypatch.setattr(refresh_navs, "backfill_nav_history", fake_backfill)
+    call_command("seed_demo", username="demo", real_navs=True)
+
+    mf = Investor.objects.get(owned_by__username="demo", name="Arjun Sharma")
+    buy_navs = {
+        t.nav_or_price for t in Transaction.objects.filter(investor=mf, transaction_type="buy")
+    }
+    assert buy_navs == {Decimal("100")}  # every buy priced off the fetched series
+    # MF history is the fetched (mfapi) series — no synthetic 'demo' rows for funds.
+    assert NAVHistory.objects.filter(security__security_type="mf", source="mfapi").exists()
+    assert not NAVHistory.objects.filter(security__security_type="mf", source="demo").exists()
+
+
+@pytest.mark.django_db
 def test_seed_demo_reset_rebuilds_cleanly():
     call_command("seed_demo", username="demo")
     user = get_user_model().objects.get(username="demo")
