@@ -57,3 +57,32 @@ def test_fetch_quote_missing_price_field_returns_none():
 
     with _client(handler) as c:
         assert nse_bse.fetch_quote("RELIANCE", client=c) is None
+
+
+def test_cold_fetch_quote_warms_cookies_before_the_api_call(monkeypatch):
+    # A lone (clientless) call must prime the session via the get-quotes page
+    # before hitting /api/quote-equity — without it NSE answers 403 and every
+    # quote falls through to the rate-limited Yahoo fallback.
+    paths: list[str] = []
+
+    def handler(request):
+        paths.append(request.url.path)
+        if request.url.path == nse_bse._WARMUP_PATH:
+            return httpx.Response(200, text="ok")  # cookie-priming page
+        return httpx.Response(200, json={"priceInfo": {"lastPrice": 2850.0}})
+
+    real_client = httpx.Client
+
+    def fake_client(**kwargs):
+        return real_client(
+            transport=httpx.MockTransport(handler),
+            base_url=nse_bse._NSE_BASE,
+            follow_redirects=True,
+        )
+
+    monkeypatch.setattr(httpx, "Client", fake_client)
+    quote = nse_bse.fetch_quote("RELIANCE")  # no client → warms its own
+
+    assert quote is not None and quote.price == Decimal("2850.0")
+    assert paths[0] == nse_bse._WARMUP_PATH  # warmup happened first
+    assert paths[1].endswith("/api/quote-equity")
