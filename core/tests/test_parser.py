@@ -115,15 +115,61 @@ def test_overlong_scheme_name_rejects_statement_without_leaking_name():
     assert secret not in msg  # the offending value (a holding name) is never echoed
 
 
-def test_scheme_without_identifier_rejects_whole_statement():
-    secret = "PRIVATEFUNDLABEL"  # invented; never echoed back in the error
-    cas = _cas_named(secret, isin=None, amfi=None)
-    with pytest.raises(parser.CASParseError) as ei:
-        parser.map_cas_data(cas)
-    msg = str(ei.value)
-    assert "scheme 1 of folio 1" in msg
-    assert "amfi" in msg or "isin" in msg  # names the missing-identifier rule
-    assert secret not in msg  # no PII from the scheme name
+def test_scheme_without_identifier_is_skipped_not_rejected():
+    # A scheme with no ISIN/AMFI (matured/closed/segregated/unclaimed line) can't
+    # be mapped, but it must NOT sink the whole statement — it's skipped + counted.
+    cas = _cas_named("PRIVATEFUNDLABEL", isin=None, amfi=None)
+    stmt = parser.map_cas_data(cas)
+    assert stmt.schemes == []
+    assert stmt.skipped_unidentified == 1
+
+
+def test_identified_schemes_import_alongside_a_skipped_one():
+    # One valid scheme + one identifier-less scheme in the same folio: the valid
+    # one imports, the other is skipped, and the statement still succeeds.
+    val = SchemeValuation(
+        date=date(2025, 3, 31), nav=Decimal("25"), cost=Decimal("400"), value=Decimal("1000")
+    )
+
+    def _scheme(name, isin, amfi):
+        return Scheme(
+            scheme=name,
+            advisor="",
+            rta_code="X",
+            rta="CAMS",
+            type=FundType.EQUITY,
+            isin=isin,
+            amfi=amfi,
+            nominees=[],
+            open=Decimal("0"),
+            close=Decimal("0"),
+            close_calculated=Decimal("0"),
+            valuation=val,
+            transactions=[_txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000")],
+        )
+
+    folio = Folio(
+        folio="12345/67",
+        amc="Test MF",
+        PAN="ABCDE1234F",
+        KYC="OK",
+        PANKYC="OK",
+        schemes=[
+            _scheme("Good Fund", "INF109K01VQ4", "122639"),
+            _scheme("Matured FMP - no id", None, None),
+        ],
+    )
+    cas = CASData(
+        statement_period=StatementPeriod(from_="2022-01-01", to="2025-03-31"),
+        folios=[folio],
+        investor_info=InvestorInfo(name="Sample", email="s@example.com", address="a", mobile="9"),
+        cas_type=CASFileType.DETAILED,
+        file_type=FileType.CAMS,
+    )
+    stmt = parser.map_cas_data(cas)
+    assert len(stmt.schemes) == 1
+    assert stmt.schemes[0].security.isin == "INF109K01VQ4"
+    assert stmt.skipped_unidentified == 1
 
 
 def test_map_cas_data_structure_and_equity_flag():

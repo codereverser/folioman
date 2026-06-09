@@ -264,6 +264,9 @@ class CasPreviewOut(Schema):
     # MF schemes that'd land as net-worth-only (no transactions, or a non-zero
     # opening with no earlier history) — the "re-download a complete CAS" signal.
     snapshot_scheme_count: int = 0
+    # MF schemes dropped because they carry no ISIN/AMFI code (matured/closed/
+    # segregated/unclaimed lines) — skipped rather than failing the whole import.
+    skipped_unidentified: int = 0
 
 
 class ImportJobOut(Schema):

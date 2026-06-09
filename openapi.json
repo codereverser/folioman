@@ -269,6 +269,11 @@
             "title": "Scheme Count",
             "type": "integer"
           },
+          "skipped_unidentified": {
+            "default": 0,
+            "title": "Skipped Unidentified",
+            "type": "integer"
+          },
           "snapshot_scheme_count": {
             "default": 0,
             "title": "Snapshot Scheme Count",

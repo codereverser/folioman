@@ -809,6 +809,11 @@ export interface components {
              */
             scheme_count: number;
             /**
+             * Skipped Unidentified
+             * @default 0
+             */
+            skipped_unidentified: number;
+            /**
              * Snapshot Scheme Count
              * @default 0
              */

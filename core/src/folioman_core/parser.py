@@ -162,6 +162,15 @@ def _scheme_valuation(
     )
 
 
+def _scheme_has_identifier(scheme: object) -> bool:
+    """True if the scheme carries an ISIN or AMFI code — the stable keys folioman
+    needs to dedup and price a security. Schemes with neither (matured/closed/
+    segregated/unclaimed-redemption lines) can't be mapped and are skipped."""
+    return bool((getattr(scheme, "isin", None) or "").strip()) or bool(
+        (getattr(scheme, "amfi", None) or "").strip()
+    )
+
+
 def _map_security(scheme: object, amc: str | None) -> Security:
     # casparser stores Scheme.type as its enum *value* (a str); normalise either form.
     fund_type = getattr(scheme.type, "value", scheme.type) or "UNKNOWN"
@@ -324,9 +333,18 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
     fund name or PAN — so it's safe to log, store on the job, and paste into a bug.
     """
     blocks: list[MfCasSchemeBlock] = []
+    skipped_unidentified = 0
     for folio_pos, folio in enumerate(cas.folios, start=1):
         mapped_folio = _map_folio(folio)
         for scheme_pos, scheme in enumerate(folio.schemes, start=1):
+            if not _scheme_has_identifier(scheme):
+                # No ISIN and no AMFI code: a matured/closed/segregated/unclaimed
+                # scheme (or a casparser artifact). We can't form a Security to
+                # dedup or price it, so skip just this scheme rather than fail the
+                # whole statement — a modern CAS always carries an ISIN for any
+                # active holding, so this only ever drops the dormant tail.
+                skipped_unidentified += 1
+                continue
             try:
                 # Net out REVERSAL rows against the transactions they void before
                 # building the ledger (a reversal isn't a real buy or sell).
@@ -373,6 +391,7 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
         statement_from=_to_date(period.from_),
         statement_to=_to_date(period.to),
         schemes=blocks,
+        skipped_unidentified=skipped_unidentified,
     )
 
 

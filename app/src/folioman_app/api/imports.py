@@ -69,6 +69,7 @@ def _preview_stats(parsed) -> dict:
             "holding_count": sum(len(a.holdings) for a in ecas.accounts),
             "full_history": False,  # a depository snapshot, never a cost-basis ledger
             "snapshot_scheme_count": 0,
+            "skipped_unidentified": 0,
         }
     mf = parsed.mf
     transactions = sum(len(s.transactions) for s in mf.schemes)
@@ -87,6 +88,7 @@ def _preview_stats(parsed) -> dict:
         "holding_count": 0,
         "full_history": transactions > 0 and snapshot == 0,
         "snapshot_scheme_count": snapshot,
+        "skipped_unidentified": mf.skipped_unidentified,
     }
 
 

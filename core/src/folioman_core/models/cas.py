@@ -91,6 +91,11 @@ class MfCasStatement(DomainModel):
     statement_to: date | None = None
     file_hash: str = Field(default="", max_length=128)
     schemes: list[MfCasSchemeBlock] = Field(default_factory=list)
+    # Schemes dropped from the import because they carry no stable identifier
+    # (no ISIN or AMFI code) — matured/closed/segregated/unclaimed-redemption
+    # lines. Surfaced as a count so the importer can flag them without silently
+    # hiding the gap; never enough of a holding to value or build a ledger from.
+    skipped_unidentified: int = 0
 
 
 class EcasHoldingLine(DomainModel):
