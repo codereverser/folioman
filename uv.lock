@@ -73,7 +73,7 @@ wheels = [
 [[package]]
 name = "casparser"
 version = "1.0.1"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/codereverser/casparser.git?branch=main#34266c99453018f35083003b4d4624b002136ba0" }
 dependencies = [
     { name = "casparser-isin" },
     { name = "click" },
@@ -82,10 +82,6 @@ dependencies = [
     { name = "pypdfium2" },
     { name = "python-dateutil" },
     { name = "rich" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/81/fb/1e5cbee5914f0d9be4693ba0bd1da5942a4edd8fba8f2a79732ffd0b1dbb/casparser-1.0.1.tar.gz", hash = "sha256:5ad01d3f57ccf85a67727b4f41db543af8a6d4fabcf088f48e9871e38d97ecf4", size = 67818, upload-time = "2026-06-09T11:29:18.073Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d5/cd/c814cd73a3d583b849b5b65655af03ad87bc8e0873079bd213133cfb885f/casparser-1.0.1-py3-none-any.whl", hash = "sha256:2ef888d668f3dff5c7f21de1f2378bb6daea0f1df9cf534288e55ae21af1bdd3", size = 78374, upload-time = "2026-06-09T11:29:18.927Z" },
 ]
 
 [[package]]
@@ -453,7 +449,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "casparser", specifier = ">=1.0.1" },
+    { name = "casparser", git = "https://github.com/codereverser/casparser.git?branch=main" },
     { name = "casparser-isin", specifier = ">=2026.6.9" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.7" },
