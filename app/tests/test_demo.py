@@ -37,7 +37,7 @@ def test_seed_demo_builds_rich_v1_portfolio():
     assert txns.filter(transaction_type="buy").exists()
     assert txns.filter(transaction_type="sell").exists()  # the partial redemption
 
-    # eCAS investor: equity/bond snapshots across two demat accounts.
+    # eCAS investor: NSE-listed equity snapshots across two demat accounts.
     ecas = investors.get(name="Priya Sharma")
     holdings = Holding.objects.filter(investor=ecas)
     assert holdings.count() == 5

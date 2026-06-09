@@ -4,7 +4,7 @@ Loads a small family with:
 
 - an **MF investor** — four mutual-fund schemes with ~5 years of monthly SIPs, a
   lump-sum, and one partial redemption (real ``Transaction`` ledger), and
-- an **eCAS investor** — equity + bond **snapshots** across two CDSL demat
+- an **eCAS investor** — NSE-listed equity **snapshots** across two CDSL demat
   accounts (``Holding`` rows, ``source=ecas``), mirroring a multi-account eCAS.
 
 Only the v1 asset classes ship here — mutual funds and equities/bonds. FD ladders
@@ -114,8 +114,8 @@ _FUNDS = [
     ),
 ]
 
-# Real equities + a Sovereign Gold Bond, held as eCAS snapshots across two demat
-# accounts. ISINs are from the same reference DB.
+# Real NSE-listed equities, held as eCAS snapshots across two demat accounts.
+# All carry live tickers so the price feed values them off real NSE prices.
 #   (name, symbol, isin, base price, annual drift, units, demat account index)
 _EQUITY_HOLDINGS = [
     (
@@ -138,15 +138,7 @@ _EQUITY_HOLDINGS = [
         1,
     ),
     ("HDFC Bank Ltd", "HDFCBANK", "INE040A01034", Decimal("1350"), 0.12, Decimal("90"), 1),
-    (
-        "Sovereign Gold Bond 2.50% (Govt of India)",
-        "SGB",
-        "IN0020160076",
-        Decimal("3000"),
-        0.09,
-        Decimal("40"),
-        1,
-    ),
+    ("Larsen & Toubro Ltd", "LT", "INE018A01030", Decimal("1500"), 0.19, Decimal("25"), 1),
 ]
 
 _DEMAT_ACCOUNTS = [
@@ -363,9 +355,10 @@ class Command(BaseCommand):
         as_of = today - dt.timedelta(days=today.weekday() + 1)  # last completed week
         securities = []
         for name, symbol, isin, base, drift, units, acct in _EQUITY_HOLDINGS:
-            stype = SecurityType.BOND if symbol == "SGB" else SecurityType.EQUITY
             security = upsert_security(
-                CoreSecurity(type=stype, name=name, symbol=symbol, isin=isin, currency="INR")
+                CoreSecurity(
+                    type=SecurityType.EQUITY, name=name, symbol=symbol, isin=isin, currency="INR"
+                )
             )
             securities.append(security)
             number, broker = _DEMAT_ACCOUNTS[acct]
