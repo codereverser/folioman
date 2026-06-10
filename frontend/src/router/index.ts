@@ -76,7 +76,7 @@ const routes: RouteRecordRaw[] = [
     // All (cross-asset), `/mf` = the mutual-fund breakdown. The `(mf)` constraint
     // keeps the `dashboard` route name working for plain `{investorId}` links and
     // rejects unknown asset segments. Future asset classes widen the pattern.
-    path: '/investors/:investorId/dashboard/:assetTab(mf)?',
+    path: '/investors/:investorId/dashboard/:assetTab(mf|stocks)?',
     name: 'dashboard',
     component: DashboardView,
   },
@@ -115,9 +115,9 @@ const routes: RouteRecordRaw[] = [
     component: FamilyView,
   },
   {
-    // Optional ":tab" selects a Settings sub-tab (only "jobs" today); bare /settings
-    // is the general tab. Deep-linkable so other screens can point at /settings/jobs.
-    path: '/settings/:tab(jobs)?',
+    // Optional ":tab" selects a Settings sub-tab; bare /settings is the general
+    // tab. Deep-linkable so other screens can point at /settings/jobs or /settings/navs.
+    path: '/settings/:tab(jobs|navs)?',
     name: 'settings',
     component: () => import('@/views/SettingsView.vue'),
   },

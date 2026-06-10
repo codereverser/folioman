@@ -92,6 +92,7 @@ class HoldingValueRow(Schema):
     security_id: int
     name: str
     security_type: str
+    symbol: str = ""  # exchange ticker for equities/ETFs/bonds; "" for MFs
     amc: str = ""  # fund house — groups the per-fund breakdown
     category: str = ""  # equity / debt — groups the per-fund breakdown
     units: Decimal
@@ -254,15 +255,21 @@ class CasPreviewOut(Schema):
     # Content preview (so a Summary/partial CAS is caught before importing):
     from_date: date | None = None  # statement period (MF CAS)
     to_date: date | None = None  # statement period / eCAS statement date
-    scheme_count: int = 0  # MF schemes, or eCAS demat accounts
+    scheme_count: int = 0  # MF schemes, or eCAS demat accounts (real ones only)
     transaction_count: int = 0  # MF transaction rows (0 for eCAS)
     holding_count: int = 0  # eCAS holdings (0 for MF CAS)
+    # RTA folios in the eCAS "Mutual Fund Folios" section — listed alongside
+    # demat accounts in the statement but not one of them (0 for MF CAS).
+    mf_folio_count: int = 0
     # True only for a Detailed + since-inception MF CAS with no snapshot-only
     # schemes — i.e. it can build a full cost-basis ledger. eCAS is always False.
     full_history: bool = False
     # MF schemes that'd land as net-worth-only (no transactions, or a non-zero
     # opening with no earlier history) — the "re-download a complete CAS" signal.
     snapshot_scheme_count: int = 0
+    # MF schemes dropped because they carry no ISIN/AMFI code (matured/closed/
+    # segregated/unclaimed lines) — skipped rather than failing the whole import.
+    skipped_unidentified: int = 0
 
 
 class ImportJobOut(Schema):
@@ -322,6 +329,34 @@ class JobsOverviewOut(Schema):
 
     imports: list[ImportJobSummaryOut]
     valuations: list[ValuationDiagnosticsOut]
+
+
+class NavSecurityFreshnessOut(Schema):
+    """One tracked security's NAV currency for the freshness panel."""
+
+    security_id: int
+    name: str
+    security_type: str
+    identifier: str  # symbol / ISIN / AMFI code — display identity
+    feed_code: str  # what the refresh queries; "" = nothing to query
+    latest_nav_date: date | None = None
+    first_nav_date: date | None = None
+    points: int = 0  # stored history depth
+    lag_trading_days: int | None = None  # behind the last trading day; None = unpriced
+    status: str  # fresh | grace | stale | pending | closed | no_feed
+
+
+class NavFreshnessOut(Schema):
+    """Settings 'NAV freshness' panel: per-security currency + refresh schedule.
+
+    Read-only — refreshes run on the scheduler (or ``manage.py refresh_navs``);
+    the panel shows when prices were last written and when the next pass runs.
+    """
+
+    as_of: date  # the last *completed* trading day lags are measured against
+    securities: list[NavSecurityFreshnessOut]
+    last_refreshed_at: datetime | None = None  # newest NAVHistory write (any source)
+    next_refresh_at: datetime  # next scheduled re-fetch pass (absolute instant)
 
 
 class TransactionIn(Schema):

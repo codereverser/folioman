@@ -40,6 +40,27 @@ def _local_auth_mode(settings):
     settings.FOLIOMAN_API_AUTH = "local"
 
 
+@pytest.fixture(autouse=True)
+def _no_live_nse(monkeypatch):
+    """Equity pricing is NSE-first off the security-wise history feed (see
+    refresh_navs._fetch_point / _fetch_equity_history). Default that feed to 'no
+    data' so equity tests deterministically fall through to their mocked Yahoo feed
+    and never make a live NSE call; tests exercising the NSE-first path override it.
+
+    The shared-client constructors are stubbed too: ``warmed_client`` fires a real
+    warm-up request on creation, and none of the feed-level mocks need a client."""
+    from folioman_core.price_feeds import mfapi, nse_history, yfinance_feed
+
+    class _DummyClient:
+        def close(self):
+            pass
+
+    monkeypatch.setattr(nse_history, "fetch_history", lambda *_a, **_k: None)
+    monkeypatch.setattr(nse_history, "warmed_client", lambda: _DummyClient())
+    monkeypatch.setattr(mfapi, "shared_client", lambda: _DummyClient())
+    monkeypatch.setattr(yfinance_feed, "shared_client", lambda: _DummyClient())
+
+
 @pytest.fixture
 def user(db):
     """The single local advisor user — the one local-mode API auth resolves, so

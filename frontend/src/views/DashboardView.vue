@@ -8,7 +8,9 @@ import IntegrityHealthCard from '@/components/IntegrityHealthCard.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import DashboardFunds from '@/views/dashboard/DashboardFunds.vue'
+import DashboardStocks from '@/views/dashboard/DashboardStocks.vue'
 import { useDashboard, type RangeKey } from '@/composables/useDashboard'
+import { RANGES } from '@/utils/portfolio'
 import { useCountUp } from '@/composables/useCountUp'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
@@ -58,6 +60,9 @@ const investorName = computed(() => roster.investorName(investorId.value) ?? 'In
 // Live summary + net-worth series; the range toggle re-fetches the series.
 const { summary, rollup, range, setRange, valuationReady } = useDashboard(investorId)
 
+// Axis tick density follows the range's sampling (see RANGES).
+const valueGranularity = computed(() => RANGES[range.value].granularity)
+
 // When prices are stale on open, the launch catch-up is already refreshing them in
 // the background — tell the user once so the wait makes sense (values update on the
 // next tick). Guarded in the store against re-toasting across investor switches.
@@ -72,6 +77,7 @@ const integrityTo = computed(() => ({
 }))
 
 const ranges: { label: string; value: RangeKey }[] = [
+  { label: '1M', value: '1M' },
   { label: '3M', value: '3M' },
   { label: '6M', value: '6M' },
   { label: '1Y', value: '1Y' },
@@ -102,14 +108,17 @@ const allocationData = computed(() =>
 )
 
 // Asset-class tab from the route (deep-linkable): no segment = All, `/mf` = MF.
-const activeTab = computed<'all' | 'mf'>(() => (route.params.assetTab === 'mf' ? 'mf' : 'all'))
+const activeTab = computed<'all' | 'mf' | 'stocks'>(() => {
+  if (route.params.assetTab === 'mf') return 'mf'
+  if (route.params.assetTab === 'stocks') return 'stocks'
+  return 'all'
+})
 
 // "More" tab → a popover listing planned asset classes + a link to vote on what's
 // next (a GitHub Discussions poll). Keeps the tab strip tidy and frames these as
 // "planned · vote" rather than promising delivery.
 const POLL_URL = 'https://github.com/codereverser/folioman/discussions/52'
 const plannedAssets: { label: string; icon: string }[] = [
-  { label: 'Stocks', icon: 'pi pi-chart-bar' },
   { label: 'US stocks', icon: 'pi pi-globe' },
   { label: 'Gold', icon: 'pi pi-star' },
   { label: 'Crypto', icon: 'pi pi-bitcoin' },
@@ -117,7 +126,7 @@ const plannedAssets: { label: string; icon: string }[] = [
   { label: 'Real estate', icon: 'pi pi-home' },
 ]
 const moreOp = ref<InstanceType<typeof Popover>>()
-function tabTo(asset?: 'mf') {
+function tabTo(asset?: 'mf' | 'stocks') {
   return {
     name: 'dashboard',
     params: { investorId: investorId.value, ...(asset ? { assetTab: asset } : {}) },
@@ -151,9 +160,14 @@ function openScheme(securityId: number): void {
         <h1>Dashboard</h1>
         <p class="sub">
           {{ investorName }} ·
-          <span v-if="summary.navsStale" class="stale-navs" title="Prices haven't refreshed recently">
+          <RouterLink
+            v-if="summary.navsStale"
+            class="stale-navs"
+            :to="{ name: 'settings', params: { tab: 'navs' } }"
+            title="Prices haven't refreshed recently — see per-security freshness"
+          >
             <i class="pi pi-exclamation-triangle" aria-hidden="true" /> NAVs as of {{ summary.navsAsOf }}
-          </span>
+          </RouterLink>
           <template v-else>{{ summary.asOf }}</template>
         </p>
       </div>
@@ -215,6 +229,9 @@ function openScheme(securityId: number): void {
       >
       <RouterLink class="asset-tab" :class="{ active: activeTab === 'mf' }" :to="tabTo('mf')"
         >Mutual funds</RouterLink
+      >
+      <RouterLink class="asset-tab" :class="{ active: activeTab === 'stocks' }" :to="tabTo('stocks')"
+        >Stocks</RouterLink
       >
       <button
         type="button"
@@ -287,9 +304,16 @@ function openScheme(securityId: number): void {
           <p class="chart-progress">
             Portfolio valuation in progress — refresh in a bit. Showing values as of
             your latest statement meanwhile.
+            <RouterLink class="navs-link" :to="{ name: 'settings', params: { tab: 'navs' } }"
+              >Check NAV freshness →</RouterLink
+            >
           </p>
         </template>
-        <PortfolioValueChart v-else-if="loadCharts" :data="summary.valueSeries" />
+        <PortfolioValueChart
+          v-else-if="loadCharts"
+          :data="summary.valueSeries"
+          :granularity="valueGranularity"
+        />
         <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
       </article>
 
@@ -383,6 +407,13 @@ function openScheme(securityId: number): void {
       :total="summary.mfTotal"
       @select="openScheme"
     />
+
+    <DashboardStocks
+      v-else-if="activeTab === 'stocks'"
+      :stocks="summary.stocks"
+      :total="summary.stockTotal"
+      @select="openScheme"
+    />
   </section>
 </template>
 
@@ -410,6 +441,10 @@ function openScheme(securityId: number): void {
 .page-head .sub .stale-navs {
   color: var(--p-amber-600, #d97706);
   font-weight: 600;
+  text-decoration: none;
+}
+.page-head .sub .stale-navs:hover {
+  text-decoration: underline;
 }
 .page-head .sub .stale-navs .pi {
   font-size: 0.75rem;
@@ -541,6 +576,15 @@ function openScheme(securityId: number): void {
   margin: var(--fm-space-2) 0 0;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
+}
+.chart-progress .navs-link {
+  color: var(--p-primary-color);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.chart-progress .navs-link:hover {
+  text-decoration: underline;
 }
 .table-placeholder {
   height: 12rem;

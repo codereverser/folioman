@@ -11,7 +11,7 @@ balance accumulates, so units/amounts are taken as magnitudes here.
 from __future__ import annotations
 
 import io
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from decimal import Decimal
 
 import casparser
@@ -61,9 +61,16 @@ _DIVIDEND_TXNS = frozenset({CTxn.DIVIDEND_PAYOUT})
 # Charges / no unit impact — dropped from the ledger view (casparser surfaces
 # STT and stamp duty separately in its 112A).
 _SKIP_TXNS = frozenset({CTxn.STT_TAX, CTxn.STAMP_DUTY_TAX, CTxn.TDS_TAX, CTxn.MISC, CTxn.UNKNOWN})
-# Rare, unit-affecting, ambiguous to map 1:1 — fail loud rather than silently
-# corrupt the unit balance. Tracked as a v1 limitation (reversals/segregation).
+# Unit-affecting but not a plain buy/sell. A REVERSAL voids an earlier row and
+# is netted out against it before mapping (see ``_cancel_reversals``); only an
+# *unpaired* reversal — one whose original isn't in this statement's window —
+# reaches ``_map_line`` and fails loud (→ snapshot fallback). SEGREGATION
+# (side-pocketing into a separate portfolio) stays unsupported. Failing loud
+# beats silently corrupting the unit balance / cost basis.
 _UNSUPPORTED_TXNS = frozenset({CTxn.REVERSAL, CTxn.SEGREGATION})
+# Buy/sell rows a reversal can void (the only rows that move units 1:1).
+_REVERSIBLE_TXNS = _BUY_TXNS | _SELL_TXNS
+_PAIR_TOLERANCE = Decimal("0.0001")
 
 _TYPE_MAP: dict[CTxn, TransactionType] = (
     dict.fromkeys(_BUY_TXNS, TransactionType.BUY)
@@ -96,6 +103,18 @@ def _map_line(
     if mapped is None:
         msg = f"unmapped casparser transaction type {ctype.value!r}"
         raise UnsupportedCASTransaction(msg)
+    units, nav = txn.units, txn.nav
+    if mapped is TransactionType.DIVIDEND:
+        # A dividend *payout* is a cash event: casparser carries no units or NAV
+        # for it (both ``None``). Keep the cash ``amount`` as income and zero the
+        # unit/NAV fields — FIFO treats DIVIDEND as a no-op on the lot balance.
+        units = units if units is not None else _ZERO
+        nav = nav if nav is not None else _ZERO
+    elif units is None or nav is None:
+        # A buy/sell with no units or NAV can't form a cost-basis lot; failing
+        # loud (→ snapshot) beats minting a phantom zero-cost lot.
+        msg = f"{ctype.value!r} row is missing units/NAV — cannot build a tax lot"
+        raise UnsupportedCASTransaction(msg)
     # casparser model: stamp duty rides with the *buy* (per-lot) and is pro-rated
     # to each disposal as a transfer expense. STT rides with the *sell* and is
     # pro-rated by consumed units. Both flow into col 12 of Schedule 112A and
@@ -107,8 +126,8 @@ def _map_line(
     return MfCasLineItem(
         date=txn.date,
         transaction_type=mapped,
-        units=abs(txn.units) if txn.units is not None else _ZERO,
-        nav=txn.nav if txn.nav is not None else _ZERO,
+        units=abs(units),
+        nav=nav,
         amount=_abs_or_none(txn.amount),
         fees=fees,
         stamp_duty=stamp_duty,
@@ -140,6 +159,15 @@ def _scheme_valuation(
         _to_decimal(getattr(val, "value", None)),
         _to_decimal(getattr(val, "cost", None)),
         _to_date(getattr(val, "date", None)),
+    )
+
+
+def _scheme_has_identifier(scheme: object) -> bool:
+    """True if the scheme carries an ISIN or AMFI code — the stable keys folioman
+    needs to dedup and price a security. Schemes with neither (matured/closed/
+    segregated/unclaimed-redemption lines) can't be mapped and are skipped."""
+    return bool((getattr(scheme, "isin", None) or "").strip()) or bool(
+        (getattr(scheme, "amfi", None) or "").strip()
     )
 
 
@@ -197,6 +225,87 @@ def _collect_per_index_charges(scheme_txns) -> tuple[dict, dict]:
     return stt_for_idx, stamp_for_idx
 
 
+def _close(a: Decimal | None, b: Decimal | None) -> bool:
+    """True iff ``a ≈ b`` within tolerance. ``None`` on either side never matches."""
+    if a is None or b is None:
+        return False
+    return abs(a - b) <= _PAIR_TOLERANCE
+
+
+def _opposite(a: Decimal | None, b: Decimal | None) -> bool:
+    """True iff ``a ≈ -b`` within tolerance. ``None`` on either side never matches."""
+    if a is None or b is None:
+        return False
+    return abs(a + b) <= _PAIR_TOLERANCE
+
+
+def _reversal_match(scheme_txns: Sequence, j: int, dropped: set[int]) -> int | None:
+    """Index of the buy/sell that the REVERSAL at ``j`` voids, or ``None``.
+
+    A reversal carries the **exact date and NAV** of the row it cancels — true for
+    every reversal across the sample CAS corpus — so the pair key is: equal and
+    opposite units, same date, same NAV. That triple is strong enough that a
+    coincidental same-magnitude SIP can't be mistaken for the original (it would
+    need the same date *and* NAV too). The RTA may list the reversal either before
+    or after its original, so we search outward in both directions and take the
+    nearest not-yet-paired match. No match (e.g. the original is in a prior
+    statement window) → ``None`` → the reversal stays and the scheme is snapshotted.
+    """
+    rev = scheme_txns[j]
+    rev_units = getattr(rev, "units", None)
+    if rev_units is None:
+        return None
+    n = len(scheme_txns)
+    for dist in range(1, n):  # widening radius: nearest match wins, ties prefer earlier
+        for i in (j - dist, j + dist):
+            if i < 0 or i >= n or i in dropped:
+                continue
+            cand = scheme_txns[i]
+            if cand.type not in _REVERSIBLE_TXNS:
+                continue
+            if (
+                _opposite(getattr(cand, "units", None), rev_units)
+                and cand.date == rev.date
+                and _close(getattr(cand, "nav", None), rev.nav)
+            ):
+                return i
+    return None
+
+
+def _cancel_reversals(scheme_txns: Sequence) -> list:
+    """Drop each REVERSAL row together with the transaction it voids.
+
+    A reversal undoes an earlier transaction — a bounced/returned purchase, or a
+    reversed redemption — and the statement's closing balance already excludes
+    it. Mapping a reversal to a SELL would book a phantom capital gain (FIFO
+    would consume the wrong, oldest lot); mapping it to a BUY would mint a phantom
+    lot. The tax-correct treatment is that the voided pair simply never happened,
+    so we remove both rows: FIFO then replays the surviving rows with the
+    original lots' cost basis and acquisition dates intact, and no spurious
+    disposal.
+
+    Non-reversal rows are returned untouched and in their original order, so the
+    positional STT/stamp pairing in ``_collect_per_index_charges`` still lines up.
+    An *unpaired* reversal (its original isn't in this window) is left in place so
+    ``_map_line`` raises ``UnsupportedCASTransaction`` and the scheme is recorded
+    as a snapshot instead of a (would-be-wrong) tax ledger.
+    """
+    reversal_idxs = [
+        i for i, t in enumerate(scheme_txns) if getattr(t, "type", None) is CTxn.REVERSAL
+    ]
+    if not reversal_idxs:
+        return list(scheme_txns)
+
+    dropped: set[int] = set()
+    for j in reversal_idxs:
+        match = _reversal_match(scheme_txns, j, dropped)
+        if match is not None:
+            dropped.update((match, j))
+    if not dropped:
+        return list(scheme_txns)
+    return [t for k, t in enumerate(scheme_txns) if k not in dropped]
+
+
 def _scheme_map_reason(exc: Exception) -> str:
     """A PII-free reason for a scheme-mapping failure.
 
@@ -224,16 +333,28 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
     fund name or PAN — so it's safe to log, store on the job, and paste into a bug.
     """
     blocks: list[MfCasSchemeBlock] = []
+    skipped_unidentified = 0
     for folio_pos, folio in enumerate(cas.folios, start=1):
         mapped_folio = _map_folio(folio)
         for scheme_pos, scheme in enumerate(folio.schemes, start=1):
+            if not _scheme_has_identifier(scheme):
+                # No ISIN and no AMFI code: a matured/closed/segregated/unclaimed
+                # scheme (or a casparser artifact). We can't form a Security to
+                # dedup or price it, so skip just this scheme rather than fail the
+                # whole statement — a modern CAS always carries an ISIN for any
+                # active holding, so this only ever drops the dormant tail.
+                skipped_unidentified += 1
+                continue
             try:
-                stt_for_idx, stamp_for_idx = _collect_per_index_charges(scheme.transactions)
+                # Net out REVERSAL rows against the transactions they void before
+                # building the ledger (a reversal isn't a real buy or sell).
+                scheme_txns = _cancel_reversals(scheme.transactions)
+                stt_for_idx, stamp_for_idx = _collect_per_index_charges(scheme_txns)
                 lines = [
                     li
                     for li in (
                         _map_line(t, i, stt_for_idx=stt_for_idx, stamp_for_idx=stamp_for_idx)
-                        for i, t in enumerate(scheme.transactions)
+                        for i, t in enumerate(scheme_txns)
                     )
                     if li is not None
                 ]
@@ -287,6 +408,7 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
         statement_from=_to_date(period.from_),
         statement_to=_to_date(period.to),
         schemes=blocks,
+        skipped_unidentified=skipped_unidentified,
     )
 
 

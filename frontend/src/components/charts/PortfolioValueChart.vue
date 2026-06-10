@@ -4,7 +4,7 @@ import VChart from 'vue-echarts'
 import type { EChartsOption } from 'echarts'
 import '@/charts/echarts' // registers the tree-shaken ECharts modules (side-effect)
 import { useChartTokens } from '@/charts/useChartTokens'
-import { formatInr, formatMonthYear } from '@/utils/format'
+import { formatInr, formatDate, formatDayMonth, formatMonthYear } from '@/utils/format'
 
 export interface ValuePoint {
   date: string // ISO date
@@ -12,9 +12,18 @@ export interface ValuePoint {
   invested: number
 }
 
-const props = defineProps<{ data: ValuePoint[] }>()
+const props = withDefaults(
+  defineProps<{ data: ValuePoint[]; granularity?: 'daily' | 'weekly' | 'monthly' }>(),
+  { granularity: 'monthly' },
+)
 
 const tokens = useChartTokens()
+
+// Axis ticks match the sampling: day-level windows read "30 May", multi-year
+// monthly windows read "May 2025". hideOverlap thins whatever doesn't fit.
+const axisLabel = computed(() =>
+  props.granularity === 'monthly' ? formatMonthYear : formatDayMonth,
+)
 
 const option = computed<EChartsOption>(() => ({
   tooltip: {
@@ -22,7 +31,8 @@ const option = computed<EChartsOption>(() => ({
     backgroundColor: tokens.value.surface,
     borderColor: tokens.value.border,
     textStyle: { color: tokens.value.text },
-    // Month-year header (matches the axis); exact rupees on hover for inspection.
+    // Full date header (the axis shows month-year; hover reveals the exact day)
+    // with exact rupees for inspection.
     formatter: (params) => {
       const rows = params as unknown as {
         axisValue: string
@@ -31,7 +41,7 @@ const option = computed<EChartsOption>(() => ({
         value: number
       }[]
       if (!rows.length) return ''
-      const header = formatMonthYear(rows[0].axisValue)
+      const header = formatDate(rows[0].axisValue)
       const body = rows
         .map((r) => `${r.marker} ${r.seriesName}: <b>${formatInr(r.value)}</b>`)
         .join('<br/>')
@@ -54,7 +64,7 @@ const option = computed<EChartsOption>(() => ({
     axisLabel: {
       color: tokens.value.muted,
       hideOverlap: true,
-      formatter: (val: string) => formatMonthYear(val),
+      formatter: (val: string) => axisLabel.value(val),
     },
   },
   yAxis: {

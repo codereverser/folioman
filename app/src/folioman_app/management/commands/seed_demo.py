@@ -4,7 +4,7 @@ Loads a small family with:
 
 - an **MF investor** — four mutual-fund schemes with ~5 years of monthly SIPs, a
   lump-sum, and one partial redemption (real ``Transaction`` ledger), and
-- an **eCAS investor** — equity + bond **snapshots** across two CDSL demat
+- an **eCAS investor** — NSE-listed equity **snapshots** across two CDSL demat
   accounts (``Holding`` rows, ``source=ecas``), mirroring a multi-account eCAS.
 
 Only the v1 asset classes ship here — mutual funds and equities/bonds. FD ladders
@@ -22,6 +22,8 @@ is passed (which wipes and rebuilds the demo data).
 
 from __future__ import annotations
 
+import bisect
+import contextlib
 import datetime as dt
 import math
 from decimal import ROUND_DOWN, Decimal
@@ -52,59 +54,68 @@ _Q_NAV = Decimal("0.0001")
 
 # --- Demo dataset (deterministic; no randomness so re-runs are stable) ---------
 
-# Real mutual funds (names + ISINs from the bundled casparser-isin reference DB).
-#   (name, isin, equity_oriented, base NAV, annual drift, monthly SIP ₹)
-# amfi_code is left blank on purpose: the live NAV feed keys on it, so leaving it
-# blank keeps the feed from fetching (and overwriting) these schemes — the seeded
-# synthetic history stays authoritative and internally consistent with the seeded
-# transaction prices. The names/ISINs are real so the demo looks genuine.
+# Real mutual funds (names + ISINs + amfi_codes from the bundled casparser-isin
+# reference DB). amfi_code is populated so the live NAV feed — which keys on it —
+# refreshes these schemes once the app fetches them.
+#
+# base NAV and annual drift track each fund's ACTUAL NAV ~5 years ago (the seed's
+# `start`) and its real ~5y CAGR, so the synthetic series lands close to today's
+# real NAV. That matters because the feed only *fills* dates the seed left empty
+# (it doesn't overwrite the seeded weekly points) and writes today's real NAV on
+# refresh — if the synthetic magnitude were off, the live demo would show inflated
+# returns and a sawtooth chart where weekly-synthetic meets daily-real. Keeping
+# them realistic makes the seeded and fetched NAVs blend seamlessly.
+#   (name, isin, amfi_code, equity_oriented, base NAV, annual drift, monthly SIP ₹)
 _FUNDS = [
     (
         "Parag Parikh Flexi Cap Fund - Direct Plan - Growth",
         "INF879O01027",
+        "122639",
         True,
-        Decimal("30.00"),
-        0.18,
+        Decimal("44.50"),
+        0.148,
         8000,
     ),
     (
         "Mirae Asset Large Cap Fund - Direct Plan - Growth",
         "INF769K01AX2",
+        "118825",
         True,
-        Decimal("55.00"),
-        0.13,
+        Decimal("76.00"),
+        0.095,
         6000,
     ),
     (
         "UTI Nifty 50 Index Fund - Direct Plan - Growth",
         "INF789F01XA0",
+        "120716",
         True,
-        Decimal("90.00"),
-        0.14,
+        Decimal("106.00"),
+        0.089,
         5000,
     ),
     (
         "HDFC Corporate Bond Fund - Direct Plan - Growth",
         "INF179K01XD8",
+        "118987",
         False,
-        Decimal("24.00"),
-        0.07,
+        Decimal("25.50"),
+        0.062,
         4000,
     ),
-    # A sectoral/thematic fund that underperformed (negative drift) — its
-    # redemption realises a capital *loss*, so the demo shows gains and losses.
     (
         "Nippon India Pharma Fund - Direct Plan - Growth",
         "INF204K01I50",
+        "118759",
         True,
-        Decimal("90.00"),
-        -0.05,
+        Decimal("323.00"),
+        0.131,
         3000,
     ),
 ]
 
-# Real equities + a Sovereign Gold Bond, held as eCAS snapshots across two demat
-# accounts. ISINs are from the same reference DB.
+# Real NSE-listed equities, held as eCAS snapshots across two demat accounts.
+# All carry live tickers so the price feed values them off real NSE prices.
 #   (name, symbol, isin, base price, annual drift, units, demat account index)
 _EQUITY_HOLDINGS = [
     (
@@ -127,15 +138,7 @@ _EQUITY_HOLDINGS = [
         1,
     ),
     ("HDFC Bank Ltd", "HDFCBANK", "INE040A01034", Decimal("1350"), 0.12, Decimal("90"), 1),
-    (
-        "Sovereign Gold Bond 2.50% (Govt of India)",
-        "SGB",
-        "IN0020160076",
-        Decimal("3000"),
-        0.09,
-        Decimal("40"),
-        1,
-    ),
+    ("Larsen & Toubro Ltd", "LT", "INE018A01030", Decimal("1500"), 0.19, Decimal("25"), 1),
 ]
 
 _DEMAT_ACCOUNTS = [
@@ -143,15 +146,15 @@ _DEMAT_ACCOUNTS = [
     ("1208160007654321", "Groww (Nextbillion Technology)"),
 ]
 
-# Redemptions that realise capital gains/losses across the last three financial
-# years. Keyed by fund index → (days before today, fraction of units held then).
-# Each consumes FIFO lots from the 2021 inception, so all are long-term; fund 4
-# (negative drift) sells below cost → a realised loss.
+# Partial redemptions that realise long-term capital gains across the last three
+# financial years. Keyed by fund index → (days before today, fraction of units
+# held then). Each consumes FIFO lots from the 2021 inception, so all are LTCG —
+# realistic for a 2021-2026 run where every scheme appreciated.
 _REDEMPTIONS = {
-    0: (900, Decimal("0.25")),  # ~2 FYs ago — LTCG gain (Parag Parikh Flexi)
-    1: (540, Decimal("0.20")),  # ~1 FY ago — LTCG gain (Mirae Large Cap)
-    2: (180, Decimal("0.15")),  # current FY — LTCG gain (UTI Nifty 50)
-    4: (560, Decimal("0.40")),  # ~1 FY ago — LTCG loss (Nippon Pharma underperformer)
+    0: (900, Decimal("0.25")),  # ~2 FYs ago — LTCG (Parag Parikh Flexi)
+    1: (540, Decimal("0.20")),  # ~1 FY ago — LTCG (Mirae Large Cap)
+    2: (180, Decimal("0.15")),  # current FY — LTCG (UTI Nifty 50)
+    4: (560, Decimal("0.40")),  # ~1 FY ago — LTCG (Nippon Pharma)
 }
 
 
@@ -167,6 +170,10 @@ def _nav_on(base: Decimal, drift: float, start: dt.date, on: dt.date) -> Decimal
 
 def _weekly_history(security, base: Decimal, drift: float, start: dt.date, end: dt.date) -> int:
     """Seed a weekly NAV/price series [start, end]. Returns the row count."""
+    # Clear this security's prior synthetic points first so a re-seed doesn't leave
+    # stale weekly NAVs behind (--reset keeps the global NAVHistory, and bulk_create
+    # won't overwrite an existing date). Scoped to source="demo" — never real rows.
+    NAVHistory.objects.filter(security=security, source="demo").delete()
     rows, on = [], start
     while on <= end:
         rows.append(
@@ -177,6 +184,46 @@ def _weekly_history(security, base: Decimal, drift: float, start: dt.date, end: 
         on += _WEEK
     NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
     return len(rows)
+
+
+def _nav_history_fn(
+    security, base: Decimal, drift: float, start: dt.date, today: dt.date, *, real_navs: bool
+):
+    """Populate NAVHistory for ``security`` and return a ``nav_on(date) -> Decimal``
+    as-of lookup (the NAV on a date, else the most recent prior one).
+
+    Real mode pulls the fund's actual daily series from mfapi via the app's own
+    feed, so the seeded ledger and chart are authentic and blend seamlessly with
+    later scheduled fetches. Synthetic mode seeds a smooth weekly series — offline
+    and deterministic, for tests and fresh installs. Falls back to synthetic when a
+    real fetch yields nothing (offline, delisted scheme, or no amfi_code)."""
+    if real_navs and security.amfi_code:
+        from folioman_app.tasks.refresh_navs import backfill_nav_history
+
+        # Drop any stale synthetic points from an earlier seed so the real series
+        # fills those dates (backfill only writes *missing* dates) — otherwise a
+        # prior --reset leaves a sawtooth of synthetic NAVs among the real ones.
+        NAVHistory.objects.filter(security=security, source="demo").delete()
+        # Any feed/network failure falls through to the synthetic series below.
+        with contextlib.suppress(Exception):
+            backfill_nav_history(security, since=start)
+        rows = list(
+            NAVHistory.objects.filter(security=security, date__lte=today)
+            .order_by("date")
+            .values_list("date", "nav")
+        )
+        if rows:
+            dates = [r[0] for r in rows]
+            navs = [r[1] for r in rows]
+
+            def nav_on(on: dt.date) -> Decimal:
+                i = bisect.bisect_right(dates, on) - 1
+                return navs[i if i >= 0 else 0]
+
+            return nav_on
+    # Synthetic fallback: seed a weekly series and price off the smooth curve.
+    _weekly_history(security, base, drift, start, today)
+    return lambda on: _nav_on(base, drift, start, on)
 
 
 def _month_starts(start: dt.date, end: dt.date):
@@ -208,6 +255,15 @@ class Command(BaseCommand):
             action="store_true",
             help="Wipe and rebuild the demo user's data (otherwise an existing demo is kept).",
         )
+        parser.add_argument(
+            "--real-navs",
+            action="store_true",
+            help=(
+                "Pull each fund's actual NAV history from mfapi (needs network) so the "
+                "demo is fully authentic. Without it, a deterministic synthetic series is "
+                "used (offline, test-safe). Recommended for the hosted demo."
+            ),
+        )
 
     def handle(self, *args, **opts):
         User = get_user_model()
@@ -237,7 +293,9 @@ class Command(BaseCommand):
 
         with db_transaction.atomic():
             family = Family.objects.create(owned_by=user, name="Sharma Family")
-            mf_inv, mf_secs = self._seed_mf_investor(user, family, start, today)
+            mf_inv, mf_secs = self._seed_mf_investor(
+                user, family, start, today, real_navs=opts["real_navs"]
+            )
             ecas_inv, ecas_secs = self._seed_ecas_investor(user, family, start, today)
 
         # Reconcile each investor (so integrity shows real statuses — full_history for
@@ -258,18 +316,19 @@ class Command(BaseCommand):
 
     # --- investor builders ----------------------------------------------------
 
-    def _seed_mf_investor(self, user, family, start: dt.date, today: dt.date):
+    def _seed_mf_investor(self, user, family, start: dt.date, today: dt.date, *, real_navs: bool):
         inv = Investor(owned_by=user, name="Arjun Sharma", email="arjun@example.com", family=family)
         inv.set_pan("ABCDE1234F")
         inv.save()
 
         securities = []
-        for idx, (name, isin, equity_oriented, base, drift, sip) in enumerate(_FUNDS):
+        for idx, (name, isin, amfi_code, equity_oriented, base, drift, sip) in enumerate(_FUNDS):
             security = upsert_security(
                 CoreSecurity(
                     type=SecurityType.MF,
                     name=name,
                     isin=isin,
+                    amfi_code=amfi_code,
                     currency="INR",
                     metadata={"equity_oriented": equity_oriented},
                 )
@@ -278,26 +337,21 @@ class Command(BaseCommand):
             folio = upsert_folio(
                 inv, CoreFolio(folio_type=FolioType.MF, number=f"DEMO{security.id:06d}")
             )
-            _weekly_history(security, base, drift, start, today)
+            # Real (mfapi) or synthetic NAV series + the per-date pricing function the
+            # SIP/redemption ledger is built from, so units reflect the day's actual NAV.
+            nav_on = _nav_history_fn(security, base, drift, start, today, real_navs=real_navs)
 
             # Lump-sum at inception, then monthly SIPs.
-            self._buy(inv, security, folio, start, start, base, drift, Decimal(sip) * 3)
+            self._buy(inv, security, folio, start, nav_on, Decimal(sip) * 3)
             for on in _month_starts(start, today):
-                self._buy(inv, security, folio, on, start, base, drift, Decimal(sip))
+                self._buy(inv, security, folio, on, nav_on, Decimal(sip))
 
-            # Partial redemptions per the schedule → realised gains/losses across FYs.
+            # Partial redemptions per the schedule → realised gains across FYs.
             redemption = _REDEMPTIONS.get(idx)
             if redemption:
                 days, fraction = redemption
                 self._redeem_partial(
-                    inv,
-                    security,
-                    folio,
-                    today - dt.timedelta(days=days),
-                    start,
-                    base,
-                    drift,
-                    fraction,
+                    inv, security, folio, today - dt.timedelta(days=days), nav_on, fraction
                 )
         return inv, securities
 
@@ -309,9 +363,10 @@ class Command(BaseCommand):
         as_of = today - dt.timedelta(days=today.weekday() + 1)  # last completed week
         securities = []
         for name, symbol, isin, base, drift, units, acct in _EQUITY_HOLDINGS:
-            stype = SecurityType.BOND if symbol == "SGB" else SecurityType.EQUITY
             security = upsert_security(
-                CoreSecurity(type=stype, name=name, symbol=symbol, isin=isin, currency="INR")
+                CoreSecurity(
+                    type=SecurityType.EQUITY, name=name, symbol=symbol, isin=isin, currency="INR"
+                )
             )
             securities.append(security)
             number, broker = _DEMAT_ACCOUNTS[acct]
@@ -337,8 +392,8 @@ class Command(BaseCommand):
 
     # --- ledger helpers -------------------------------------------------------
 
-    def _buy(self, inv, security, folio, on, start, base, drift, amount: Decimal) -> None:
-        nav = _nav_on(base, drift, start, on)
+    def _buy(self, inv, security, folio, on, nav_on, amount: Decimal) -> None:
+        nav = nav_on(on)
         units = (amount / nav).quantize(_Q_UNITS, rounding=ROUND_DOWN)
         Transaction.objects.create(
             investor=inv,
@@ -354,16 +409,14 @@ class Command(BaseCommand):
             narration="SIP Installment" if amount < 20000 else "Lumpsum Purchase",
         )
 
-    def _redeem_partial(
-        self, inv, security, folio, on, start, base, drift, fraction: Decimal
-    ) -> None:
+    def _redeem_partial(self, inv, security, folio, on, nav_on, fraction: Decimal) -> None:
         held = sum(
             (t.units for t in inv.transactions.filter(security=security, date__lte=on)),
             Decimal("0"),
         )
         if held <= 0:
             return
-        nav = _nav_on(base, drift, start, on)
+        nav = nav_on(on)
         units = (held * fraction).quantize(_Q_UNITS, rounding=ROUND_DOWN)
         Transaction.objects.create(
             investor=inv,

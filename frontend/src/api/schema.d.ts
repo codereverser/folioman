@@ -632,6 +632,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/navs/freshness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Nav Freshness
+         * @description Every tracked security's latest NAV date + trading-day lag, worst first.
+         */
+        get: operations["folioman_app_api_navs_nav_freshness"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/setup/admin": {
         parameters: {
             query?: never;
@@ -801,6 +821,11 @@ export interface components {
             match_investor_id?: number | null;
             /** Match Investor Name */
             match_investor_name?: string | null;
+            /**
+             * Mf Folio Count
+             * @default 0
+             */
+            mf_folio_count: number;
             /** Pan Masked */
             pan_masked: string;
             /**
@@ -808,6 +833,11 @@ export interface components {
              * @default 0
              */
             scheme_count: number;
+            /**
+             * Skipped Unidentified
+             * @default 0
+             */
+            skipped_unidentified: number;
             /**
              * Snapshot Scheme Count
              * @default 0
@@ -1001,6 +1031,11 @@ export interface components {
             security_id: number;
             /** Security Type */
             security_type: string;
+            /**
+             * Symbol
+             * @default
+             */
+            symbol: string;
             /** Units */
             units: string;
             /** Value Inr */
@@ -1282,6 +1317,29 @@ export interface components {
             /** Valuations */
             valuations: components["schemas"]["ValuationDiagnosticsOut"][];
         };
+        /**
+         * NavFreshnessOut
+         * @description Settings 'NAV freshness' panel: per-security currency + refresh schedule.
+         *
+         *     Read-only — refreshes run on the scheduler (or ``manage.py refresh_navs``);
+         *     the panel shows when prices were last written and when the next pass runs.
+         */
+        NavFreshnessOut: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Last Refreshed At */
+            last_refreshed_at?: string | null;
+            /**
+             * Next Refresh At
+             * Format: date-time
+             */
+            next_refresh_at: string;
+            /** Securities */
+            securities: components["schemas"]["NavSecurityFreshnessOut"][];
+        };
         /** NavPoint */
         NavPoint: {
             /**
@@ -1291,6 +1349,35 @@ export interface components {
             date: string;
             /** Nav */
             nav: string;
+        };
+        /**
+         * NavSecurityFreshnessOut
+         * @description One tracked security's NAV currency for the freshness panel.
+         */
+        NavSecurityFreshnessOut: {
+            /** Feed Code */
+            feed_code: string;
+            /** First Nav Date */
+            first_nav_date?: string | null;
+            /** Identifier */
+            identifier: string;
+            /** Lag Trading Days */
+            lag_trading_days?: number | null;
+            /** Latest Nav Date */
+            latest_nav_date?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Points
+             * @default 0
+             */
+            points: number;
+            /** Security Id */
+            security_id: number;
+            /** Security Type */
+            security_type: string;
+            /** Status */
+            status: string;
         };
         /**
          * RosterAggregateOut
@@ -2655,6 +2742,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AppMetaOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_navs_nav_freshness: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NavFreshnessOut"];
                 };
             };
         };

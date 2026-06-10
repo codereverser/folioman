@@ -21,6 +21,9 @@ def _stub_feeds(monkeypatch):
     """No network: the job's NAV-ensure step is a no-op; tests seed NAVHistory."""
     monkeypatch.setattr(valuation_jobs, "refresh_navs", lambda **kw: {"updated": 0})
     monkeypatch.setattr(valuation_jobs, "backfill_missing_history", lambda **kw: {"points": 0})
+    monkeypatch.setattr(
+        valuation_jobs, "backfill_missing_equity_history", lambda **kw: {"points": 0}
+    )
 
 
 def _values(investor) -> dict[dt.date, Decimal]:
@@ -433,3 +436,106 @@ def test_queue_recompute_seeds_provisional_and_marks_computing(make_investor):
     assert inv.valuation_recompute_from == dt.date(2024, 4, 1)
     prov = InvestorValue.objects.get(investor=inv, date=dt.date(2025, 3, 31))
     assert prov.is_provisional and prov.value_inr == Decimal("50000")
+
+
+# --- equities in net worth ----------------------------------------------------
+
+
+def test_recompute_prices_equity_snapshot_into_networth(
+    make_investor, make_security, make_folio, make_transaction, make_holding
+):
+    """A mixed portfolio (full-history MF + an eCAS equity snapshot) must value
+    BOTH — the equity priced from its (now-populated) NAVHistory."""
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    folio = make_folio(investor=inv)
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 1, 1), nav=Decimal("10"))
+
+    equity = make_security(
+        security_type=SecurityType.EQUITY.value,
+        name="Reliance",
+        isin="INE002A01018",
+        symbol="RELIANCE",
+        exchange="NSE",
+    )
+    make_holding(investor=inv, security=equity, as_of_date=dt.date(2025, 1, 1), units=Decimal("10"))
+    NAVHistory.objects.create(security=equity, date=dt.date(2025, 1, 1), nav=Decimal("1400"))
+
+    status = valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+    assert status == ValuationStatus.READY
+    # 100 MF * 10  +  10 shares * 1400  = 1000 + 14000 = 15000.
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("15000")
+
+
+def test_unpriced_equity_with_symbol_errors_then_recovers(
+    make_investor, make_security, make_holding
+):
+    """An equity with a symbol but no price yet is feed-pending — error + retry,
+    like an unpriced MF, until the price arrives."""
+    inv = make_investor()
+    equity = make_security(
+        security_type=SecurityType.EQUITY.value,
+        name="Reliance",
+        isin="INE002A01018",
+        symbol="RELIANCE",
+        exchange="NSE",
+    )
+    make_holding(investor=inv, security=equity, as_of_date=dt.date(2025, 1, 1), units=Decimal("10"))
+
+    assert valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1)) == (
+        ValuationStatus.ERROR
+    )
+    inv.refresh_from_db()
+    assert inv.valuation_next_attempt_at is not None
+    assert not InvestorValue.objects.filter(investor=inv).exists()
+
+    NAVHistory.objects.create(security=equity, date=dt.date(2025, 1, 1), nav=Decimal("1400"))
+    inv.valuation_next_attempt_at = timezone.now() - dt.timedelta(minutes=1)
+    inv.save(update_fields=["valuation_next_attempt_at"])
+    assert valuation_jobs.process_pending_valuations() == 1
+    inv.refresh_from_db()
+    assert inv.valuation_status == ValuationStatus.READY
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("14000")
+
+
+def test_symbolless_equity_degrades_not_blocks(
+    make_investor, make_security, make_folio, make_transaction, make_holding
+):
+    """An equity the ISIN DB couldn't map to a symbol is unmappable — degrade
+    (fall out of the series) rather than error/retry forever. The rest of the
+    portfolio still values and the investor stays READY."""
+    inv = make_investor()
+    mf = make_security(security_type=SecurityType.MF.value)
+    folio = make_folio(investor=inv)
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    NAVHistory.objects.create(security=mf, date=dt.date(2025, 1, 1), nav=Decimal("10"))
+
+    unmapped = make_security(
+        security_type=SecurityType.EQUITY.value,
+        name="Unlisted Co",
+        isin="INE000X00X00",
+        symbol="",
+        exchange="",
+    )
+    make_holding(
+        investor=inv, security=unmapped, as_of_date=dt.date(2025, 1, 1), units=Decimal("5")
+    )
+
+    status = valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+    assert status == ValuationStatus.READY  # degraded, not errored
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("1000")  # only the priced MF

@@ -37,7 +37,7 @@ def test_seed_demo_builds_rich_v1_portfolio():
     assert txns.filter(transaction_type="buy").exists()
     assert txns.filter(transaction_type="sell").exists()  # the partial redemption
 
-    # eCAS investor: equity/bond snapshots across two demat accounts.
+    # eCAS investor: NSE-listed equity snapshots across two demat accounts.
     ecas = investors.get(name="Priya Sharma")
     holdings = Holding.objects.filter(investor=ecas)
     assert holdings.count() == 5
@@ -73,7 +73,7 @@ def _fy_label(d):
 
 
 @pytest.mark.django_db
-def test_seed_demo_realises_gains_and_losses_across_three_fys():
+def test_seed_demo_realises_gains_across_three_fys():
     from folioman_app.services.tax_export import build_capital_gains
 
     call_command("seed_demo", username="demo")
@@ -87,8 +87,9 @@ def test_seed_demo_realises_gains_and_losses_across_three_fys():
     assert len(fys) >= 3  # disposals span at least three financial years
 
     gains = [g for fy in fys for g in (r["gain"] for r in build_capital_gains(mf, fy)["rows"])]
-    assert any(g > 0 for g in gains)  # at least one realised gain
-    assert any(g < 0 for g in gains)  # at least one realised loss (the underperformer)
+    # Every fund tracks its real ~5y CAGR (all positive over 2021-2026), and FIFO
+    # sells the cheapest 2021 lots first, so all disposals realise an LTCG gain.
+    assert gains and all(g > 0 for g in gains)
 
 
 @pytest.mark.django_db
@@ -96,6 +97,66 @@ def test_seed_demo_is_idempotent_without_reset():
     call_command("seed_demo", username="demo")
     with pytest.raises(CommandError):
         call_command("seed_demo", username="demo")
+
+
+@pytest.mark.django_db
+def test_seed_demo_real_navs_prices_from_fetched_history(monkeypatch):
+    # --real-navs reuses the app's mfapi feed; mock it to a flat real series so the
+    # test stays offline and we can prove the ledger is priced from fetched NAVs.
+    import datetime as dt
+    from decimal import Decimal
+
+    import folioman_app.tasks.refresh_navs as refresh_navs
+
+    def fake_backfill(security, *, since):
+        rows, d = [], since
+        while d <= dt.date.today():
+            rows.append(NAVHistory(security=security, date=d, nav=Decimal("100"), source="mfapi"))
+            d += dt.timedelta(days=1)
+        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
+        return len(rows)
+
+    monkeypatch.setattr(refresh_navs, "backfill_nav_history", fake_backfill)
+    call_command("seed_demo", username="demo", real_navs=True)
+
+    mf = Investor.objects.get(owned_by__username="demo", name="Arjun Sharma")
+    buy_navs = {
+        t.nav_or_price for t in Transaction.objects.filter(investor=mf, transaction_type="buy")
+    }
+    assert buy_navs == {Decimal("100")}  # every buy priced off the fetched series
+    # MF history is the fetched (mfapi) series — no synthetic 'demo' rows for funds.
+    assert NAVHistory.objects.filter(security__security_type="mf", source="mfapi").exists()
+    assert not NAVHistory.objects.filter(security__security_type="mf", source="demo").exists()
+
+
+@pytest.mark.django_db
+def test_real_navs_reseed_clears_stale_synthetic_navs(monkeypatch):
+    # The bug: --reset keeps the global NAVHistory and backfill only fills *missing*
+    # dates, so a synthetic seed's weekly 'demo' NAVs survived a later --real-navs
+    # reseed and showed up as a sawtooth among the real daily NAVs. Re-seeding must
+    # clear the stale synthetic points so only the real series remains.
+    import datetime as dt
+    from decimal import Decimal
+
+    import folioman_app.tasks.refresh_navs as refresh_navs
+
+    call_command("seed_demo", username="demo")  # synthetic first → writes 'demo' rows
+    assert NAVHistory.objects.filter(security__security_type="mf", source="demo").exists()
+
+    def fake_backfill(security, *, since):
+        rows, d = [], since
+        while d <= dt.date.today():
+            rows.append(NAVHistory(security=security, date=d, nav=Decimal("100"), source="mfapi"))
+            d += dt.timedelta(days=1)
+        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
+        return len(rows)
+
+    monkeypatch.setattr(refresh_navs, "backfill_nav_history", fake_backfill)
+    call_command("seed_demo", username="demo", reset=True, real_navs=True)
+
+    mf_navs = NAVHistory.objects.filter(security__security_type="mf")
+    assert not mf_navs.filter(source="demo").exists()  # no stale synthetic left
+    assert {n.nav for n in mf_navs} == {Decimal("100")}  # only the real series remains
 
 
 @pytest.mark.django_db

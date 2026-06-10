@@ -21,6 +21,7 @@ from folioman_app.api.integrity import router as integrity_router
 from folioman_app.api.investors import router as investors_router
 from folioman_app.api.jobs import router as jobs_router
 from folioman_app.api.meta import router as meta_router
+from folioman_app.api.navs import router as navs_router
 from folioman_app.api.setup import router as setup_router
 from folioman_app.api.tokens import router as tokens_router
 
@@ -31,6 +32,7 @@ api.add_router("", setup_router)  # /setup/* — public first-admin bootstrap (s
 api.add_router("", health_router)  # /health — unauthenticated liveness/readiness probe
 api.add_router("", meta_router)  # /meta — app version + data location
 api.add_router("", jobs_router)  # /jobs — advisor-wide import + valuation activity
+api.add_router("", navs_router)  # /navs/* — NAV freshness + manual refresh
 api.add_router("/investors", investors_router)
 api.add_router("/imports", cas_router)  # /imports/cas, /imports/cas/preview (PAN-resolved)
 api.add_router("/investors", imports_router)  # /investors/{id}/imports/... (job reads + csv)

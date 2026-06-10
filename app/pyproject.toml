@@ -17,6 +17,12 @@ dependencies = [
     "apscheduler>=3.10,<4",
     # Per-OS user-data dir resolution (desktop settings). Pure Python, Nuitka-safe.
     "platformdirs>=4.0",
+    # Structured logging: pretty, coloured console output in dev (rich renders
+    # the tracebacks) and plain grep-able lines in the rotating files. Existing
+    # stdlib logging.getLogger() call sites flow through unchanged via
+    # ProcessorFormatter. Both pure Python, Nuitka-safe.
+    "structlog>=24.4",
+    "rich>=13.7",
 ]
 
 # Server-mode-only runtime deps. The desktop Nuitka build excludes these:

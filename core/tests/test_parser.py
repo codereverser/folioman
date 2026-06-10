@@ -115,15 +115,61 @@ def test_overlong_scheme_name_rejects_statement_without_leaking_name():
     assert secret not in msg  # the offending value (a holding name) is never echoed
 
 
-def test_scheme_without_identifier_rejects_whole_statement():
-    secret = "PRIVATEFUNDLABEL"  # invented; never echoed back in the error
-    cas = _cas_named(secret, isin=None, amfi=None)
-    with pytest.raises(parser.CASParseError) as ei:
-        parser.map_cas_data(cas)
-    msg = str(ei.value)
-    assert "scheme 1 of folio 1" in msg
-    assert "amfi" in msg or "isin" in msg  # names the missing-identifier rule
-    assert secret not in msg  # no PII from the scheme name
+def test_scheme_without_identifier_is_skipped_not_rejected():
+    # A scheme with no ISIN/AMFI (matured/closed/segregated/unclaimed line) can't
+    # be mapped, but it must NOT sink the whole statement — it's skipped + counted.
+    cas = _cas_named("PRIVATEFUNDLABEL", isin=None, amfi=None)
+    stmt = parser.map_cas_data(cas)
+    assert stmt.schemes == []
+    assert stmt.skipped_unidentified == 1
+
+
+def test_identified_schemes_import_alongside_a_skipped_one():
+    # One valid scheme + one identifier-less scheme in the same folio: the valid
+    # one imports, the other is skipped, and the statement still succeeds.
+    val = SchemeValuation(
+        date=date(2025, 3, 31), nav=Decimal("25"), cost=Decimal("400"), value=Decimal("1000")
+    )
+
+    def _scheme(name, isin, amfi):
+        return Scheme(
+            scheme=name,
+            advisor="",
+            rta_code="X",
+            rta="CAMS",
+            type=FundType.EQUITY,
+            isin=isin,
+            amfi=amfi,
+            nominees=[],
+            open=Decimal("0"),
+            close=Decimal("0"),
+            close_calculated=Decimal("0"),
+            valuation=val,
+            transactions=[_txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000")],
+        )
+
+    folio = Folio(
+        folio="12345/67",
+        amc="Test MF",
+        PAN="ABCDE1234F",
+        KYC="OK",
+        PANKYC="OK",
+        schemes=[
+            _scheme("Good Fund", "INF109K01VQ4", "122639"),
+            _scheme("Matured FMP - no id", None, None),
+        ],
+    )
+    cas = CASData(
+        statement_period=StatementPeriod(from_="2022-01-01", to="2025-03-31"),
+        folios=[folio],
+        investor_info=InvestorInfo(name="Sample", email="s@example.com", address="a", mobile="9"),
+        cas_type=CASFileType.DETAILED,
+        file_type=FileType.CAMS,
+    )
+    stmt = parser.map_cas_data(cas)
+    assert len(stmt.schemes) == 1
+    assert stmt.schemes[0].security.isin == "INF109K01VQ4"
+    assert stmt.skipped_unidentified == 1
 
 
 def test_map_cas_data_structure_and_equity_flag():
@@ -171,13 +217,161 @@ def test_charge_rows_skipped():
     assert len(lines) == 1  # only the purchase survives
 
 
-def test_unsupported_transaction_is_marked_unsupported():
+def test_orphan_reversal_raises():
+    # A reversal whose original isn't in this window can't be netted -> raises
+    # (so the scheme is snapshotted rather than persisted as a wrong ledger).
     cas = _cas([_txn(date(2024, 8, 1), CTxn.REVERSAL, "10", "10", "100")])
     stmt = parser.map_cas_data(cas)
     block = stmt.schemes[0]
 
     assert block.unsupported_transaction is True
     assert block.transactions == []
+
+
+def test_reversal_of_purchase_is_netted_out():
+    # A bounced purchase (+30) and its same-date reversal (-30) both vanish; only
+    # the real buy survives, and the block reconciles open 0 -> close 100.
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000"),
+            _txn(date(2022, 2, 1), CTxn.PURCHASE, "30", "12", "360"),
+            _txn(date(2022, 2, 1), CTxn.REVERSAL, "-30", "12", "-360"),
+        ],
+        open_units="0",
+        close_units="100",
+    )
+    block = parser.map_cas_data(cas).schemes[0]
+    assert [li.transaction_type for li in block.transactions] == [TransactionType.BUY]
+    assert block.transactions[0].units == Decimal("100")
+    assert parser.scheme_has_full_history(block)  # net 100 == close 100
+
+
+def test_reversal_listed_before_its_original_is_paired():
+    # The RTA can list the reversal *before* the row it cancels; the matcher
+    # searches both directions, so this still nets out (same date + NAV).
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.REVERSAL, "-30", "12", "-360"),
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000"),
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "30", "12", "360"),
+        ],
+        open_units="0",
+        close_units="100",
+    )
+    block = parser.map_cas_data(cas).schemes[0]
+    assert [li.transaction_type for li in block.transactions] == [TransactionType.BUY]
+    assert block.transactions[0].units == Decimal("100")
+    assert parser.scheme_has_full_history(block)
+
+
+def test_reversal_of_redemption_restores_lots():
+    # A redemption (-40) reversed (+40) on the same date: both drop, leaving the
+    # original buy intact -> no phantom disposal, no realized gain.
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000"),
+            _txn(date(2024, 8, 1), CTxn.REDEMPTION, "-40", "25", "-1000"),
+            _txn(date(2024, 8, 1), CTxn.REVERSAL, "40", "25", "1000"),
+        ],
+        open_units="0",
+        close_units="100",
+    )
+    block = parser.map_cas_data(cas).schemes[0]
+    assert [li.transaction_type for li in block.transactions] == [TransactionType.BUY]
+    assert parser.scheme_has_full_history(block)
+
+
+def test_reversal_pairs_with_nav_matched_lot():
+    # Two same-date, same-size buys at different NAVs; the reversal carries NAV 20,
+    # so it voids the 20-NAV lot and the 10-NAV lot is the survivor.
+    cas = _cas(
+        [
+            _txn(date(2022, 2, 1), CTxn.PURCHASE, "50", "10", "500"),
+            _txn(date(2022, 2, 1), CTxn.PURCHASE, "50", "20", "1000"),
+            _txn(date(2022, 2, 1), CTxn.REVERSAL, "-50", "20", "-1000"),
+        ],
+        open_units="0",
+        close_units="50",
+    )
+    block = parser.map_cas_data(cas).schemes[0]
+    assert len(block.transactions) == 1
+    assert block.transactions[0].nav == Decimal("10")
+    assert parser.scheme_has_full_history(block)
+
+
+def test_reversal_on_a_different_date_is_not_paired():
+    # Same units + NAV but a different date is NOT a pair (the strong key guards
+    # against coincidental same-size lots) -> the reversal stays and raises.
+    cas = _cas(
+        [
+            _txn(date(2022, 2, 1), CTxn.PURCHASE, "30", "12", "360"),
+            _txn(date(2022, 2, 5), CTxn.REVERSAL, "-30", "12", "-360"),
+        ]
+    )
+    with pytest.raises(parser.UnsupportedCASTransaction, match="REVERSAL"):
+        parser.map_cas_data(cas)
+
+
+def test_reversal_with_no_matching_units_raises():
+    # A reversal of -50 can't pair with a +100 buy (units don't cancel) -> raises.
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000"),
+            _txn(date(2022, 1, 1), CTxn.REVERSAL, "-50", "10", "-500"),
+        ]
+    )
+    with pytest.raises(parser.UnsupportedCASTransaction, match="REVERSAL"):
+        parser.map_cas_data(cas)
+
+
+def test_dividend_payout_without_units_or_nav_is_kept_as_income():
+    # A cash dividend payout carries no units/NAV (both None); keep the amount,
+    # zero the unit/NAV fields, and don't crash on abs(None).
+    cas = _cas(
+        [
+            _txn(date(2022, 1, 1), CTxn.PURCHASE, "100", "10", "1000"),
+            TransactionData(
+                date=date(2024, 8, 1),
+                description="DIVIDEND PAYOUT",
+                amount=Decimal("500"),
+                units=None,
+                nav=None,
+                balance=None,
+                type=CTxn.DIVIDEND_PAYOUT,
+                dividend_rate=None,
+            ),
+        ],
+        close_units="100",
+    )
+    lines = parser.map_cas_data(cas).schemes[0].transactions
+    div = lines[1]
+    assert div.transaction_type is TransactionType.DIVIDEND
+    assert div.units == Decimal("0")
+    assert div.nav == Decimal("0")
+    assert div.amount == Decimal("500")  # cash income preserved
+    # Dividends don't move units, so the block still reconciles to its close.
+    assert parser.scheme_has_full_history(parser.map_cas_data(cas).schemes[0])
+
+
+def test_buy_missing_units_or_nav_raises():
+    # A purchase with no NAV can't form a cost-basis lot -> raise (snapshot),
+    # never a phantom zero-cost lot.
+    cas = _cas(
+        [
+            TransactionData(
+                date=date(2022, 1, 1),
+                description="PURCHASE",
+                amount=None,
+                units=Decimal("100"),
+                nav=None,
+                balance=None,
+                type=CTxn.PURCHASE,
+                dividend_rate=None,
+            ),
+        ]
+    )
+    with pytest.raises(parser.UnsupportedCASTransaction, match="missing units/NAV"):
+        parser.map_cas_data(cas)
 
 
 def test_every_casparser_txn_type_is_categorised():

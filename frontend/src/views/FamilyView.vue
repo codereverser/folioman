@@ -7,6 +7,7 @@ import Message from 'primevue/message'
 import MetricCard from '@/components/MetricCard.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import { useFamilyDashboard, type RangeKey } from '@/composables/useFamilyDashboard'
+import { RANGES } from '@/utils/portfolio'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { formatInr } from '@/utils/format'
@@ -53,6 +54,9 @@ const familyId = computed(() => {
 const familyName = computed(() => roster.familyName(familyId.value) ?? 'Family')
 
 const { summary, members, range, setRange, valuationReady } = useFamilyDashboard(familyId)
+
+// Axis tick density follows the range's sampling (see RANGES).
+const valueGranularity = computed(() => RANGES[range.value].granularity)
 
 const ranges: { label: string; value: RangeKey }[] = [
   { label: '6M', value: '6M' },
@@ -130,9 +134,16 @@ function openInvestor(investorId: number): void {
           <p class="chart-progress">
             Portfolio valuation in progress — refresh in a bit. Showing values as of
             the latest statements meanwhile.
+            <RouterLink class="navs-link" :to="{ name: 'settings', params: { tab: 'navs' } }"
+              >Check NAV freshness →</RouterLink
+            >
           </p>
         </template>
-        <PortfolioValueChart v-else-if="loadCharts" :data="summary.valueSeries" />
+        <PortfolioValueChart
+          v-else-if="loadCharts"
+          :data="summary.valueSeries"
+          :granularity="valueGranularity"
+        />
         <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
       </article>
 
@@ -274,6 +285,15 @@ function openInvestor(investorId: number): void {
   margin: var(--fm-space-2) 0 0;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
+}
+.chart-progress .navs-link {
+  color: var(--p-primary-color);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.chart-progress .navs-link:hover {
+  text-decoration: underline;
 }
 .table-placeholder {
   height: 12rem;

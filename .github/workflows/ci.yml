@@ -22,6 +22,12 @@ jobs:
           python-version: "3.13"
           enable-cache: true
 
+      # Fail if uv.lock is out of sync with the pyproject manifests. Catches a
+      # lockfile edited in isolation (e.g. a Dependabot bump that rewrote the lock
+      # past a pinned constraint without updating pyproject) before it merges.
+      - name: Verify lockfile is in sync
+        run: uv lock --check
+
       - name: Sync workspace
         run: uv sync
 

@@ -32,6 +32,18 @@ export interface HoldingRow {
   integrity: IntegrityStatus
 }
 
+// A stock on the Stocks tab: a holding plus its ticker, current/average price,
+// 1-day move, and absolute ₹ gain. Mirrors FundRow but framed for equities
+// (price instead of NAV, no AMC/category grouping).
+export interface StockRow extends HoldingRow {
+  symbol: string // exchange ticker (e.g. RELIANCE); falls back to name when empty
+  price: number | null // current price the shares are valued at (latest close)
+  avgCost: number | null // average cost per share = invested / units
+  gain: number | null // value − invested, in ₹; null when cost basis is unknown
+  dayChangeAmount: number | null // 1-day INR change for this holding
+  dayChangePercent: number | null // 1-day % move
+}
+
 // A fund on the MF breakdown page: a holding plus its grouping keys, XIRR, and
 // absolute ₹ contribution (for the "contribution to returns" strip).
 export interface FundRow extends HoldingRow {
@@ -73,6 +85,9 @@ export interface DashboardSummary {
   mfByCategory: AllocationSlice[]
   mfByAmc: AllocationSlice[]
   mfTotal: number
+  // Stocks tab: equity holdings + their summed value (excludes MFs/other assets).
+  stocks: StockRow[]
+  stockTotal: number
   holdingsCount: number // priced holdings tracked (hero KPI)
 }
 
@@ -97,6 +112,8 @@ const EMPTY: DashboardSummary = {
   mfByCategory: [],
   mfByAmc: [],
   mfTotal: 0,
+  stocks: [],
+  stockTotal: 0,
   holdingsCount: 0,
 }
 
@@ -322,6 +339,29 @@ export function useDashboard(investorId: Ref<number>) {
       mfByCategory: toSlices(mfMix((h) => h.category), categoryColor),
       mfByAmc: toSlices(mfMix((h) => h.amc), (_label, i) => rampColor(i), 6, shortAmc),
       mfTotal: mfHoldings.reduce((sum, h) => sum + num(h.value_inr), 0),
+      stocks: (s.holdings ?? [])
+        .filter((h) => h.security_type === 'equity')
+        .map<StockRow>((h) => ({
+          securityId: h.security_id,
+          name: h.name,
+          symbol: h.symbol || '',
+          assetClass: assetLabel(h.security_type),
+          units: num(h.units),
+          value: num(h.value_inr),
+          price: h.latest_nav == null ? null : num(h.latest_nav),
+          avgCost:
+            h.invested_inr == null || num(h.units) === 0
+              ? null
+              : num(h.invested_inr) / num(h.units),
+          returnPct: h.return_pct == null ? null : h.return_pct * 100,
+          gain: h.invested_inr == null ? null : num(h.value_inr) - num(h.invested_inr),
+          dayChangeAmount: h.day_change_inr == null ? null : num(h.day_change_inr),
+          dayChangePercent: h.day_change_pct == null ? null : h.day_change_pct * 100,
+          integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
+        })),
+      stockTotal: (s.holdings ?? [])
+        .filter((h) => h.security_type === 'equity')
+        .reduce((sum, h) => sum + num(h.value_inr), 0),
       holdingsCount: s.holdings_count ?? (s.holdings?.length ?? 0),
     }
   })
