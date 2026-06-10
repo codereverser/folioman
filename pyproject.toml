@@ -6,12 +6,6 @@
 [tool.uv.workspace]
 members = ["core", "app", "desktop", "server"]
 
-# Track casparser's main branch until the advisor-wrap ARN-misparse fix ships in
-# a tagged release; the version pin in core/pyproject.toml still applies. Revert
-# this to the PyPI release (drop the source) once that version is published.
-[tool.uv.sources]
-casparser = { git = "https://github.com/codereverser/casparser.git", branch = "main" }
-
 # Workspace-wide development dependencies (PEP 735). Installed by `uv sync`.
 [dependency-groups]
 dev = [
