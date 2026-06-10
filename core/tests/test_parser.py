@@ -221,8 +221,11 @@ def test_orphan_reversal_raises():
     # A reversal whose original isn't in this window can't be netted -> raises
     # (so the scheme is snapshotted rather than persisted as a wrong ledger).
     cas = _cas([_txn(date(2024, 8, 1), CTxn.REVERSAL, "10", "10", "100")])
-    with pytest.raises(parser.UnsupportedCASTransaction, match="REVERSAL"):
-        parser.map_cas_data(cas)
+    stmt = parser.map_cas_data(cas)
+    block = stmt.schemes[0]
+
+    assert block.unsupported_transaction is True
+    assert block.transactions == []
 
 
 def test_reversal_of_purchase_is_netted_out():
