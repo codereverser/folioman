@@ -14,6 +14,7 @@ Historical backfill on first import is covered by the backfill helpers here.
 from __future__ import annotations
 
 import functools
+import logging
 import time
 from collections.abc import Iterable
 from datetime import date as date_cls
@@ -28,6 +29,8 @@ from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
 from folioman_app.models import Holding, NAVHistory, Security, Transaction
 from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
+
+logger = logging.getLogger(__name__)
 
 _QUOTE_TYPES = {
     SecurityType.EQUITY.value,
@@ -51,11 +54,50 @@ _QUOTE_LOOKBACK_DAYS = 10
 _SLEEP = time.sleep
 
 
-def _fetch_point(security: Security):
+class _FeedClients:
+    """Lazily-created shared HTTP clients for one batch pass.
+
+    One pooled connection per feed instead of a fresh TLS handshake per
+    security, and ONE NSE cookie warm-up per pass instead of one per equity
+    (the warm-up is itself a request — per-security warming is what hammers
+    NSE). Lazy, so an MF-only pass never touches NSE and a quote-only pass
+    never connects to mfapi. The owning batch closes via :meth:`close`.
+    """
+
+    def __init__(self):
+        self._mfapi = None
+        self._nse = None
+        self._yahoo = None
+
+    @property
+    def mfapi(self):
+        if self._mfapi is None:
+            self._mfapi = mfapi.shared_client()
+        return self._mfapi
+
+    @property
+    def nse(self):
+        if self._nse is None:
+            self._nse = nse_history.warmed_client()
+        return self._nse
+
+    @property
+    def yahoo(self):
+        if self._yahoo is None:
+            self._yahoo = yfinance_feed.shared_client()
+        return self._yahoo
+
+    def close(self) -> None:
+        for client in (self._mfapi, self._nse, self._yahoo):
+            if client is not None:
+                client.close()
+
+
+def _fetch_point(security: Security, clients: _FeedClients):
     """Return (date, nav, source) for the latest price, or None if unavailable."""
     stype = security.security_type
     if stype == SecurityType.MF.value and security.amfi_code:
-        point = mfapi.fetch_latest_nav(security.amfi_code)
+        point = mfapi.fetch_latest_nav(security.amfi_code, client=clients.mfapi)
         return (point.date, point.nav, "mfapi") if point else None
     if stype in _QUOTE_TYPES and security.symbol:
         # NSE-first for Indian names: take the latest close from the last row of the
@@ -66,13 +108,17 @@ def _fetch_point(security: Security):
         if stype != SecurityType.FOREIGN_EQUITY.value and security.exchange in ("", "NSE"):
             since = last_trading_day(timezone.localdate()) - timedelta(days=_QUOTE_LOOKBACK_DAYS)
             try:
-                history = nse_history.fetch_history(security.symbol, start=since, client=None)
+                history = nse_history.fetch_history(
+                    security.symbol, start=since, client=clients.nse
+                )
             except PriceFetchError:
                 history = None
             if history is not None and history.points:
                 latest = history.points[-1]  # points are oldest-first
                 return (latest.date, latest.nav, "nse")
-        quote = yfinance_feed.fetch_quote(security.symbol, exchange=security.exchange)
+        quote = yfinance_feed.fetch_quote(
+            security.symbol, exchange=security.exchange, client=clients.yahoo
+        )
         return (quote.as_of, quote.price, quote.source) if quote else None
     if stype == SecurityType.CRYPTO.value:
         coin_id = (security.metadata or {}).get("coin_id")
@@ -86,23 +132,33 @@ def refresh_navs(*, securities: Iterable[Security] | None = None) -> dict:
     qs = Security.objects.all() if securities is None else securities
     summary = {"updated": 0, "skipped": 0, "errors": 0}
     fetched = False
-    for security in qs:
-        if fetched:
-            _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
-        fetched = True
-        try:
-            point = _fetch_point(security)
-        except (NAVFetchError, PriceFetchError):
-            summary["errors"] += 1
-            continue
-        if point is None:
-            summary["skipped"] += 1  # no feed for this type, or no data
-            continue
-        on, nav, source = point
-        NAVHistory.objects.update_or_create(
-            security=security, date=on, defaults={"nav": nav, "source": source}
-        )
-        summary["updated"] += 1
+    clients = _FeedClients()
+    try:
+        for security in qs:
+            if fetched:
+                _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
+            fetched = True
+            try:
+                point = _fetch_point(security, clients)
+            except (NAVFetchError, PriceFetchError) as exc:
+                logger.warning(
+                    "NAV refresh failed for security %s (%s): %s", security.id, security.name, exc
+                )
+                summary["errors"] += 1
+                continue
+            if point is None:
+                logger.debug(
+                    "NAV refresh: no feed for security %s (%s)", security.id, security.name
+                )
+                summary["skipped"] += 1  # no feed for this type, or no data
+                continue
+            on, nav, source = point
+            NAVHistory.objects.update_or_create(
+                security=security, date=on, defaults={"nav": nav, "source": source}
+            )
+            summary["updated"] += 1
+    finally:
+        clients.close()
     return summary
 
 
@@ -119,11 +175,14 @@ def refresh_navs(*, securities: Iterable[Security] | None = None) -> dict:
 # dates not already present are inserted.
 
 
-def backfill_nav_history(security: Security, *, since: date_cls | None = None) -> int:
-    """Backfill an MF security's NAV history into NAVHistory. Returns points written."""
+def backfill_nav_history(security: Security, *, since: date_cls | None = None, client=None) -> int:
+    """Backfill an MF security's NAV history into NAVHistory. Returns points written.
+
+    ``client`` lets a batch reuse one pooled mfapi connection; when ``None``
+    the feed opens (and closes) its own."""
     if security.security_type != SecurityType.MF.value or not security.amfi_code:
         return 0
-    history = mfapi.fetch_nav_history(security.amfi_code, since=since)
+    history = mfapi.fetch_nav_history(security.amfi_code, since=since, client=client)
     existing = set(NAVHistory.objects.filter(security=security).values_list("date", flat=True))
     to_create = [
         NAVHistory(security=security, date=point.date, nav=point.nav, source="mfapi")
@@ -134,14 +193,17 @@ def backfill_nav_history(security: Security, *, since: date_cls | None = None) -
     return len(to_create)
 
 
-def _fetch_equity_history(security: Security, *, since: date_cls | None, nse_client):
+def _fetch_equity_history(
+    security: Security, *, since: date_cls | None, nse_client, yahoo_client=None
+):
     """Fetch a quote-type security's price history, NSE-first with a Yahoo fallback.
 
     Returns ``(history, source_tag)``. NSE's security-wise feed is authoritative
     for NSE-listed names and a different provider than Yahoo (which throttles), so
     it leads; Yahoo covers BSE-only / foreign names and fills in when NSE is
     unavailable or returns nothing. ``nse_client`` lets a batch reuse one warmed
-    NSE session (cookie wall); when ``None`` the NSE feed warms its own."""
+    NSE session (cookie wall) and ``yahoo_client`` one pooled Yahoo connection;
+    when ``None`` each feed opens its own."""
     if security.exchange in ("", "NSE"):
         try:
             history = nse_history.fetch_history(security.symbol, start=since, client=nse_client)
@@ -150,13 +212,15 @@ def _fetch_equity_history(security: Security, *, since: date_cls | None, nse_cli
         if history is not None and history.points:
             return history, "nse"
     return (
-        yfinance_feed.fetch_history(security.symbol, exchange=security.exchange, start=since),
+        yfinance_feed.fetch_history(
+            security.symbol, exchange=security.exchange, start=since, client=yahoo_client
+        ),
         "yfinance",
     )
 
 
 def backfill_equity_history(
-    security: Security, *, since: date_cls | None = None, nse_client=None
+    security: Security, *, since: date_cls | None = None, nse_client=None, yahoo_client=None
 ) -> int:
     """Backfill a quote-type security's price history into NAVHistory.
 
@@ -167,7 +231,9 @@ def backfill_equity_history(
     MFs, so equity closes flow into valuation through the same path."""
     if security.security_type not in _QUOTE_TYPES or not security.symbol:
         return 0
-    history, source = _fetch_equity_history(security, since=since, nse_client=nse_client)
+    history, source = _fetch_equity_history(
+        security, since=since, nse_client=nse_client, yahoo_client=yahoo_client
+    )
     existing = set(NAVHistory.objects.filter(security=security).values_list("date", flat=True))
     to_create = [
         NAVHistory(security=security, date=point.date, nav=point.nav, source=source)
@@ -216,13 +282,21 @@ def _backfill_missing(qs, *, backfill_one, force: bool = False) -> dict:
         since = min(candidates) if candidates else None
         try:
             written = backfill_one(security, since=since)
-        except (NAVFetchError, PriceFetchError):
+        except (NAVFetchError, PriceFetchError) as exc:
+            logger.warning(
+                "backfill failed for security %s (%s) since=%s: %s",
+                security.id,
+                security.name,
+                since,
+                exc,
+            )
             summary["errors"] += 1  # transient: leave it feed-pending, retry next cycle
             continue
         if written:
             summary["securities"] += 1
             summary["points"] += written
             if security.nav_feed_closed:  # data arrived → reopen a previously-dead code
+                logger.info("security %s (%s): feed reopened", security.id, security.name)
                 security.nav_feed_closed = False
                 security.save(update_fields=["nav_feed_closed", "updated_at"])
         elif latest is None and not security.nav_feed_closed:
@@ -230,6 +304,11 @@ def _backfill_missing(qs, *, backfill_one, force: bool = False) -> dict:
             # price for: the code/ticker is dead (matured/delisted/unmappable), not
             # slow. Flag it so valuation degrades it instead of erroring + retrying
             # the feed forever.
+            logger.warning(
+                "security %s (%s): feed returned no history — marking closed",
+                security.id,
+                security.name,
+            )
             security.nav_feed_closed = True
             security.save(update_fields=["nav_feed_closed", "updated_at"])
             summary["closed"] += 1
@@ -248,7 +327,14 @@ def backfill_missing_history(
         if securities is not None
         else Security.objects.filter(security_type=SecurityType.MF.value)
     )
-    return _backfill_missing(qs, backfill_one=backfill_nav_history, force=force)
+    # One pooled mfapi connection for the whole batch (per-fund clients would
+    # re-handshake TLS for every scheme).
+    client = mfapi.shared_client()
+    try:
+        backfill_one = functools.partial(backfill_nav_history, client=client)
+        return _backfill_missing(qs, backfill_one=backfill_one, force=force)
+    finally:
+        client.close()
 
 
 def backfill_missing_equity_history(
@@ -264,10 +350,15 @@ def backfill_missing_equity_history(
         else Security.objects.filter(security_type__in=sorted(_QUOTE_TYPES))
     )
     # Warm one NSE session for the whole batch (the security-wise feed sits behind
-    # a cookie wall) rather than re-warming per security.
+    # a cookie wall) rather than re-warming per security, and pool one Yahoo
+    # connection for the fallback.
     nse_client = nse_history.warmed_client()
+    yahoo_client = yfinance_feed.shared_client()
     try:
-        backfill_one = functools.partial(backfill_equity_history, nse_client=nse_client)
+        backfill_one = functools.partial(
+            backfill_equity_history, nse_client=nse_client, yahoo_client=yahoo_client
+        )
         return _backfill_missing(qs, backfill_one=backfill_one, force=force)
     finally:
         nse_client.close()
+        yahoo_client.close()

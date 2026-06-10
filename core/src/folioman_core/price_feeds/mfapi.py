@@ -46,6 +46,12 @@ class NAVFetchError(RuntimeError):
     """mfapi returned an error, or the response was unusable."""
 
 
+def shared_client() -> httpx.Client:
+    """A client for a batch of calls — one pooled connection across schemes
+    instead of a fresh TLS handshake per fund. Caller closes."""
+    return httpx.Client(base_url=BASE_URL, timeout=DEFAULT_TIMEOUT)
+
+
 def _is_transient(exc: Exception) -> bool:
     """A failure worth retrying (vs a permanent 404 / malformed response)."""
     if isinstance(exc, httpx.TransportError):  # timeouts, connect/read errors

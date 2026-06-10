@@ -57,6 +57,12 @@ class PriceFetchError(RuntimeError):
     """Yahoo returned an error / unparseable response."""
 
 
+def shared_client() -> httpx.Client:
+    """A client for a batch of calls — one pooled connection across tickers
+    instead of a fresh TLS handshake per symbol. Caller closes."""
+    return httpx.Client(base_url=BASE_URL, timeout=DEFAULT_TIMEOUT, headers=_DEFAULT_HEADERS)
+
+
 def yahoo_symbol(symbol: str, exchange: str = "") -> str:
     """Construct the Yahoo ticker for an Indian symbol + exchange combo."""
     suffix = _EXCHANGE_SUFFIX.get(exchange.upper(), "")
