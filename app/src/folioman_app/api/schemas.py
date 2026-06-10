@@ -255,9 +255,12 @@ class CasPreviewOut(Schema):
     # Content preview (so a Summary/partial CAS is caught before importing):
     from_date: date | None = None  # statement period (MF CAS)
     to_date: date | None = None  # statement period / eCAS statement date
-    scheme_count: int = 0  # MF schemes, or eCAS demat accounts
+    scheme_count: int = 0  # MF schemes, or eCAS demat accounts (real ones only)
     transaction_count: int = 0  # MF transaction rows (0 for eCAS)
     holding_count: int = 0  # eCAS holdings (0 for MF CAS)
+    # RTA folios in the eCAS "Mutual Fund Folios" section — listed alongside
+    # demat accounts in the statement but not one of them (0 for MF CAS).
+    mf_folio_count: int = 0
     # True only for a Detailed + since-inception MF CAS with no snapshot-only
     # schemes — i.e. it can build a full cost-basis ledger. eCAS is always False.
     full_history: bool = False

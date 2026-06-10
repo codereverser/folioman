@@ -130,6 +130,29 @@ def test_cdsl_multi_account_with_mixed_holdings():
     assert {h.security.type for h in b.holdings} == {SecurityType.EQUITY, SecurityType.BOND}
 
 
+def test_mutual_fund_folios_section_is_tagged_not_demat():
+    """casparser emits the RTA "Mutual Fund Folios" section as a synthetic account
+    block (type="Mutual Fund Folios"); it must map with kind="mf_folios" so the
+    importer's "Demat accounts" count excludes it."""
+    mf_section = DematAccount(
+        name="Mutual Fund Folios",
+        type="Mutual Fund Folios",
+        dp_id="",
+        client_id="",
+        folios=1,
+        balance=Decimal("0"),
+        owners=[],
+        equities=[],
+        mutual_funds=[_mf("Equity Fund", "INF109K01VQ4", "50", "120", "100")],
+        bonds=[],
+    )
+    cas = _ecas([_account("ZERODHA", "1208160001234567"), mf_section])
+
+    stmt = ecas_parser.map_ecas_data(cas)
+
+    assert [a.kind for a in stmt.accounts] == ["demat", "mf_folios"]
+
+
 def test_nsdl_depository_and_holding_source():
     cas = _ecas(
         [

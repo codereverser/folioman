@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field
 
@@ -115,9 +116,16 @@ class EcasHoldingLine(DomainModel):
 
 
 class EcasAccountBlock(DomainModel):
-    """One demat account (broker) within an eCAS."""
+    """One account block within an eCAS.
+
+    ``kind`` distinguishes a real demat account (broker) from the statement's
+    "Mutual Fund Folios" section — RTA-held MF folios that the upstream parser
+    emits as a synthetic account block. Counts shown to the user ("Demat
+    accounts: N") must not lump the two together.
+    """
 
     folio: Folio
+    kind: Literal["demat", "mf_folios"] = "demat"
     holdings: list[EcasHoldingLine] = Field(default_factory=list)
 
 

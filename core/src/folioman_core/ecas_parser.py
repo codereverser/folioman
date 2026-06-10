@@ -118,11 +118,19 @@ def _map_account(account: object) -> EcasAccountBlock:
     )
     broker = str(account.name or "").strip() or "UNKNOWN"
     folio = Folio(folio_type=FolioType.DEMAT, number=number[:64], broker=broker[:64])
+    # casparser emits the statement's RTA-held "Mutual Fund Folios" section as a
+    # synthetic account block with this literal type (both CDSL and NSDL). It is
+    # not a demat account — tag it so counts and folio handling can differ.
+    kind = (
+        "mf_folios"
+        if str(getattr(account, "type", "")).strip() == "Mutual Fund Folios"
+        else "demat"
+    )
     holdings: list[EcasHoldingLine] = []
     holdings.extend(_map_equity_holding(eq) for eq in account.equities)
     holdings.extend(_map_mf_holding(mf) for mf in account.mutual_funds)
     holdings.extend(_map_bond_holding(b) for b in account.bonds)
-    return EcasAccountBlock(folio=folio, holdings=holdings)
+    return EcasAccountBlock(folio=folio, kind=kind, holdings=holdings)
 
 
 def map_ecas_data(data: NSDLCASData) -> EcasStatement:

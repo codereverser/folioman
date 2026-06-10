@@ -84,7 +84,8 @@ def persist_ecas_statement(
         }
 
     summary: dict = {
-        "accounts": 0,
+        "accounts": 0,  # real demat accounts only — not the MF-folios section
+        "mf_folios": 0,  # distinct RTA folios in the statement's MF-folios section
         "holdings_created": 0,
         "holdings_updated": 0,
         "holdings_removed": len(removed),
@@ -99,8 +100,15 @@ def persist_ecas_statement(
         # then write the new set. (Securities absent from the statement vanish.)
         investor.holdings.filter(source=source.value).delete()
         securities_by_id: dict[int, Security] = {}
+        mf_folio_numbers: set[str] = set()
         for account in statement.accounts:
-            summary["accounts"] += 1
+            # The "Mutual Fund Folios" section is a synthetic block (RTA-held MF
+            # folios), not a demat account — count it separately or "Demat
+            # accounts" over-reports.
+            if account.kind == "demat":
+                summary["accounts"] += 1
+            else:
+                mf_folio_numbers |= {line.folio.number for line in account.holdings if line.folio}
             for line in account.holdings:
                 if line.value_observed is not None:
                     prov_value += line.value_observed
@@ -109,7 +117,10 @@ def persist_ecas_statement(
                 # MF lines carry their own RTA folio (so they reconcile with the MF
                 # CAS ledger); equities/bonds use the demat account folio.
                 folio = upsert_folio(investor, line.folio or account.folio)
-                security = upsert_security(line.security)
+                # Depository names are garbled (CDSL prefixes MF schemes with an
+                # internal code; equities arrive in registrar boilerplate) — never
+                # let them replace a cleaner name from an MF CAS / manual entry.
+                security = upsert_security(line.security, authoritative_name=False)
                 securities_by_id[security.id] = security
                 # update_or_create (not create) tolerates a security listed twice
                 # in one statement — last row wins, no unique-constraint collision.
@@ -129,6 +140,7 @@ def persist_ecas_statement(
                 summary["holdings_created" if created else "holdings_updated"] += 1
 
     summary["securities"] = len(securities_by_id)
+    summary["mf_folios"] = len(mf_folio_numbers)
     # Recovery breadcrumb: what this import removed (no history table, but the job
     # row records it for audit / manual re-creation).
     if removed:

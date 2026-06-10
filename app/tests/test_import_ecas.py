@@ -86,6 +86,65 @@ def _ecas_demat_mf(isin: str, units: str) -> EcasStatement:
     )
 
 
+def test_account_count_excludes_mutual_fund_folios_section(make_investor):
+    """A CDSL eCAS with 2 demat accounts + the RTA "Mutual Fund Folios" section
+    must report 2 demat accounts and 1 MF folio — the synthetic MF block is not
+    a demat account."""
+    fund = CoreSecurity(type=SecurityType.MF, name="Parag Parikh Flexi Cap", isin=_FUND_ISIN)
+    mf_section = EcasAccountBlock(
+        folio=CoreFolio(folio_type="demat", number="Mutual Fund Folios", broker="UNKNOWN"),
+        kind="mf_folios",
+        holdings=[
+            EcasHoldingLine(
+                security=fund,
+                units="50",
+                value_observed="6000",
+                folio=CoreFolio(folio_type="mf", number="999/0"),
+            )
+        ],
+    )
+    statement = _cdsl_statement()
+    statement.accounts.append(mf_section)
+
+    inv = make_investor()
+    summary = persist_ecas_statement(inv, statement, source_ref="ecas1")
+
+    assert summary["accounts"] == 2
+    assert summary["mf_folios"] == 1
+    assert summary["holdings_created"] == 3  # MF holding still lands, under its RTA folio
+
+
+def test_ecas_never_clobbers_clean_scheme_name(make_investor):
+    """CDSL prints MF schemes with an internal code prefix ("001ZG - Parag
+    Parikh…"). An eCAS imported after the MF CAS must not replace the clean RTA
+    name; an eCAS-first fund keeps its garbled name until an MF CAS refines it."""
+    inv = make_investor()
+    persist_mf_statement(inv, _mf_buy(_FUND_ISIN, "50"))
+    clean = Security.objects.get(isin=_FUND_ISIN).name
+
+    garbled = CoreSecurity(
+        type=SecurityType.MF, name="001ZG - Parag Parikh Flexi Cap Direct Gr", isin=_FUND_ISIN
+    )
+    statement = EcasStatement(
+        depository=Depository.CDSL,
+        statement_date=dt.date(2025, 6, 1),
+        accounts=[
+            EcasAccountBlock(
+                folio=CoreFolio(folio_type="demat", number="1208160001234567", broker="ZERODHA"),
+                holdings=[EcasHoldingLine(security=garbled, units="50", value_observed="6000")],
+            )
+        ],
+    )
+    persist_ecas_statement(inv, statement, source_ref="ecas1", confirm=True)
+
+    assert Security.objects.get(isin=_FUND_ISIN).name == clean
+
+    # The reverse direction still refines: an MF CAS replaces the garbled name.
+    Security.objects.filter(isin=_FUND_ISIN).update(name="001ZG - Parag Parikh Flexi Cap")
+    persist_mf_statement(inv, _mf_buy(_FUND_ISIN, "10"))
+    assert Security.objects.get(isin=_FUND_ISIN).name == clean
+
+
 def test_persist_creates_folios_and_holdings(make_investor):
     inv = make_investor()
     summary = persist_ecas_statement(inv, _cdsl_statement(), source_ref="ecas1")

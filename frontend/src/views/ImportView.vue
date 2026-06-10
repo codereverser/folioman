@@ -61,6 +61,7 @@ interface CasResult {
   incomplete_history?: IncompleteScheme[]
   // eCAS
   accounts?: number
+  mf_folios?: number
   holdings_created?: number
   holdings_updated?: number
   holdings_removed?: number
@@ -317,6 +318,9 @@ function goToDashboard(): void {
         <div><dt>{{ isEcas ? 'Statement date' : 'Period' }}</dt><dd>{{ period }}</dd></div>
         <template v-if="isEcas">
           <div><dt>Demat accounts</dt><dd class="mono">{{ preview?.scheme_count }}</dd></div>
+          <div v-if="preview?.mf_folio_count">
+            <dt>Mutual fund folios</dt><dd class="mono">{{ preview.mf_folio_count }}</dd>
+          </div>
           <div><dt>Holdings</dt><dd class="mono">{{ preview?.holding_count }}</dd></div>
         </template>
         <template v-else>
@@ -399,6 +403,9 @@ function goToDashboard(): void {
         <!-- eCAS summary -->
         <dl v-else class="summary">
           <div><dt>Demat accounts</dt><dd class="mono">{{ result.accounts ?? 0 }}</dd></div>
+          <div v-if="result.mf_folios">
+            <dt>Mutual fund folios</dt><dd class="mono">{{ result.mf_folios }}</dd>
+          </div>
           <div><dt>Holdings added</dt><dd class="mono">{{ result.holdings_created ?? 0 }}</dd></div>
           <div v-if="result.holdings_updated"><dt>Holdings updated</dt><dd class="mono">{{ result.holdings_updated }}</dd></div>
           <div v-if="result.holdings_removed"><dt>Holdings removed</dt><dd class="mono">{{ result.holdings_removed }}</dd></div>

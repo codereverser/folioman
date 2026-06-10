@@ -67,7 +67,14 @@ def _fill_if_empty(security: Security, field: str, value: str) -> None:
     setattr(security, field, value)
 
 
-def upsert_security(core_security) -> Security:
+def upsert_security(core_security, *, authoritative_name: bool = True) -> Security:
+    """Map a core security onto its ORM row, creating or refining.
+
+    ``authoritative_name=False`` is for sources with known-garbled display names
+    (depository eCAS prints MF schemes with an internal code prefix and equities
+    in shouty boilerplate): the name fills a row that has none but never
+    replaces one a cleaner source (RTA MF CAS, manual entry) already set.
+    """
     amc = upsert_amc((core_security.metadata or {}).get("amc", ""))
     existing = _find_existing_security(core_security)
     if existing is None:
@@ -83,7 +90,8 @@ def upsert_security(core_security) -> Security:
             amc=amc,
         )
     # Refine descriptive fields a later statement may carry more accurately.
-    existing.name = core_security.name
+    if core_security.name and (authoritative_name or not existing.name):
+        existing.name = core_security.name
     # Merge metadata rather than replace: a later statement may carry empty or
     # partial metadata (e.g. an eCAS demat holding for a fund first seen via an
     # MF CAS), and must not wipe keys an earlier import set such as

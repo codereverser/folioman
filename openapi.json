@@ -260,6 +260,11 @@
             ],
             "title": "Match Investor Name"
           },
+          "mf_folio_count": {
+            "default": 0,
+            "title": "Mf Folio Count",
+            "type": "integer"
+          },
           "pan_masked": {
             "title": "Pan Masked",
             "type": "string"

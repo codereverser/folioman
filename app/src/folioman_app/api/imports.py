@@ -61,15 +61,26 @@ def _preview_stats(parsed) -> dict:
     Summary/partial CAS (net-worth only) before importing."""
     if parsed.is_ecas:
         ecas = parsed.ecas
+        # "Mutual Fund Folios" is a synthetic section (RTA-held folios), not a
+        # demat account — the preview's "Demat accounts" must count only the real ones.
+        demat = [a for a in ecas.accounts if a.kind == "demat"]
+        mf_folios = {
+            line.folio.number
+            for a in ecas.accounts
+            if a.kind == "mf_folios"
+            for line in a.holdings
+            if line.folio
+        }
         return {
             "from_date": None,
             "to_date": ecas.statement_date,
-            "scheme_count": len(ecas.accounts),
+            "scheme_count": len(demat),
             "transaction_count": 0,
             "holding_count": sum(len(a.holdings) for a in ecas.accounts),
             "full_history": False,  # a depository snapshot, never a cost-basis ledger
             "snapshot_scheme_count": 0,
             "skipped_unidentified": 0,
+            "mf_folio_count": len(mf_folios),
         }
     mf = parsed.mf
     transactions = sum(len(s.transactions) for s in mf.schemes)
@@ -89,6 +100,7 @@ def _preview_stats(parsed) -> dict:
         "full_history": transactions > 0 and snapshot == 0,
         "snapshot_scheme_count": snapshot,
         "skipped_unidentified": mf.skipped_unidentified,
+        "mf_folio_count": 0,  # eCAS-only: RTA folios in its "Mutual Fund Folios" section
     }
 
 

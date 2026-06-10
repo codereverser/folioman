@@ -821,6 +821,11 @@ export interface components {
             match_investor_id?: number | null;
             /** Match Investor Name */
             match_investor_name?: string | null;
+            /**
+             * Mf Folio Count
+             * @default 0
+             */
+            mf_folio_count: number;
             /** Pan Masked */
             pan_masked: string;
             /**
