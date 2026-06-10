@@ -11,11 +11,12 @@ import { downloadText } from '@/utils/csv'
 import { formatDate } from '@/utils/format'
 import { importSummary } from '@/utils/jobs'
 import JobStatusBadge from '@/components/JobStatusBadge.vue'
+import NavFreshnessPanel from '@/components/NavFreshnessPanel.vue'
 
 const route = useRoute()
 // Settings is split into tabs (route param ":tab"); bare /settings = general.
-const activeTab = computed<'general' | 'jobs'>(() =>
-  route.params.tab === 'jobs' ? 'jobs' : 'general',
+const activeTab = computed<'general' | 'jobs' | 'navs'>(() =>
+  route.params.tab === 'jobs' || route.params.tab === 'navs' ? route.params.tab : 'general',
 )
 
 // Support routes through the public repo (issues / discussions); each row below
@@ -145,6 +146,12 @@ async function exportTransactions(): Promise<void> {
         :class="{ active: activeTab === 'jobs' }"
         :to="{ name: 'settings', params: { tab: 'jobs' } }"
         >Jobs &amp; valuation</RouterLink
+      >
+      <RouterLink
+        class="tab"
+        :class="{ active: activeTab === 'navs' }"
+        :to="{ name: 'settings', params: { tab: 'navs' } }"
+        >NAV freshness</RouterLink
       >
     </nav>
 
@@ -295,6 +302,9 @@ async function exportTransactions(): Promise<void> {
       </article>
     </template>
 
+    <!-- NAV freshness: per-security price currency + manual refresh -->
+    <NavFreshnessPanel v-else-if="activeTab === 'navs'" />
+
     <!-- Jobs & valuation activity -->
     <template v-else>
       <p v-if="jobsLoading" class="hint">Loading…</p>
@@ -354,7 +364,8 @@ async function exportTransactions(): Promise<void> {
 
 <style scoped>
 .settings {
-  max-width: 48rem;
+  max-width: var(--fm-content-max);
+  width: 100%;
   margin: 0 auto;
   padding: var(--fm-space-6);
   display: flex;

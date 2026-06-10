@@ -328,6 +328,34 @@ class JobsOverviewOut(Schema):
     valuations: list[ValuationDiagnosticsOut]
 
 
+class NavSecurityFreshnessOut(Schema):
+    """One tracked security's NAV currency for the freshness panel."""
+
+    security_id: int
+    name: str
+    security_type: str
+    identifier: str  # symbol / ISIN / AMFI code — display identity
+    feed_code: str  # what the refresh queries; "" = nothing to query
+    latest_nav_date: date | None = None
+    first_nav_date: date | None = None
+    points: int = 0  # stored history depth
+    lag_trading_days: int | None = None  # behind the last trading day; None = unpriced
+    status: str  # fresh | grace | stale | pending | closed | no_feed
+
+
+class NavFreshnessOut(Schema):
+    """Settings 'NAV freshness' panel: per-security currency + refresh schedule.
+
+    Read-only — refreshes run on the scheduler (or ``manage.py refresh_navs``);
+    the panel shows when prices were last written and when the next pass runs.
+    """
+
+    as_of: date  # the last *completed* trading day lags are measured against
+    securities: list[NavSecurityFreshnessOut]
+    last_refreshed_at: datetime | None = None  # newest NAVHistory write (any source)
+    next_refresh_at: datetime  # next scheduled re-fetch pass (absolute instant)
+
+
 class TransactionIn(Schema):
     """A single manually-entered transaction (security identified inline)."""
 

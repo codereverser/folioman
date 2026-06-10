@@ -35,6 +35,7 @@ from django.conf import settings
 
 from folioman_app.tasks.isin_ticks import run_isin_catch_up_tick, run_isin_update_tick
 from folioman_app.tasks.valuation_ticks import (
+    REVALUE_HOURS,
     run_catch_up_tick,
     run_daily_extend_tick,
     run_pending_valuations_tick,
@@ -44,10 +45,9 @@ logger = logging.getLogger(__name__)
 
 _INTERVAL_SECONDS = 30
 
-# Revalue every 6 hours from 02:00 (02/08/14/20). Most MF NAVs post just after
-# midnight, but some only mid-morning (~09:00), so a single 02:00 run misses them
-# for the day; the later runs re-fetch and re-do the current day to pick them up.
-_REVALUE_HOURS = "2,8,14,20"
+# Revalue every 6 hours — canonical hours live in
+# ``tasks.valuation_ticks.REVALUE_HOURS`` (shared with the NAV freshness API).
+_REVALUE_HOURS = ",".join(str(h) for h in REVALUE_HOURS)
 # How late a revalue tick may fire and still run. APScheduler's in-memory jobstore
 # has no record of runs missed while no scheduler existed, so a cold start (desktop
 # closed) is covered by the launch catch-up below; this grace covers the "process
@@ -89,8 +89,8 @@ _JOBS: tuple[_Job, ...] = (
         trigger_args={"hour": _REVALUE_HOURS, "minute": 0},
         misfire_grace_time=_DAILY_MISFIRE_GRACE_SECONDS,
     ),
-    # Refresh the casparser-isin reference DB once a day, offset from the 02:00
-    # revalue. A cheap version check that downloads only when the remote is newer.
+    # Refresh the casparser-isin reference DB once a day, offset from the revalue
+    # runs. A cheap version check that downloads only when the remote is newer.
     _Job(
         id="update_isin_db",
         func=run_isin_update_tick,

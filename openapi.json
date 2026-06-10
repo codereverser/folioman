@@ -1508,6 +1508,47 @@
         "title": "JobsOverviewOut",
         "type": "object"
       },
+      "NavFreshnessOut": {
+        "description": "Settings 'NAV freshness' panel: per-security currency + refresh schedule.\n\nRead-only \u2014 refreshes run on the scheduler (or ``manage.py refresh_navs``);\nthe panel shows when prices were last written and when the next pass runs.",
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "last_refreshed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Refreshed At"
+          },
+          "next_refresh_at": {
+            "format": "date-time",
+            "title": "Next Refresh At",
+            "type": "string"
+          },
+          "securities": {
+            "items": {
+              "$ref": "#/components/schemas/NavSecurityFreshnessOut"
+            },
+            "title": "Securities",
+            "type": "array"
+          }
+        },
+        "required": [
+          "as_of",
+          "securities",
+          "next_refresh_at"
+        ],
+        "title": "NavFreshnessOut",
+        "type": "object"
+      },
       "NavPoint": {
         "properties": {
           "date": {
@@ -1526,6 +1567,85 @@
           "nav"
         ],
         "title": "NavPoint",
+        "type": "object"
+      },
+      "NavSecurityFreshnessOut": {
+        "description": "One tracked security's NAV currency for the freshness panel.",
+        "properties": {
+          "feed_code": {
+            "title": "Feed Code",
+            "type": "string"
+          },
+          "first_nav_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Nav Date"
+          },
+          "identifier": {
+            "title": "Identifier",
+            "type": "string"
+          },
+          "lag_trading_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lag Trading Days"
+          },
+          "latest_nav_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Nav Date"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "points": {
+            "default": 0,
+            "title": "Points",
+            "type": "integer"
+          },
+          "security_id": {
+            "title": "Security Id",
+            "type": "integer"
+          },
+          "security_type": {
+            "title": "Security Type",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "security_id",
+          "name",
+          "security_type",
+          "identifier",
+          "feed_code",
+          "status"
+        ],
+        "title": "NavSecurityFreshnessOut",
         "type": "object"
       },
       "RosterAggregateOut": {
@@ -4116,6 +4236,29 @@
         "summary": "App Meta",
         "tags": [
           "meta"
+        ]
+      }
+    },
+    "/api/navs/freshness": {
+      "get": {
+        "description": "Every tracked security's latest NAV date + trading-day lag, worst first.",
+        "operationId": "folioman_app_api_navs_nav_freshness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NavFreshnessOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Nav Freshness",
+        "tags": [
+          "navs"
         ]
       }
     },

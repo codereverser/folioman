@@ -24,6 +24,13 @@ from django.db import close_old_connections
 
 logger = logging.getLogger(__name__)
 
+# When the NAV re-fetch + daily-extend pass runs (local hours). MF NAVs declare
+# overnight through mid-morning (~09:00), and mfapi needs a beat to sync after
+# that — 10:00 is the earliest run expected to catch a full day's NAVs; the
+# others spread the rest of the day. Canonical here (broker-free) so both the
+# APScheduler adapter and the NAV freshness API read the same schedule.
+REVALUE_HOURS: tuple[int, ...] = (4, 10, 16, 22)
+
 
 def _run(fn: Callable[[], int]) -> int:
     """Close stale per-thread DB connections around a job run and contain any
