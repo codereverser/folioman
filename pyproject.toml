@@ -9,7 +9,7 @@ members = ["core", "app", "desktop", "server"]
 # Workspace-wide development dependencies (PEP 735). Installed by `uv sync`.
 [dependency-groups]
 dev = [
-    "ruff>=0.15.15",
+    "ruff>=0.15.16",
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "pytest-django>=4.9",
