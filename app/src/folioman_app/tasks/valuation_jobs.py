@@ -46,6 +46,7 @@ outside Django config when scheduled by the OS rather than APScheduler.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from datetime import timedelta
 from decimal import Decimal
 
@@ -62,6 +63,8 @@ from folioman_app.tasks.refresh_navs import (
     backfill_missing_history,
     refresh_navs,
 )
+
+logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 8
 
@@ -166,6 +169,9 @@ def _mark_error(inv: Investor, message: str) -> None:
     inv.valuation_attempts = (inv.valuation_attempts or 0) + 1
     inv.valuation_status = ValuationStatus.ERROR
     inv.valuation_error = message[:500]
+    logger.warning(
+        "investor %s valuation error (attempt %s): %s", inv.id, inv.valuation_attempts, message
+    )
     # Below the cap, schedule a retry; at/above it, stop auto-retrying (the daily
     # tick re-queues errored investors so a recovered feed still gets picked up).
     inv.valuation_next_attempt_at = (
@@ -246,6 +252,7 @@ def recompute_investor_valuation(
         _mark_ready(inv, today)
         return ValuationStatus.READY
 
+    logger.info("investor %s: recomputing from %s to %s", investor_id, start, today)
     inv.valuation_status = ValuationStatus.COMPUTING
     inv.save(update_fields=["valuation_status", "updated_at"])
     try:
@@ -255,13 +262,20 @@ def recompute_investor_valuation(
             # Backfill BEFORE the latest-point refresh: it must see the true contiguous
             # tail (the last stored date), not a fresh point refresh just wrote ahead of
             # an interior gap — else the gap-fill is skipped as "already current".
-            backfill_missing_history(  # MF history (mfapi) — fills any gap to today
+            mf_summary = backfill_missing_history(  # MF history (mfapi) — fills any gap to today
                 securities=securities.filter(security_type=SecurityType.MF.value)
             )
-            backfill_missing_equity_history(  # equity/etf/bond history (NSE-first, Yahoo)
-                securities=securities.filter(security_type__in=sorted(_QUOTE_TYPES))
+            logger.info("investor %s: MF backfill %s", investor_id, mf_summary)
+            eq_summary = (
+                backfill_missing_equity_history(  # equity/etf/bond history (NSE-first, Yahoo)
+                    securities=securities.filter(security_type__in=sorted(_QUOTE_TYPES))
+                )
             )
-            refresh_navs(securities=securities)  # current point per security (equities too)
+            logger.info("investor %s: equity backfill %s", investor_id, eq_summary)
+            nav_summary = refresh_navs(
+                securities=securities
+            )  # current point per security (equities too)
+            logger.info("investor %s: NAV refresh %s", investor_id, nav_summary)
         # MF (mfapi) and quote-type (NSE/Yahoo) securities both have a history feed.
         # An unpriced one splits three ways:
         #  - **feed-pending** (has a queryable identifier — amfi_code for MF, symbol for
@@ -298,10 +312,13 @@ def recompute_investor_valuation(
         # Compute the full new series first, then upsert it — a failure in either step
         # leaves the prior/provisional series intact (see _upsert_series).
         points = _value_series([inv], start, today, _SERIES_GRANULARITY)
+        logger.info("investor %s: computed %s value points", investor_id, len(points))
         _upsert_series(inv, points)
         _mark_ready(inv, today)
+        logger.info("investor %s: valuation ready through %s", investor_id, today)
         return ValuationStatus.READY
     except Exception as exc:
+        logger.exception("investor %s: unexpected error during recompute", investor_id)
         _mark_error(inv, f"{type(exc).__name__}: {exc}")
         return ValuationStatus.ERROR
 
@@ -318,6 +335,7 @@ def process_pending_valuations() -> int:
     )
     if not due:
         return 0
+    logger.info("pending valuation pass: %s investor(s) due", len(due))
     # Prime the NAV cache ONCE for the union of all due investors' holdings, then
     # value each off the cache (prime_navs=False). Without this, investors sharing
     # popular schemes each re-fetch them — the burst that rate-limits the feed.
@@ -329,11 +347,16 @@ def process_pending_valuations() -> int:
         securities = Security.objects.filter(id__in=sec_ids)
         # Backfill first (fills any gap to today), then the latest-point refresh —
         # see recompute_investor_valuation for why the order matters.
-        backfill_missing_history(securities=securities.filter(security_type=SecurityType.MF.value))
-        backfill_missing_equity_history(
+        mf_summary = backfill_missing_history(
+            securities=securities.filter(security_type=SecurityType.MF.value)
+        )
+        logger.info("batch MF backfill: %s", mf_summary)
+        eq_summary = backfill_missing_equity_history(
             securities=securities.filter(security_type__in=sorted(_QUOTE_TYPES))
         )
-        refresh_navs(securities=securities)
+        logger.info("batch equity backfill: %s", eq_summary)
+        nav_summary = refresh_navs(securities=securities)
+        logger.info("batch NAV refresh: %s", nav_summary)
     processed = 0
     for investor_id, recompute_from in due:
         recompute_investor_valuation(investor_id, recompute_from, prime_navs=False)

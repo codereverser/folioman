@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from folioman_app.settings._logging import make_logging
 from folioman_app.settings._sqlite import sqlite_concurrency_options
 
 # .../app/src/folioman_app/settings/base.py -> BASE_DIR = .../folioman_app
@@ -80,6 +81,11 @@ DEMO_MODE = os.environ.get("FOLIOMAN_DEMO", "0") == "1"
 # desktop settings flip it on so the single PyWebView process runs it in a thread.
 # Env override (FOLIOMAN_RUN_SCHEDULER=1) for a dev runserver that wants it inline.
 FOLIOMAN_RUN_SCHEDULER = os.environ.get("FOLIOMAN_RUN_SCHEDULER", "0") == "1"
+
+# Dev / test logging: console only, so a bare `manage.py runserver` (the dev
+# loop) actually shows scheduler + valuation job logs. desktop.py / server.py
+# override this with their rotating-file configs.
+LOGGING = make_logging(console=True, level=os.environ.get("FOLIOMAN_LOG_LEVEL", "INFO"))
 
 ROOT_URLCONF = "folioman_app.urls"
 
