@@ -19,6 +19,15 @@ It's a **read-only** instance preloaded with example data (mutual funds, equitie
 capital gains across a few years), so you can explore every screen freely. Imports
 and edits are disabled.
 
+## A look inside
+
+| | |
+|:---:|:---:|
+| **Dashboard** — net worth, returns & allocation | **Capital gains** — a worksheet per financial year |
+| ![An investor dashboard with net-worth chart and metric cards](docs/screenshots/dashboard.png) | ![The capital-gains worksheet for a financial year](docs/screenshots/capital-gains.png) |
+| **Data integrity** — every holding reconciled | **Family view** — everyone's portfolios, combined |
+| ![The holdings integrity and reconciliation view](docs/screenshots/integrity.png) | ![The family aggregate view](docs/screenshots/family.png) |
+
 ## What you get
 
 - **All your investments in one place.** Import your mutual-fund CAS statement and
