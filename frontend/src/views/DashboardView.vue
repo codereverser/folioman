@@ -160,9 +160,14 @@ function openScheme(securityId: number): void {
         <h1>Dashboard</h1>
         <p class="sub">
           {{ investorName }} ·
-          <span v-if="summary.navsStale" class="stale-navs" title="Prices haven't refreshed recently">
+          <RouterLink
+            v-if="summary.navsStale"
+            class="stale-navs"
+            :to="{ name: 'settings', params: { tab: 'navs' } }"
+            title="Prices haven't refreshed recently — see per-security freshness"
+          >
             <i class="pi pi-exclamation-triangle" aria-hidden="true" /> NAVs as of {{ summary.navsAsOf }}
-          </span>
+          </RouterLink>
           <template v-else>{{ summary.asOf }}</template>
         </p>
       </div>
@@ -299,6 +304,9 @@ function openScheme(securityId: number): void {
           <p class="chart-progress">
             Portfolio valuation in progress — refresh in a bit. Showing values as of
             your latest statement meanwhile.
+            <RouterLink class="navs-link" :to="{ name: 'settings', params: { tab: 'navs' } }"
+              >Check NAV freshness →</RouterLink
+            >
           </p>
         </template>
         <PortfolioValueChart
@@ -433,6 +441,10 @@ function openScheme(securityId: number): void {
 .page-head .sub .stale-navs {
   color: var(--p-amber-600, #d97706);
   font-weight: 600;
+  text-decoration: none;
+}
+.page-head .sub .stale-navs:hover {
+  text-decoration: underline;
 }
 .page-head .sub .stale-navs .pi {
   font-size: 0.75rem;
@@ -564,6 +576,15 @@ function openScheme(securityId: number): void {
   margin: var(--fm-space-2) 0 0;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
+}
+.chart-progress .navs-link {
+  color: var(--p-primary-color);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.chart-progress .navs-link:hover {
+  text-decoration: underline;
 }
 .table-placeholder {
   height: 12rem;

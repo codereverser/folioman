@@ -134,6 +134,9 @@ function openInvestor(investorId: number): void {
           <p class="chart-progress">
             Portfolio valuation in progress — refresh in a bit. Showing values as of
             the latest statements meanwhile.
+            <RouterLink class="navs-link" :to="{ name: 'settings', params: { tab: 'navs' } }"
+              >Check NAV freshness →</RouterLink
+            >
           </p>
         </template>
         <PortfolioValueChart
@@ -282,6 +285,15 @@ function openInvestor(investorId: number): void {
   margin: var(--fm-space-2) 0 0;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
+}
+.chart-progress .navs-link {
+  color: var(--p-primary-color);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.chart-progress .navs-link:hover {
+  text-decoration: underline;
 }
 .table-placeholder {
   height: 12rem;
