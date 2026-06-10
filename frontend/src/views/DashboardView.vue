@@ -10,6 +10,7 @@ import DeltaChip from '@/components/DeltaChip.vue'
 import DashboardFunds from '@/views/dashboard/DashboardFunds.vue'
 import DashboardStocks from '@/views/dashboard/DashboardStocks.vue'
 import { useDashboard, type RangeKey } from '@/composables/useDashboard'
+import { RANGES } from '@/utils/portfolio'
 import { useCountUp } from '@/composables/useCountUp'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
@@ -59,6 +60,9 @@ const investorName = computed(() => roster.investorName(investorId.value) ?? 'In
 // Live summary + net-worth series; the range toggle re-fetches the series.
 const { summary, rollup, range, setRange, valuationReady } = useDashboard(investorId)
 
+// Axis tick density follows the range's sampling (see RANGES).
+const valueGranularity = computed(() => RANGES[range.value].granularity)
+
 // When prices are stale on open, the launch catch-up is already refreshing them in
 // the background — tell the user once so the wait makes sense (values update on the
 // next tick). Guarded in the store against re-toasting across investor switches.
@@ -73,6 +77,7 @@ const integrityTo = computed(() => ({
 }))
 
 const ranges: { label: string; value: RangeKey }[] = [
+  { label: '1M', value: '1M' },
   { label: '3M', value: '3M' },
   { label: '6M', value: '6M' },
   { label: '1Y', value: '1Y' },
@@ -296,7 +301,11 @@ function openScheme(securityId: number): void {
             your latest statement meanwhile.
           </p>
         </template>
-        <PortfolioValueChart v-else-if="loadCharts" :data="summary.valueSeries" />
+        <PortfolioValueChart
+          v-else-if="loadCharts"
+          :data="summary.valueSeries"
+          :granularity="valueGranularity"
+        />
         <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
       </article>
 

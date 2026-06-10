@@ -63,10 +63,21 @@ def _amc_label(security) -> str:
     return (security.metadata or {}).get("amc") or ""
 
 
+_SECURITY_TYPE_CATEGORY = {
+    "equity": "Equity",
+    "foreign_equity": "Equity",
+    "bond": "Debt",
+    "fd": "Debt",
+}
+
+
 def _category_label(security) -> str:
-    """Equity vs Debt for the allocation breakdown. ``equity_oriented`` is the
-    reliable signal (it drives 112A tax treatment); fall back to a titled
-    ``fund_type`` when older imports lack it, else "Other"."""
+    """Equity vs Debt for the allocation breakdown. For mutual funds,
+    ``equity_oriented`` is the reliable signal (it drives 112A tax treatment);
+    fall back to a titled ``fund_type`` when older imports lack it. For directly
+    held securities the security type itself classifies the holding (a listed
+    stock is Equity, a bond/FD is Debt); ETFs and crypto span asset classes, so
+    they stay "Other" alongside truly unknown types."""
     meta = security.metadata or {}
     equity_oriented = meta.get("equity_oriented")
     if equity_oriented is True:
@@ -74,7 +85,9 @@ def _category_label(security) -> str:
     if equity_oriented is False:
         return "Debt"
     fund_type = (meta.get("fund_type") or "").strip()
-    return fund_type.title() if fund_type else "Other"
+    if fund_type:
+        return fund_type.title()
+    return _SECURITY_TYPE_CATEGORY.get(security.security_type, "Other")
 
 
 def _current_positions(investor: Investor):

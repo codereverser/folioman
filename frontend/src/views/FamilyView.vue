@@ -7,6 +7,7 @@ import Message from 'primevue/message'
 import MetricCard from '@/components/MetricCard.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import { useFamilyDashboard, type RangeKey } from '@/composables/useFamilyDashboard'
+import { RANGES } from '@/utils/portfolio'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { formatInr } from '@/utils/format'
@@ -53,6 +54,9 @@ const familyId = computed(() => {
 const familyName = computed(() => roster.familyName(familyId.value) ?? 'Family')
 
 const { summary, members, range, setRange, valuationReady } = useFamilyDashboard(familyId)
+
+// Axis tick density follows the range's sampling (see RANGES).
+const valueGranularity = computed(() => RANGES[range.value].granularity)
 
 const ranges: { label: string; value: RangeKey }[] = [
   { label: '6M', value: '6M' },
@@ -132,7 +136,11 @@ function openInvestor(investorId: number): void {
             the latest statements meanwhile.
           </p>
         </template>
-        <PortfolioValueChart v-else-if="loadCharts" :data="summary.valueSeries" />
+        <PortfolioValueChart
+          v-else-if="loadCharts"
+          :data="summary.valueSeries"
+          :granularity="valueGranularity"
+        />
         <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
       </article>
 

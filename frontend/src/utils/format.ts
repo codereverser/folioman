@@ -86,6 +86,15 @@ export function formatDate(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? '—' : dateFmt.format(d)
 }
 
+const dayMonthFmt = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short' })
+
+/** ISO date → "30 May"; for daily/weekly trend axes where the year is implied. */
+export function formatDayMonth(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : dayMonthFmt.format(d)
+}
+
 const monthYearFmt = new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' })
 
 /** ISO date → "Jun 2025"; for trend axes where day-level detail is noise. */
