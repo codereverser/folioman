@@ -437,7 +437,7 @@ requires-dist = [
     { name = "folioman-core", editable = "core" },
     { name = "gunicorn", marker = "extra == 'server'", specifier = ">=23.0" },
     { name = "platformdirs", specifier = ">=4.0" },
-    { name = "psycopg", extras = ["binary"], marker = "extra == 'server'", specifier = ">=3.2" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'server'", specifier = ">=3.3.4" },
     { name = "rich", specifier = ">=13.7" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "whitenoise", specifier = ">=6.6" },
