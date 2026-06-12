@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import io
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from folioman_core.cas_reader import read_cas
@@ -42,6 +43,18 @@ _NO_PAN_MSG = (
     "This statement has no PAN, so we can't tell whose it is. "
     "Import a statement that includes the holder's PAN."
 )
+
+
+def _read_upload(file: UploadedFile) -> bytes:
+    """Read an uploaded CAS within the size cap, else 413.
+
+    The whole file is parsed in memory, so an unbounded read is the OOM/DoS
+    vector. Checked before ``read()`` so a hostile body is never materialised."""
+    limit = settings.MAX_UPLOAD_BYTES
+    if file.size is not None and file.size > limit:
+        mb = limit // (1024 * 1024)
+        raise HttpError(413, f"File too large. The maximum statement size is {mb} MB.")
+    return file.read()
 
 
 def _parse_cas(content: bytes, password: str):
@@ -113,7 +126,7 @@ def preview_cas(request, file: UploadedFile = File(...), password: str = Form(""
     'attach' vs 'create'), plus content stats (period, counts, full-history vs
     snapshot) so the UI can flag a Summary/partial statement before import.
     """
-    parsed = _parse_cas(file.read(), password)
+    parsed = _parse_cas(_read_upload(file), password)
     identity = parsed.investor
     if not identity.pan:
         raise HttpError(422, _NO_PAN_MSG)
@@ -143,7 +156,7 @@ def import_cas(
     persists nothing — resubmit with ``confirm=true`` to apply. A PAN-less
     statement is rejected (422); nothing is created.
     """
-    content = file.read()
+    content = _read_upload(file)
     # Parse once to resolve the investor, then hand that parse to the job processor
     # so the PDF isn't parsed again to persist.
     parsed = _parse_cas(content, password)

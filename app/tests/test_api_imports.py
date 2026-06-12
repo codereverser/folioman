@@ -192,3 +192,27 @@ def test_preview_rejects_pan_less_statement(client, patch_cas, make_parsed_cas):
     upload = SimpleUploadedFile("cams.pdf", b"%PDF fake")
     resp = client.post("/api/imports/cas/preview", {"file": upload, "password": "s"})
     assert resp.status_code == 422
+
+
+def test_oversize_upload_is_rejected(client, patch_cas, make_parsed_cas, settings):
+    # An over-cap upload is refused (413) before it is read into memory or parsed —
+    # the parser must never see a multi-GB body. Cap dropped to 8 bytes for the test.
+    from folioman_app.models import ImportJob, Investor
+
+    settings.MAX_UPLOAD_BYTES = 8
+    patch_cas(make_parsed_cas(mf=MfCasStatement(schemes=[]), pan="ABCDE1234F"))
+    for path in ("/api/imports/cas", "/api/imports/cas/preview"):
+        big = SimpleUploadedFile("cams.pdf", b"%PDF more than eight bytes")
+        resp = client.post(path, {"file": big, "password": "s"})
+        assert resp.status_code == 413, path
+    # Refused at the door — no investor created, no job recorded.
+    assert Investor.objects.count() == 0
+    assert ImportJob.objects.count() == 0
+
+
+def test_at_cap_upload_is_accepted(client, patch_cas, make_parsed_cas, settings):
+    # A body at exactly the cap parses normally — the guard is strictly greater-than.
+    settings.MAX_UPLOAD_BYTES = 9
+    patch_cas(make_parsed_cas(mf=MfCasStatement(schemes=[]), pan="ABCDE1234F"))
+    upload = SimpleUploadedFile("cams.pdf", b"%PDF fake")  # 9 bytes
+    assert client.post("/api/imports/cas", {"file": upload, "password": "s"}).status_code == 201

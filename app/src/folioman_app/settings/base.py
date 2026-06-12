@@ -158,6 +158,13 @@ DEV_FERNET_KEY = os.environ.get(
     "FOLIOMAN_FERNET_KEY", "lxS4L-1mmiEwlCCHsqgXzByglZ7TWlgcV3XeG7mTmY0="
 )
 
+# --- CAS/eCAS upload size cap ----------------------------------------------
+# A real CAS/eCAS PDF is well under a megabyte; this cap exists so a hostile or
+# accidental multi-GB upload can't be read into memory and OOM the server. The
+# whole file is loaded (file.read()) to parse, so this is the load-bearing guard
+# — Django's DATA_UPLOAD_MAX_MEMORY_SIZE does not bound multipart file parts.
+MAX_UPLOAD_BYTES = int(os.environ.get("FOLIOMAN_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+
 # --- casparser-isin database -----------------------------------------------
 # Writable location for the ISIN/AMFI reference DB so the daily updater can refresh
 # it in place (the bundled copy is read-only). `None` (dev default) → use the
