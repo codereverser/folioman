@@ -255,3 +255,80 @@ def test_schedule_112a_integrity_lookup_survives_name_drift():
         integrity_by_security={cas_security: IntegrityStatus.RECONCILED},
     )
     assert len(rows) == 1, "name drift between integrity map and disposals must not drop rows"
+
+
+# --- FY-transition boundary edges ---------------------------------------------
+
+
+def _buy(units: str, nav: str, on: date) -> Transaction:
+    return Transaction(
+        security=_EQUITY,
+        date=on,
+        type=TransactionType.BUY,
+        units=units,
+        nav_or_price=nav,
+        amount=str(Decimal(units) * Decimal(nav)),
+        source=TransactionSource.MANUAL,
+    )
+
+
+def _sell(units: str, nav: str, on: date) -> Transaction:
+    return Transaction(
+        security=_EQUITY,
+        date=on,
+        type=TransactionType.SELL,
+        units=units,
+        nav_or_price=nav,
+        source=TransactionSource.MANUAL,
+    )
+
+
+_RECONCILED = {_EQUITY: IntegrityStatus.RECONCILED}
+
+
+def test_schedule_112a_fy_filter_inclusive_on_mar31_excludes_apr1():
+    # Two LTCG sells straddling the FY 2024-25 / 2025-26 boundary, distinct prices.
+    book = [
+        _buy("20", "50", date(2017, 1, 1)),
+        _sell("10", "150", date(2025, 3, 31)),  # last day of FY 2024-25
+        _sell("10", "200", date(2025, 4, 1)),  # first day of FY 2025-26
+    ]
+    lines = compute_gain_lines(book, get_policy("IN"))
+    rows_2425 = compute_schedule_112a(lines, "2024-25", integrity_by_security=_RECONCILED)
+    rows_2526 = compute_schedule_112a(lines, "2025-26", integrity_by_security=_RECONCILED)
+
+    assert len(rows_2425) == 1 and len(rows_2526) == 1  # one sell each FY
+    # The Mar-31 sell (1500) is in 2024-25; the Apr-1 sell (2000) in 2025-26.
+    assert rows_2425[0].full_value_consideration == Decimal("1500.00")
+    assert rows_2526[0].full_value_consideration == Decimal("2000.00")
+
+
+def test_schedule_112a_bucketed_by_sale_fy_not_acquisition_fy():
+    # Bought in FY 2016-17, sold in FY 2024-25 → reported only in the sale's FY.
+    book = [_buy("10", "50", date(2017, 1, 1)), _sell("10", "150", date(2024, 8, 1))]
+    lines = compute_gain_lines(book, get_policy("IN"))
+    assert compute_schedule_112a(lines, "2016-17", integrity_by_security=_RECONCILED) == []
+    assert len(compute_schedule_112a(lines, "2024-25", integrity_by_security=_RECONCILED)) == 1
+
+
+def test_schedule_112a_transfer_bucket_col1b_on_2024_07_23_cutoff():
+    # Col 1b (transfer regime) splits on 2024-07-23: the cutoff itself is AE, the
+    # day before is BE. Both sells fall in FY 2024-25.
+    on_cutoff = compute_schedule_112a(
+        compute_gain_lines(
+            [_buy("10", "50", date(2017, 1, 1)), _sell("10", "150", date(2024, 7, 23))],
+            get_policy("IN"),
+        ),
+        "2024-25",
+        integrity_by_security=_RECONCILED,
+    )
+    day_before = compute_schedule_112a(
+        compute_gain_lines(
+            [_buy("10", "50", date(2017, 1, 1)), _sell("10", "150", date(2024, 7, 22))],
+            get_policy("IN"),
+        ),
+        "2024-25",
+        integrity_by_security=_RECONCILED,
+    )
+    assert on_cutoff[0].share_unit_transferred == "AE"
+    assert day_before[0].share_unit_transferred == "BE"

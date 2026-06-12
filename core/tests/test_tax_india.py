@@ -154,3 +154,66 @@ def test_grandfathered_uses_sale_when_below_fmv(policy: IndiaTaxPolicy):
     adjusted = policy.adjusted_cost(disposal, fmv_lookup=fmv_lookup)
     # max(50, min(90, 70)) * 10 = 700
     assert adjusted == Decimal("700")
+
+
+# --- FY-transition / grandfathering boundary edges ----------------------------
+
+
+def _fmv(value: str):
+    def lookup(isin: str, _on: date) -> Decimal | None:
+        return Decimal(value) if isin == _EQUITY.isin else None
+
+    return lookup
+
+
+def _ltcg_disposal(*, acquired_on: date, cost: str, sale: str, units: str = "10") -> Disposal:
+    return Disposal(
+        security=_EQUITY,
+        acquired_on=acquired_on,
+        sold_on=date(2024, 8, 1),  # well after a year → LONG
+        units=units,
+        sale_price_per_unit=sale,
+        cost_per_unit=cost,
+    )
+
+
+def test_acquisition_on_grandfather_cutoff_is_grandfathered(policy: IndiaTaxPolicy):
+    # Acquired exactly on 2018-01-31 (the BE cutoff is inclusive) → grandfathered.
+    on_cutoff = _ltcg_disposal(acquired_on=GRANDFATHER_ACQUIRE_CUTOFF, cost="5", sale="100")
+    assert policy.adjusted_cost(on_cutoff, fmv_lookup=_fmv("90")) == Decimal("900.00")
+    # One day later (2018-02-01, AE) → no grandfathering, original cost stands.
+    day_after = _ltcg_disposal(acquired_on=date(2018, 2, 1), cost="5", sale="100")
+    assert policy.adjusted_cost(day_after, fmv_lookup=_fmv("90")) == Decimal("50.00")
+
+
+def test_grandfather_fmv_equal_to_cost_or_above_sale(policy: IndiaTaxPolicy):
+    # FMV == cost → cost unchanged.
+    at_cost = _ltcg_disposal(acquired_on=date(2017, 1, 1), cost="50", sale="100")
+    assert policy.adjusted_cost(at_cost, fmv_lookup=_fmv("50")) == Decimal("500.00")
+    # FMV above the sale price → capped at the sale price: max(20, min(150, 100)) = 100.
+    capped = _ltcg_disposal(acquired_on=date(2017, 1, 1), cost="20", sale="100")
+    assert policy.adjusted_cost(capped, fmv_lookup=_fmv("150")) == Decimal("1000.00")
+
+
+def test_grandfather_does_not_inflate_cost_on_a_loss(policy: IndiaTaxPolicy):
+    # Sold below cost. FMV above the sale must NOT lift cost above the actual cost:
+    # max(100, min(200, 60)) = 100 → original cost kept, the real loss survives.
+    loss = _ltcg_disposal(acquired_on=date(2017, 1, 1), cost="100", sale="60")
+    assert policy.adjusted_cost(loss, fmv_lookup=_fmv("200")) == Decimal("1000.00")
+
+
+def test_long_term_leap_day_anniversary(policy: IndiaTaxPolicy):
+    # Acquired on a leap day; the 12-month anniversary clamps to Feb 28 in the
+    # non-leap next year. Sold on the clamped anniversary == 12 months → SHORT;
+    # one day past it → LONG (calendar reckoning, not a 365-day proxy).
+    base = Disposal(
+        security=_EQUITY,
+        acquired_on=date(2020, 2, 29),
+        sold_on=date(2021, 2, 28),
+        units="1",
+        sale_price_per_unit="10",
+        cost_per_unit="5",
+    )
+    one_day_later = base.model_copy(update={"sold_on": date(2021, 3, 1)})
+    assert policy.classify_term(base, asset_type=SecurityType.EQUITY) is Term.SHORT
+    assert policy.classify_term(one_day_later, asset_type=SecurityType.EQUITY) is Term.LONG
