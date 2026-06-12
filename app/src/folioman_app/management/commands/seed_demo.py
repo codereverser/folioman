@@ -11,10 +11,12 @@ Only the v1 asset classes ship here — mutual funds and equities/bonds. FD ladd
 and crypto need the deferred multi-asset paths, so they're seeded later (see
 ``NEXT-SPRINT-MULTI-ASSET.md``, M8).
 
-The command also seeds a synthetic weekly NAV/price history for every security and
-then computes the day-wise valuation series **offline** (``prime_navs=False``), so a
-fresh demo database renders rich dashboards and charts immediately — no network, no
-live feed, fully deterministic.
+The command also seeds a NAV/price history for every security and then computes the
+day-wise valuation series **offline** (``prime_navs=False``), so a fresh demo
+database renders rich dashboards and charts immediately. With ``--real-navs`` it
+pulls each security's actual daily series from the live feeds (mfapi for funds,
+NSE/Yahoo for equities) so the charts look authentic; without it a smooth weekly
+synthetic series is used — fully deterministic, offline, and test-safe.
 
 Idempotent: a second run detects the demo user and does nothing unless ``--reset``
 is passed (which wipes and rebuilds the demo data).
@@ -192,13 +194,17 @@ def _nav_history_fn(
     """Populate NAVHistory for ``security`` and return a ``nav_on(date) -> Decimal``
     as-of lookup (the NAV on a date, else the most recent prior one).
 
-    Real mode pulls the fund's actual daily series from mfapi via the app's own
-    feed, so the seeded ledger and chart are authentic and blend seamlessly with
-    later scheduled fetches. Synthetic mode seeds a smooth weekly series — offline
-    and deterministic, for tests and fresh installs. Falls back to synthetic when a
-    real fetch yields nothing (offline, delisted scheme, or no amfi_code)."""
-    if real_navs and security.amfi_code:
-        from folioman_app.tasks.refresh_navs import backfill_nav_history
+    Real mode pulls the security's actual daily series via the app's own feeds —
+    mfapi for funds (by amfi_code), NSE/Yahoo for equities (by symbol) — so the
+    seeded ledger and chart are authentic and blend seamlessly with later
+    scheduled fetches. Synthetic mode seeds a smooth weekly series — offline and
+    deterministic, for tests and fresh installs. Falls back to synthetic when a
+    real fetch yields nothing (offline, delisted scheme, or no usable feed key)."""
+    if real_navs and (security.amfi_code or security.symbol):
+        from folioman_app.tasks.refresh_navs import (
+            backfill_equity_history,
+            backfill_nav_history,
+        )
 
         # Drop any stale synthetic points from an earlier seed so the real series
         # fills those dates (backfill only writes *missing* dates) — otherwise a
@@ -206,7 +212,10 @@ def _nav_history_fn(
         NAVHistory.objects.filter(security=security, source="demo").delete()
         # Any feed/network failure falls through to the synthetic series below.
         with contextlib.suppress(Exception):
-            backfill_nav_history(security, since=start)
+            if security.amfi_code:
+                backfill_nav_history(security, since=start)
+            else:
+                backfill_equity_history(security, since=start)
         rows = list(
             NAVHistory.objects.filter(security=security, date__lte=today)
             .order_by("date")
@@ -296,7 +305,9 @@ class Command(BaseCommand):
             mf_inv, mf_secs = self._seed_mf_investor(
                 user, family, start, today, real_navs=opts["real_navs"]
             )
-            ecas_inv, ecas_secs = self._seed_ecas_investor(user, family, start, today)
+            ecas_inv, ecas_secs = self._seed_ecas_investor(
+                user, family, start, today, real_navs=opts["real_navs"]
+            )
 
         # Reconcile each investor (so integrity shows real statuses — full_history for
         # the MF ledger, snapshot_only for the eCAS holdings — instead of "unknown"),
@@ -355,7 +366,7 @@ class Command(BaseCommand):
                 )
         return inv, securities
 
-    def _seed_ecas_investor(self, user, family, start: dt.date, today: dt.date):
+    def _seed_ecas_investor(self, user, family, start: dt.date, today: dt.date, *, real_navs: bool):
         inv = Investor(owned_by=user, name="Priya Sharma", email="priya@example.com", family=family)
         inv.set_pan("PQRSX6789L")
         inv.save()
@@ -373,9 +384,11 @@ class Command(BaseCommand):
             folio = upsert_folio(
                 inv, CoreFolio(folio_type=FolioType.DEMAT, number=number, broker=broker)
             )
-            _weekly_history(security, base, drift, start, today)
+            # Real (NSE/Yahoo) or synthetic price series + the as-of pricing
+            # function the snapshot's observed value/cost are derived from.
+            nav_on = _nav_history_fn(security, base, drift, start, today, real_navs=real_navs)
 
-            price = _nav_on(base, drift, start, as_of)
+            price = nav_on(as_of)
             avg_cost = (price * Decimal("0.72")).quantize(_Q_NAV)  # bought lower → unrealised gain
             Holding.objects.create(
                 investor=inv,
