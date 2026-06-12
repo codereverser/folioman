@@ -18,6 +18,19 @@ from folioman_app.models import (
     ValuationStatus,
 )
 
+
+class _StubFeedClients:
+    """Stand-in for the seed's pooled feed clients so --real-navs tests stay
+    offline: no real connections are opened (the mocked backfills ignore the
+    client args anyway, and accessing the real ``.nse`` would warm a live NSE
+    session over the network)."""
+
+    mfapi = captnemo = nse = yahoo = None
+
+    def close(self):
+        pass
+
+
 # --- seed_demo -----------------------------------------------------------------
 
 
@@ -28,7 +41,7 @@ def test_seed_demo_builds_rich_v1_portfolio():
     user = get_user_model().objects.get(username="demo")
     investors = Investor.objects.filter(owned_by=user)
     assert Family.objects.filter(owned_by=user, name="Sharma Family").exists()
-    assert investors.count() == 2
+    assert investors.count() == 3
 
     # MF investor: a real transaction ledger (lump-sum + SIPs + a redemption).
     mf = investors.get(name="Arjun Sharma")
@@ -43,6 +56,16 @@ def test_seed_demo_builds_rich_v1_portfolio():
     assert holdings.count() == 5
     assert holdings.filter(source="ecas").count() == 5
     assert holdings.exclude(folio=None).values("folio").distinct().count() == 2  # two accounts
+
+    # Combined investor: standalone (no family), holds BOTH a fund SIP ledger and
+    # eCAS equity snapshots — the common 'SIPs plus a few stocks' retail mix.
+    combined = investors.get(name="Neha Verma")
+    assert combined.family is None  # independent of the Sharma family
+    combined_txns = Transaction.objects.filter(investor=combined)
+    assert combined_txns.filter(transaction_type="buy").exists()  # mutual-fund SIPs
+    assert combined_txns.filter(transaction_type="sell").exists()  # a partial redemption
+    combined_holdings = Holding.objects.filter(investor=combined, source="ecas")
+    assert combined_holdings.count() == 2  # direct equity snapshots
 
     # NAV history seeded and the day-wise series computed offline → ready, non-empty.
     assert NAVHistory.objects.filter(source="demo").exists()
@@ -108,7 +131,7 @@ def test_seed_demo_real_navs_prices_from_fetched_history(monkeypatch):
 
     import folioman_app.tasks.refresh_navs as refresh_navs
 
-    def fake_backfill(security, *, since):
+    def fake_backfill(security, *, since, **_):
         rows, d = [], since
         while d <= dt.date.today():
             rows.append(NAVHistory(security=security, date=d, nav=Decimal("100"), source="mfapi"))
@@ -116,7 +139,17 @@ def test_seed_demo_real_navs_prices_from_fetched_history(monkeypatch):
         NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
         return len(rows)
 
+    def fake_equity_backfill(security, *, since, **_):
+        rows, d = [], since
+        while d <= dt.date.today():
+            rows.append(NAVHistory(security=security, date=d, nav=Decimal("250"), source="nse"))
+            d += dt.timedelta(days=1)
+        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
+        return len(rows)
+
     monkeypatch.setattr(refresh_navs, "backfill_nav_history", fake_backfill)
+    monkeypatch.setattr(refresh_navs, "backfill_equity_history", fake_equity_backfill)
+    monkeypatch.setattr(refresh_navs, "_FeedClients", _StubFeedClients)
     call_command("seed_demo", username="demo", real_navs=True)
 
     mf = Investor.objects.get(owned_by__username="demo", name="Arjun Sharma")
@@ -143,7 +176,7 @@ def test_real_navs_reseed_clears_stale_synthetic_navs(monkeypatch):
     call_command("seed_demo", username="demo")  # synthetic first → writes 'demo' rows
     assert NAVHistory.objects.filter(security__security_type="mf", source="demo").exists()
 
-    def fake_backfill(security, *, since):
+    def fake_backfill(security, *, since, **_):
         rows, d = [], since
         while d <= dt.date.today():
             rows.append(NAVHistory(security=security, date=d, nav=Decimal("100"), source="mfapi"))
@@ -151,7 +184,17 @@ def test_real_navs_reseed_clears_stale_synthetic_navs(monkeypatch):
         NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
         return len(rows)
 
+    def fake_equity_backfill(security, *, since, **_):
+        rows, d = [], since
+        while d <= dt.date.today():
+            rows.append(NAVHistory(security=security, date=d, nav=Decimal("250"), source="nse"))
+            d += dt.timedelta(days=1)
+        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
+        return len(rows)
+
     monkeypatch.setattr(refresh_navs, "backfill_nav_history", fake_backfill)
+    monkeypatch.setattr(refresh_navs, "backfill_equity_history", fake_equity_backfill)
+    monkeypatch.setattr(refresh_navs, "_FeedClients", _StubFeedClients)
     call_command("seed_demo", username="demo", reset=True, real_navs=True)
 
     mf_navs = NAVHistory.objects.filter(security__security_type="mf")
@@ -169,7 +212,7 @@ def test_seed_demo_reset_rebuilds_cleanly():
 
     after = Transaction.objects.filter(investor__owned_by=user).count()
     assert after == before  # deterministic data → same counts, no duplication
-    assert Investor.objects.filter(owned_by=user).count() == 2
+    assert Investor.objects.filter(owned_by=user).count() == 3
 
 
 @pytest.mark.django_db
