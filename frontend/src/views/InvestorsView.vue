@@ -18,6 +18,7 @@ import { useFamilyStore } from '@/stores/family'
 import { useInvestorStore } from '@/stores/investor'
 import { useUiStore } from '@/stores/ui'
 import { useRosterMetrics, type InvestorSummary } from '@/composables/useRosterMetrics'
+import { useWriteLock } from '@/composables/useWriteLock'
 import { api } from '@/api/client'
 import { formatInr, formatDate, toNumber } from '@/utils/format'
 
@@ -28,6 +29,7 @@ const investorStore = useInvestorStore()
 const ui = useUiStore()
 const confirm = useConfirm()
 const metrics = useRosterMetrics()
+const { readOnly } = useWriteLock()
 
 const SOLO_GROUP = roster.UNAFFILIATED_LABEL // "Individual investors"
 
@@ -167,8 +169,18 @@ const rowMenuModel = ref<MenuItem[]>([])
 function openInvestorMenu(e: Event, row: Row): void {
   const inv = rosterInvestor(row)
   rowMenuModel.value = [
-    { label: 'Edit', icon: 'pi pi-pencil', command: () => openEditInvestor(inv) },
-    { label: 'Delete', icon: 'pi pi-trash', command: () => confirmDeleteInvestor(inv) },
+    {
+      label: 'Edit',
+      icon: 'pi pi-pencil',
+      disabled: readOnly.value,
+      command: () => openEditInvestor(inv),
+    },
+    {
+      label: 'Delete',
+      icon: 'pi pi-trash',
+      disabled: readOnly.value,
+      command: () => confirmDeleteInvestor(inv),
+    },
   ]
   rowMenu.value?.toggle(e)
 }
@@ -178,9 +190,24 @@ function openFamilyMenu(e: Event, name: string): void {
   const family: RosterFamily = { id, name }
   rowMenuModel.value = [
     { label: 'Open family dashboard', icon: 'pi pi-chart-line', command: () => openFamily(id) },
-    { label: 'Add investor', icon: 'pi pi-user-plus', command: () => openCreateInvestor(id) },
-    { label: 'Rename family', icon: 'pi pi-pencil', command: () => openRenameFamily(family) },
-    { label: 'Delete family', icon: 'pi pi-trash', command: () => confirmDeleteFamily(family) },
+    {
+      label: 'Add investor',
+      icon: 'pi pi-user-plus',
+      disabled: readOnly.value,
+      command: () => openCreateInvestor(id),
+    },
+    {
+      label: 'Rename family',
+      icon: 'pi pi-pencil',
+      disabled: readOnly.value,
+      command: () => openRenameFamily(family),
+    },
+    {
+      label: 'Delete family',
+      icon: 'pi pi-trash',
+      disabled: readOnly.value,
+      command: () => confirmDeleteFamily(family),
+    },
   ]
   rowMenu.value?.toggle(e)
 }
@@ -341,8 +368,8 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
         </p>
       </div>
       <div v-if="!ui.isMobile" class="actions">
-        <Button label="New family" icon="pi pi-sitemap" severity="secondary" outlined size="small" @click="openCreateFamily" />
-        <Button label="Add manually" icon="pi pi-user-plus" severity="secondary" outlined size="small" @click="openCreateInvestor()" />
+        <Button label="New family" icon="pi pi-sitemap" severity="secondary" outlined size="small" :disabled="readOnly" @click="openCreateFamily" />
+        <Button label="Add manually" icon="pi pi-user-plus" severity="secondary" outlined size="small" :disabled="readOnly" @click="openCreateInvestor()" />
         <!-- Primary path: an import creates the investor from the CAS automatically. -->
         <Button label="Import CAS" icon="pi pi-file-pdf" size="small" @click="goImport" />
       </div>
@@ -382,7 +409,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
       </p>
       <div v-if="!ui.isMobile" class="empty-actions">
         <Button label="Import CAS" icon="pi pi-file-pdf" @click="goImport" />
-        <Button label="Add manually" icon="pi pi-user-plus" severity="secondary" text @click="openCreateInvestor()" />
+        <Button label="Add manually" icon="pi pi-user-plus" severity="secondary" text :disabled="readOnly" @click="openCreateInvestor()" />
       </div>
     </div>
 
@@ -522,7 +549,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
       </div>
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="familyForm.visible = false" />
-        <Button label="Save" :loading="familyStore.saving" :disabled="!familyForm.name.trim()" @click="saveFamily" />
+        <Button label="Save" :loading="familyStore.saving" :disabled="!familyForm.name.trim() || readOnly" @click="saveFamily" />
       </template>
     </Dialog>
 
@@ -569,7 +596,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
       </div>
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="investorForm.visible = false" />
-        <Button label="Save" :loading="investorStore.saving" :disabled="!investorForm.name.trim() || !!panError" @click="saveInvestor" />
+        <Button label="Save" :loading="investorStore.saving" :disabled="!investorForm.name.trim() || !!panError || readOnly" @click="saveInvestor" />
       </template>
     </Dialog>
   </section>

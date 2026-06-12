@@ -10,6 +10,7 @@ import { remediation } from '@/integrity/status'
 import { useIntegrityStore, type IntegrityRow } from '@/stores/integrity'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
+import { useWriteLock } from '@/composables/useWriteLock'
 import { formatDate, formatUnits, toNumber } from '@/utils/format'
 
 const route = useRoute()
@@ -18,6 +19,7 @@ const integrity = useIntegrityStore()
 const roster = useRosterStore()
 const ui = useUiStore()
 const confirm = useConfirm()
+const { readOnly } = useWriteLock()
 
 const investorId = computed(() => {
   const raw = route.params.investorId
@@ -181,6 +183,7 @@ function back(): void {
           size="small"
           outlined
           :loading="recomputing"
+          :disabled="readOnly"
           @click="recheck"
         />
       </div>
@@ -247,6 +250,7 @@ function back(): void {
                   size="small"
                   text
                   :loading="integrity.acknowledging"
+                  :disabled="readOnly"
                   @click="askAcknowledge(row)"
                 />
                 <Button
@@ -257,6 +261,7 @@ function back(): void {
                   text
                   severity="secondary"
                   :loading="integrity.acknowledging"
+                  :disabled="readOnly"
                   @click="unacknowledge(row)"
                 />
               </div>

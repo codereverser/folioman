@@ -14,6 +14,7 @@ import {
 import { useUiStore } from '@/stores/ui'
 import { useRosterStore } from '@/stores/roster'
 import { useIntegrityStore } from '@/stores/integrity'
+import { useWriteLock } from '@/composables/useWriteLock'
 import { formatDate } from '@/utils/format'
 import { importSummary } from '@/utils/jobs'
 import { isDesktopShell, pickCasFile } from '@/utils/desktop'
@@ -23,6 +24,7 @@ const router = useRouter()
 const ui = useUiStore()
 const roster = useRosterStore()
 const integrity = useIntegrityStore()
+const { readOnly } = useWriteLock()
 
 // Recent imports across all investors, so a past outcome / re-import is visible in
 // context on the landing step. Reuses the advisor-wide /api/jobs endpoint; the full
@@ -200,6 +202,10 @@ function goToDashboard(): void {
 
     <!-- Step 1: pick the file (nothing is persisted until you confirm who it's for) -->
     <template v-if="!preview && !job">
+    <Message v-if="readOnly" severity="info" :closable="false">
+      Importing is disabled on this read-only demo. Explore the sample portfolios that are
+      already loaded.
+    </Message>
     <div class="card">
       <label
         class="dropzone"
@@ -229,7 +235,7 @@ function goToDashboard(): void {
       <Message v-if="errorMessage" severity="error" :closable="false">{{ errorMessage }}</Message>
 
       <div class="actions">
-        <Button label="Continue" icon="pi pi-arrow-right" icon-pos="right" :disabled="!file || busy" :loading="busy" @click="review" />
+        <Button label="Continue" icon="pi pi-arrow-right" icon-pos="right" :disabled="!file || busy || readOnly" :loading="busy" @click="review" />
       </div>
     </div>
 
@@ -352,6 +358,7 @@ function goToDashboard(): void {
           :label="preview?.match_investor_id ? 'Import to this investor' : 'Create & import'"
           icon="pi pi-upload"
           :loading="busy"
+          :disabled="readOnly"
           @click="submit(false)"
         />
       </div>
@@ -377,6 +384,7 @@ function goToDashboard(): void {
           icon="pi pi-trash"
           severity="danger"
           :loading="busy"
+          :disabled="readOnly"
           @click="submit(true)"
         />
       </div>

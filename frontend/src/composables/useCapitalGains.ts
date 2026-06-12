@@ -1,6 +1,7 @@
 import { computed, ref, type Ref } from 'vue'
 import { api, type Schemas } from '@/api/client'
 import { useIntegrityStore, type IntegrityRow } from '@/stores/integrity'
+import { useWriteLock } from '@/composables/useWriteLock'
 import { currentFy, fyOptions } from '@/utils/fy'
 
 export type CapitalGains = Schemas['CapitalGainsOut']
@@ -25,11 +26,21 @@ export function useCapitalGains(investorId: Ref<number>) {
   const built = ref(false)
   const builtAt = ref<Date | null>(null) // when the figures were last computed (freshness)
   const integrity = useIntegrityStore()
+  const { readOnly } = useWriteLock()
 
   async function build(): Promise<void> {
     loading.value = true
     error.value = null
     try {
+      // The figures are a GET; the 112A worksheet is a POST that the read-only
+      // demo refuses (it powers the CSV download only). Skip that doomed call in
+      // read-only mode — the gains still render, the download section just hides.
+      const worksheetReq = readOnly.value
+        ? Promise.resolve(null)
+        : api.POST('/api/investors/{investor_id}/exports/schedule-112a', {
+            params: { path: { investor_id: investorId.value } },
+            body: { fy: fy.value, include_unreconciled: includeUnreconciled.value },
+          })
       const [cg, worksheet] = await Promise.all([
         api.GET('/api/investors/{investor_id}/exports/capital-gains', {
           params: {
@@ -37,15 +48,12 @@ export function useCapitalGains(investorId: Ref<number>) {
             query: { fy: fy.value, include_unreconciled: includeUnreconciled.value },
           },
         }),
-        api.POST('/api/investors/{investor_id}/exports/schedule-112a', {
-          params: { path: { investor_id: investorId.value } },
-          body: { fy: fy.value, include_unreconciled: includeUnreconciled.value },
-        }),
+        worksheetReq,
       ])
       if (cg.error || !cg.data) throw new Error('capital-gains request failed')
       gains.value = cg.data
       // The 112A worksheet powers the CSV download only; treat it as best-effort.
-      report.value = worksheet.error ? null : (worksheet.data ?? null)
+      report.value = worksheet && !worksheet.error ? (worksheet.data ?? null) : null
       built.value = true
       builtAt.value = new Date()
     } catch (e) {
