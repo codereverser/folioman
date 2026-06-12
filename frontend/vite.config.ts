@@ -4,6 +4,7 @@ import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 import { compression } from 'vite-plugin-compression2'
+import { codecovVitePlugin } from '@codecov/vite-plugin'
 
 // @fontsource ships `font-display: swap`, which would let the bundled IBM Plex
 // swap in over the system fallback after the app mounts — reflowing text (CLS).
@@ -77,6 +78,14 @@ export default defineConfig({
     // after VitePWA, and .br/.gz fall outside the SW globPatterns so they aren't
     // double-precached. threshold skips files too small to be worth compressing.
     compression({ algorithms: ['gzip', 'brotliCompress'], threshold: 1024 }),
+    // Uploads bundle-size stats to Codecov on CI builds. No-op locally and on
+    // forks: analysis only runs when CODECOV_TOKEN is present. Must stay last
+    // in the plugin list so it measures the final emitted assets.
+    codecovVitePlugin({
+      enableBundleAnalysis: process.env.CODECOV_TOKEN !== undefined,
+      bundleName: 'folioman-frontend',
+      uploadToken: process.env.CODECOV_TOKEN,
+    }),
   ],
   resolve: {
     alias: {
