@@ -14,7 +14,7 @@ from folioman_app.tasks import refresh_navs as refresh_navs_mod
 from folioman_app.tasks.import_csv import create_manual_transaction
 from folioman_app.tasks.refresh_navs import backfill_missing_history, refresh_navs
 from folioman_core.models import NAVPoint, Quote, SecurityType
-from folioman_core.price_feeds import coingecko, mfapi, nse_history, yfinance_feed
+from folioman_core.price_feeds import captnemo, coingecko, mfapi, nse_history, yfinance_feed
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
 pytestmark = pytest.mark.django_db
@@ -188,7 +188,7 @@ def test_backfill_fills_a_multi_day_gap(monkeypatch):
         points.append(NAVPoint(date=d, nav=Decimal("11")))
         d += dt.timedelta(days=1)
     monkeypatch.setattr(
-        mfapi, "fetch_nav_history", lambda code, **_: SimpleNamespace(points=points)
+        mfapi, "fetch_nav_history", lambda code, **_: SimpleNamespace(points=points, isin="")
     )
     mf = Security.objects.create(security_type=SecurityType.MF.value, name="F", amfi_code="100001")
     NAVHistory.objects.create(security=mf, date=old, nav=Decimal("10"))  # only old point on file
@@ -206,7 +206,7 @@ def test_backfill_skips_a_fund_current_to_last_trading_day(monkeypatch):
 
     def _spy(code, **_):
         calls["n"] += 1
-        return SimpleNamespace(points=[])
+        return SimpleNamespace(points=[], isin="")
 
     monkeypatch.setattr(mfapi, "fetch_nav_history", _spy)
     mf = Security.objects.create(security_type=SecurityType.MF.value, name="F", amfi_code="100002")
@@ -232,7 +232,8 @@ def test_backfill_force_refetches_a_current_fund_to_repair_interior_holes(monkey
             points=[
                 NAVPoint(date=gap_day, nav=Decimal("9")),
                 NAVPoint(date=cutoff, nav=Decimal("10")),
-            ]
+            ],
+            isin="",
         ),
     )
     mf = Security.objects.create(security_type=SecurityType.MF.value, name="F", amfi_code="100003")
@@ -251,7 +252,9 @@ def test_backfill_force_refetches_a_current_fund_to_repair_interior_holes(monkey
 def test_backfill_flags_dead_code_as_closed(monkeypatch):
     """The feed responds with NO history for a fund we hold no NAV for → its code is
     dead (matured/delisted). Flag nav_feed_closed so valuation degrades it."""
-    monkeypatch.setattr(mfapi, "fetch_nav_history", lambda code, **_: SimpleNamespace(points=[]))
+    monkeypatch.setattr(
+        mfapi, "fetch_nav_history", lambda code, **_: SimpleNamespace(points=[], isin="")
+    )
     mf = Security.objects.create(
         security_type=SecurityType.MF.value, name="Matured CEF", amfi_code="999999"
     )
@@ -287,7 +290,9 @@ def test_backfill_reopens_closed_code_when_data_returns(monkeypatch):
     monkeypatch.setattr(
         mfapi,
         "fetch_nav_history",
-        lambda code, **_: SimpleNamespace(points=[NAVPoint(date=_TODAY, nav=Decimal("10"))]),
+        lambda code, **_: SimpleNamespace(
+            points=[NAVPoint(date=_TODAY, nav=Decimal("10"))], isin=""
+        ),
     )
     mf = Security.objects.create(
         security_type=SecurityType.MF.value, name="Fund", amfi_code="122639", nav_feed_closed=True
@@ -298,6 +303,104 @@ def test_backfill_reopens_closed_code_when_data_returns(monkeypatch):
     mf.refresh_from_db()
     assert mf.nav_feed_closed is False
     assert NAVHistory.objects.filter(security=mf).exists()
+
+
+def test_backfill_prefers_captnemo_when_isin_known(monkeypatch):
+    """A fund with an ISIN backfills from captnemo (the faster, full-series feed);
+    mfapi isn't touched."""
+    mfapi_calls = {"n": 0}
+
+    def _mfapi_spy(code, **_):
+        mfapi_calls["n"] += 1
+        return SimpleNamespace(points=[], isin="")
+
+    monkeypatch.setattr(mfapi, "fetch_nav_history", _mfapi_spy)
+    monkeypatch.setattr(
+        captnemo,
+        "fetch_nav_history",
+        lambda isin, **_: SimpleNamespace(
+            points=[NAVPoint(date=_TODAY, nav=Decimal("42"))], isin=isin
+        ),
+    )
+    mf = Security.objects.create(
+        security_type=SecurityType.MF.value, name="F", amfi_code="100010", isin="INF000X00010"
+    )
+
+    backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+
+    assert mfapi_calls["n"] == 0  # captnemo served it; mfapi never called
+    point = NAVHistory.objects.get(security=mf, date=_TODAY)
+    assert point.nav == Decimal("42")
+    assert point.source == "captnemo"
+
+
+def test_backfill_falls_back_to_mfapi_when_captnemo_fails(monkeypatch):
+    """captnemo down → mfapi (by AMFI code) backstops, and the points are tagged mfapi."""
+
+    def _captnemo_boom(isin, **_):
+        raise captnemo.NAVFetchError("captnemo 503")
+
+    monkeypatch.setattr(captnemo, "fetch_nav_history", _captnemo_boom)
+    monkeypatch.setattr(
+        mfapi,
+        "fetch_nav_history",
+        lambda code, **_: SimpleNamespace(
+            points=[NAVPoint(date=_TODAY, nav=Decimal("43"))], isin="INF000X00011"
+        ),
+    )
+    mf = Security.objects.create(
+        security_type=SecurityType.MF.value, name="F", amfi_code="100011", isin="INF000X00011"
+    )
+
+    backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+
+    point = NAVHistory.objects.get(security=mf, date=_TODAY)
+    assert point.nav == Decimal("43")
+    assert point.source == "mfapi"
+
+
+def test_backfill_learns_isin_from_mfapi_meta(monkeypatch):
+    """A fund known only by AMFI code backfills via mfapi; its meta ISIN is persisted
+    so captnemo can lead next time."""
+    monkeypatch.setattr(
+        mfapi,
+        "fetch_nav_history",
+        lambda code, **_: SimpleNamespace(
+            points=[NAVPoint(date=_TODAY, nav=Decimal("44"))], isin="INF000X00012"
+        ),
+    )
+    mf = Security.objects.create(
+        security_type=SecurityType.MF.value, name="F", amfi_code="100012"
+    )  # no isin yet
+
+    backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+
+    mf.refresh_from_db()
+    assert mf.isin == "INF000X00012"  # learned from mfapi meta
+
+
+def test_daily_refresh_falls_back_to_captnemo_when_mfapi_errors(monkeypatch):
+    """mfapi /latest blip on a fund we also know by ISIN → captnemo covers the day."""
+
+    def _mfapi_boom(code, **_):
+        raise mfapi.NAVFetchError("mfapi 502")
+
+    monkeypatch.setattr(mfapi, "fetch_latest_nav", _mfapi_boom)
+    monkeypatch.setattr(
+        captnemo,
+        "fetch_latest_nav",
+        lambda isin, **_: NAVPoint(date=_TODAY, nav=Decimal("45")),
+    )
+    mf = Security.objects.create(
+        security_type=SecurityType.MF.value, name="F", amfi_code="100013", isin="INF000X00013"
+    )
+
+    summary = refresh_navs(securities=Security.objects.filter(id=mf.id))
+
+    assert summary["updated"] == 1 and summary["errors"] == 0
+    point = NAVHistory.objects.get(security=mf, date=_TODAY)
+    assert point.nav == Decimal("45")
+    assert point.source == "captnemo"
 
 
 def test_refresh_navs_command(mocked_feeds):

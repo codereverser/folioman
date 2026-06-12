@@ -28,6 +28,7 @@ from decimal import Decimal, InvalidOperation
 import httpx
 
 from folioman_core.models.nav import NAVHistory, NAVPoint
+from folioman_core.price_feeds.errors import NAVFetchError
 
 BASE_URL = "https://api.mfapi.in"
 DEFAULT_TIMEOUT = 30.0  # seconds — mfapi is normally fast; generous for cold connects
@@ -41,9 +42,12 @@ _BACKOFF_BASE = 0.5  # seconds; waits 0.5s, 1.0s, ...
 _TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504})
 _SLEEP = time.sleep
 
-
-class NAVFetchError(RuntimeError):
-    """mfapi returned an error, or the response was unusable."""
+__all__ = [
+    "NAVFetchError",
+    "fetch_latest_nav",
+    "fetch_nav_history",
+    "shared_client",
+]
 
 
 def shared_client() -> httpx.Client:

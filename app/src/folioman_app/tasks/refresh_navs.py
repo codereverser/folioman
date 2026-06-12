@@ -20,11 +20,12 @@ from collections.abc import Iterable
 from datetime import date as date_cls
 from datetime import timedelta
 
+from django.db import IntegrityError, transaction
 from django.db.models import Max, Min
 from django.utils import timezone
 from folioman_core.models import SecurityType
-from folioman_core.price_feeds import coingecko, mfapi, nse_history, yfinance_feed
-from folioman_core.price_feeds.mfapi import NAVFetchError
+from folioman_core.price_feeds import captnemo, coingecko, mfapi, nse_history, yfinance_feed
+from folioman_core.price_feeds.errors import NAVFetchError
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
 from folioman_app.models import Holding, NAVHistory, Security, Transaction
@@ -66,6 +67,7 @@ class _FeedClients:
 
     def __init__(self):
         self._mfapi = None
+        self._captnemo = None
         self._nse = None
         self._yahoo = None
 
@@ -74,6 +76,12 @@ class _FeedClients:
         if self._mfapi is None:
             self._mfapi = mfapi.shared_client()
         return self._mfapi
+
+    @property
+    def captnemo(self):
+        if self._captnemo is None:
+            self._captnemo = captnemo.shared_client()
+        return self._captnemo
 
     @property
     def nse(self):
@@ -88,17 +96,44 @@ class _FeedClients:
         return self._yahoo
 
     def close(self) -> None:
-        for client in (self._mfapi, self._nse, self._yahoo):
+        for client in (self._mfapi, self._captnemo, self._nse, self._yahoo):
             if client is not None:
                 client.close()
+
+
+def _fetch_mf_latest(security: Security, clients: _FeedClients):
+    """Latest MF NAV: mfapi (by AMFI code) primary, captnemo (by ISIN) fallback.
+
+    mfapi's ``/latest`` returns a single point, so it's the right tool for the
+    daily pass; captnemo is a same-source ISIN-keyed mirror that covers an mfapi
+    outage and prices an ISIN-only fund mfapi can't address. An mfapi *error* (not
+    just empty) falls through to captnemo so a feed blip doesn't drop the day."""
+    if security.amfi_code:
+        try:
+            point = mfapi.fetch_latest_nav(security.amfi_code, client=clients.mfapi)
+            if point:
+                return (point.date, point.nav, "mfapi")
+        except NAVFetchError as exc:
+            if not security.isin:
+                raise
+            logger.debug(
+                "mfapi latest failed for %s (%s); trying captnemo: %s",
+                security.id,
+                security.name,
+                exc,
+            )
+    if security.isin:
+        point = captnemo.fetch_latest_nav(security.isin, client=clients.captnemo)
+        if point:
+            return (point.date, point.nav, "captnemo")
+    return None
 
 
 def _fetch_point(security: Security, clients: _FeedClients):
     """Return (date, nav, source) for the latest price, or None if unavailable."""
     stype = security.security_type
-    if stype == SecurityType.MF.value and security.amfi_code:
-        point = mfapi.fetch_latest_nav(security.amfi_code, client=clients.mfapi)
-        return (point.date, point.nav, "mfapi") if point else None
+    if stype == SecurityType.MF.value:
+        return _fetch_mf_latest(security, clients)
     if stype in _QUOTE_TYPES and security.symbol:
         # NSE-first for Indian names: take the latest close from the last row of the
         # cookie-warmed security-wise history CSV. NSE's /api/quote-equity 403s from
@@ -175,17 +210,74 @@ def refresh_navs(*, securities: Iterable[Security] | None = None) -> dict:
 # dates not already present are inserted.
 
 
-def backfill_nav_history(security: Security, *, since: date_cls | None = None, client=None) -> int:
+def _fetch_mf_history(security, *, since, mfapi_client, captnemo_client):
+    """Full MF NAV series: captnemo (by ISIN) primary, mfapi (by AMFI) fallback.
+
+    Backfill pulls the whole series in one call, so captnemo leads — it serves the
+    full history always (no /latest), is edge-cached and fast, and is oldest-first
+    already. mfapi backstops a captnemo outage and covers a fund we only know by
+    AMFI code. When mfapi backfills a fund whose ISIN we don't yet store, its meta
+    carries one — persist it so captnemo can lead next time.
+
+    Returns ``(history, source)`` or ``None`` when the fund has no usable id."""
+    if security.isin:
+        try:
+            history = captnemo.fetch_nav_history(security.isin, since=since, client=captnemo_client)
+            return history, "captnemo"
+        except NAVFetchError as exc:
+            if not security.amfi_code:
+                raise
+            logger.debug(
+                "captnemo backfill failed for %s (%s); trying mfapi: %s",
+                security.id,
+                security.name,
+                exc,
+            )
+    if security.amfi_code:
+        history = mfapi.fetch_nav_history(security.amfi_code, since=since, client=mfapi_client)
+        if history.isin and not security.isin:
+            security.isin = history.isin
+            try:
+                with transaction.atomic():
+                    security.save(update_fields=["isin", "updated_at"])
+            except IntegrityError:
+                # The ISIN is already claimed by another security row — leave this
+                # one AMFI-keyed rather than failing the backfill. Not fatal: mfapi
+                # still served the history we're about to write.
+                security.isin = ""
+                logger.warning(
+                    "security %s (%s): ISIN %s already in use; staying AMFI-keyed",
+                    security.id,
+                    security.name,
+                    history.isin,
+                )
+        return history, "mfapi"
+    return None
+
+
+def backfill_nav_history(
+    security: Security,
+    *,
+    since: date_cls | None = None,
+    mfapi_client=None,
+    captnemo_client=None,
+) -> int:
     """Backfill an MF security's NAV history into NAVHistory. Returns points written.
 
-    ``client`` lets a batch reuse one pooled mfapi connection; when ``None``
-    the feed opens (and closes) its own."""
-    if security.security_type != SecurityType.MF.value or not security.amfi_code:
+    captnemo (ISIN) leads, mfapi (AMFI code) backstops — see :func:`_fetch_mf_history`.
+    The ``*_client`` args let a batch reuse one pooled connection per feed; when
+    ``None`` each feed opens (and closes) its own."""
+    if security.security_type != SecurityType.MF.value:
         return 0
-    history = mfapi.fetch_nav_history(security.amfi_code, since=since, client=client)
+    fetched = _fetch_mf_history(
+        security, since=since, mfapi_client=mfapi_client, captnemo_client=captnemo_client
+    )
+    if fetched is None:
+        return 0
+    history, source = fetched
     existing = set(NAVHistory.objects.filter(security=security).values_list("date", flat=True))
     to_create = [
-        NAVHistory(security=security, date=point.date, nav=point.nav, source="mfapi")
+        NAVHistory(security=security, date=point.date, nav=point.nav, source=source)
         for point in history.points
         if point.date not in existing
     ]
@@ -327,14 +419,18 @@ def backfill_missing_history(
         if securities is not None
         else Security.objects.filter(security_type=SecurityType.MF.value)
     )
-    # One pooled mfapi connection for the whole batch (per-fund clients would
-    # re-handshake TLS for every scheme).
-    client = mfapi.shared_client()
+    # One pooled connection per feed for the whole batch (per-fund clients would
+    # re-handshake TLS for every scheme). captnemo leads, mfapi backstops.
+    mfapi_client = mfapi.shared_client()
+    captnemo_client = captnemo.shared_client()
     try:
-        backfill_one = functools.partial(backfill_nav_history, client=client)
+        backfill_one = functools.partial(
+            backfill_nav_history, mfapi_client=mfapi_client, captnemo_client=captnemo_client
+        )
         return _backfill_missing(qs, backfill_one=backfill_one, force=force)
     finally:
-        client.close()
+        mfapi_client.close()
+        captnemo_client.close()
 
 
 def backfill_missing_equity_history(

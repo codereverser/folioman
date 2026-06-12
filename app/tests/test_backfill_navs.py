@@ -22,7 +22,8 @@ pytestmark = pytest.mark.django_db
 
 def _history(*points: tuple[str, str]):
     return SimpleNamespace(
-        points=[NAVPoint(date=dt.date.fromisoformat(d), nav=Decimal(nav)) for d, nav in points]
+        points=[NAVPoint(date=dt.date.fromisoformat(d), nav=Decimal(nav)) for d, nav in points],
+        isin="",
     )
 
 
