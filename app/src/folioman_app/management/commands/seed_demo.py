@@ -458,7 +458,6 @@ class Command(BaseCommand):
             )
 
             price = nav_on(as_of)
-            avg_cost = (price * Decimal("0.72")).quantize(_Q_NAV)  # bought lower → unrealised gain
             Holding.objects.create(
                 investor=inv,
                 security=security,
@@ -466,7 +465,11 @@ class Command(BaseCommand):
                 as_of_date=as_of,
                 units=units,
                 value_observed=(units * price).quantize(_Q_MONEY),
-                avg_cost_observed=avg_cost,
+                # A real NSDL/CDSL eCAS is a holdings snapshot — units + market value,
+                # no cost basis — so the parser leaves avg_cost_observed null. Mirror
+                # that: equity snapshots carry no purchase price (and so no unrealised
+                # gain) until a transaction import supplies one.
+                avg_cost_observed=None,
                 source=HoldingSource.ECAS.value,
                 source_ref="demo-ecas",
             )
@@ -534,7 +537,6 @@ class Command(BaseCommand):
                 security, base, drift, start, today, real_navs=real_navs, clients=clients
             )
             price = nav_on(as_of)
-            avg_cost = (price * Decimal("0.80")).quantize(_Q_NAV)  # bought lower → unrealised gain
             Holding.objects.create(
                 investor=inv,
                 security=security,
@@ -542,7 +544,8 @@ class Command(BaseCommand):
                 as_of_date=as_of,
                 units=units,
                 value_observed=(units * price).quantize(_Q_MONEY),
-                avg_cost_observed=avg_cost,
+                # eCAS snapshot: market value, no cost basis (see _seed_ecas_investor).
+                avg_cost_observed=None,
                 source=HoldingSource.ECAS.value,
                 source_ref="demo-ecas",
             )
