@@ -46,3 +46,39 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage.xml
+
+  frontend:
+    name: Frontend (test + build)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      # pnpm version comes from the packageManager field in package.json.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: frontend/.nvmrc
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Test (vitest)
+        working-directory: frontend
+        run: pnpm test
+
+      # The Codecov vite plugin uploads bundle-size stats during the build
+      # when CODECOV_TOKEN is present; without it (forks) the plugin no-ops
+      # and the build still verifies the frontend compiles.
+      - name: Build (uploads bundle stats to Codecov)
+        working-directory: frontend
+        run: pnpm build
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
