@@ -23,6 +23,7 @@ from django.db import transaction as db_transaction
 from django.db.models import Max
 from folioman_core.models import HoldingSource
 from folioman_core.models.cas import EcasStatement
+from folioman_core.models.investor import normalize_folio_number
 
 from folioman_app.models import Holding, Security
 from folioman_app.tasks._upsert import upsert_folio, upsert_security
@@ -39,10 +40,12 @@ def _quarantine_entry(line, account, exc: Exception) -> dict:
     Identity (name/isin/folio) drives display and the later auto-resolve match; the
     ``raw`` snapshot is audit-only (never replayed)."""
     folio = line.folio or account.folio
+    raw_folio = getattr(folio, "number", "") or ""
     return {
         "security": getattr(line.security, "name", "") or "",
         "isin": getattr(line.security, "isin", "") or "",
-        "folio": getattr(folio, "number", "") or "",
+        # Normalise to the form upsert_folio stores, so a clean re-import matches.
+        "folio": normalize_folio_number(raw_folio) if raw_folio else "",
         "reason": str(exc),
         "raw": {
             "units": str(line.units) if line.units is not None else None,

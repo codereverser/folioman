@@ -169,6 +169,29 @@ def test_corrected_reimport_auto_resolves_quarantine(make_investor, make_parsed_
     assert ImportQuarantine.objects.filter(investor=inv, resolved=True).count() == 1
 
 
+def test_quarantine_folio_is_normalized_so_reimport_resolves(
+    make_investor, make_parsed_cas, monkeypatch
+):
+    """The stored folio must match the form upsert_folio persists, or auto-resolve
+    silently never fires. Real CAS folios like "12345 / 0" normalize to "12345"."""
+    inv = make_investor()
+    raw_folio = "91013661625 / 0"
+    statement = MfCasStatement(
+        investor_name="Test Investor",
+        statement_from=dt.date(2024, 1, 1),
+        statement_to=dt.date(2024, 12, 31),
+        schemes=[_mf_block(_BAD_ISIN, raw_folio)],
+    )
+    _fail_isin(monkeypatch, import_cas, _BAD_ISIN)
+    _run_cas(inv, statement, make_parsed_cas)
+    row = ImportQuarantine.objects.get(investor=inv, resolved=False)
+    assert row.folio_number == "91013661625"  # normalized, not the raw "… / 0"
+
+    monkeypatch.undo()
+    _run_cas(inv, statement, make_parsed_cas)
+    assert ImportQuarantine.objects.filter(investor=inv, resolved=False).count() == 0
+
+
 def test_resolve_quarantine_leaves_unfixed_rows_open(make_investor, make_transaction):
     inv = make_investor()
     job = ImportJob.objects.create(investor=inv, kind=ImportKind.CAS)

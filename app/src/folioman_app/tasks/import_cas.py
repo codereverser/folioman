@@ -22,6 +22,7 @@ from folioman_core.cas_reader import read_cas
 from folioman_core.fifo import net_units_from_transactions
 from folioman_core.models import HoldingSource, TransactionSource
 from folioman_core.models.cas import MfCasLineItem, MfCasSchemeBlock, MfCasStatement
+from folioman_core.models.investor import normalize_folio_number
 from folioman_core.parser import _HISTORY_TOLERANCE, scheme_history_gap
 
 from folioman_app.mappers import to_core_transaction
@@ -39,11 +40,13 @@ def _quarantine_entry(block: MfCasSchemeBlock, exc: Exception) -> dict:
     """Describe a scheme block that couldn't be persisted, for the quarantine row.
 
     Identity (name/isin/folio) drives display and the later auto-resolve match; the
-    ``raw`` snapshot is audit-only (never replayed)."""
+    folio number is normalised to the same form ``upsert_folio`` stores, so a clean
+    re-import's persisted folio matches. The ``raw`` snapshot is audit-only."""
+    raw_folio = getattr(block.folio, "number", "") or ""
     return {
         "security": getattr(block.security, "name", "") or "",
         "isin": getattr(block.security, "isin", "") or "",
-        "folio": getattr(block.folio, "number", "") or "",
+        "folio": normalize_folio_number(raw_folio) if raw_folio else "",
         "reason": str(exc),
         "raw": {
             "opening_units": str(block.opening_units) if block.opening_units is not None else None,
