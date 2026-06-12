@@ -60,3 +60,46 @@ class ImportJob(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.kind} [{self.status}] for investor {self.investor_id}"
+
+
+class ImportQuarantine(TimeStampedModel):
+    """A single import row/block that couldn't be persisted, set aside for review.
+
+    A bad scheme block (MF CAS) or holding line (eCAS) is diverted here instead of
+    aborting the whole import — good rows still commit, the rejected one is recorded
+    with the reason, and the ledger is never silently corrupted. There is no
+    in-place replay: the fix is to re-import a corrected statement, at which point a
+    row whose (security, folio) now persists cleanly is auto-resolved. A row the
+    user no longer cares about can be dismissed (also marks it resolved).
+    """
+
+    investor = models.ForeignKey(
+        Investor, on_delete=models.CASCADE, related_name="import_quarantine"
+    )
+    # The job that produced this row. CASCADE: if the job is ever purged, its
+    # quarantine goes with it (the row only makes sense in the job's context).
+    import_job = models.ForeignKey(ImportJob, on_delete=models.CASCADE, related_name="quarantine")
+    # Which import kind produced it — mirrors result["detected"] ("mf_cas"/"ecas").
+    kind = models.CharField(max_length=16, blank=True, default="")
+    # Identity of the rejected security/folio, for display and for auto-resolve
+    # matching on a later clean re-import (isin + folio number).
+    security_name = models.CharField(max_length=255, blank=True, default="")
+    isin = models.CharField(max_length=20, blank=True, default="")
+    folio_number = models.CharField(max_length=64, blank=True, default="")
+    # Why it was quarantined (the exception message — PII-free parser/persist text).
+    reason = models.TextField(blank=True, default="")
+    # A snapshot of the offending row/block for audit (never replayed).
+    raw = models.JSONField(default=dict, blank=True)
+    resolved = models.BooleanField(default=False)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["investor", "resolved"], name="idx_quarantine_inv_resolved"),
+        ]
+
+    def __str__(self) -> str:
+        state = "resolved" if self.resolved else "open"
+        who = self.security_name or self.isin
+        return f"quarantine [{state}] {who} (investor {self.investor_id})"

@@ -95,6 +95,10 @@ const busy = ref(false)
 const preview = ref<CasPreviewOut | null>(null)
 const job = ref<ImportJobOut | null>(null)
 const errorMessage = ref('')
+// Rows the import set aside (a bad scheme/holding it couldn't persist) — shown so a
+// bad statement never fails silently. Open rows for the just-imported investor,
+// fresh + any lingering from earlier imports; dismissable, or fixed by re-importing.
+const quarantine = ref<Schemas['ImportQuarantineOut'][]>([])
 
 const result = computed<CasResult>(() => (job.value?.result as CasResult) ?? {})
 const status = computed(() => job.value?.status ?? '')
@@ -169,6 +173,7 @@ async function submit(confirm = false): Promise<void> {
       // drop the integrity cache (so the affected investor re-fetches on next view).
       void roster.reload()
       integrity.clear()
+      if (job.value?.investor_id != null) void loadQuarantine(job.value.investor_id)
     }
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Import failed'
@@ -177,9 +182,26 @@ async function submit(confirm = false): Promise<void> {
   }
 }
 
+async function loadQuarantine(investorId: number): Promise<void> {
+  const res = await api.GET('/api/investors/{investor_id}/imports/quarantine', {
+    params: { path: { investor_id: investorId } },
+  })
+  quarantine.value = res.data ?? []
+}
+
+async function dismissQuarantine(row: Schemas['ImportQuarantineOut']): Promise<void> {
+  const investorId = job.value?.investor_id
+  if (investorId == null) return
+  const res = await api.DELETE('/api/investors/{investor_id}/imports/quarantine/{quarantine_id}', {
+    params: { path: { investor_id: investorId, quarantine_id: row.id } },
+  })
+  if (!res.error) quarantine.value = quarantine.value.filter((q) => q.id !== row.id)
+}
+
 function reset(): void {
   clearFrom(null)
   password.value = ''
+  quarantine.value = []
 }
 
 function goToDashboard(): void {
@@ -440,6 +462,32 @@ function goToDashboard(): void {
           Imported, but some securities couldn’t be reconciled — they may show as needing
           attention until the next import.
         </Message>
+
+        <!-- Quarantine: rows the import couldn't persist, set aside so the rest still
+             imported. Fixed by re-importing a corrected statement, or dismissed. -->
+        <div v-if="quarantine.length" class="warn-block">
+          <h2>Couldn’t import ({{ quarantine.length }})</h2>
+          <p class="muted">
+            These rows couldn’t be imported, so they were set aside — the rest of your
+            statement still imported. Re-import a corrected statement to add them, or dismiss
+            ones you don’t need.
+          </p>
+          <ul class="incomplete">
+            <li v-for="q in quarantine" :key="q.id">
+              <span class="sec-name">{{ q.security_name || q.isin || 'Unknown security' }}</span>
+              <span v-if="q.folio_number" class="muted">folio {{ q.folio_number }}</span>
+              <span class="reason">{{ q.reason }}</span>
+              <Button
+                label="Dismiss"
+                severity="secondary"
+                text
+                size="small"
+                :disabled="readOnly"
+                @click="dismissQuarantine(q)"
+              />
+            </li>
+          </ul>
+        </div>
       </template>
 
       <div class="actions">

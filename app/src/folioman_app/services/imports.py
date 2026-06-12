@@ -17,7 +17,7 @@ from collections.abc import Callable
 
 from django.utils import timezone
 
-from folioman_app.models import ImportJob
+from folioman_app.models import Holding, ImportJob, ImportQuarantine, Transaction
 from folioman_app.models.jobs import ImportJobStatus
 
 # processor(job, content, password, *, confirm, parsed) -> result summary dict
@@ -27,6 +27,58 @@ _PROCESSORS: dict[str, ImportProcessor] = {}
 
 def register_processor(kind: str, processor: ImportProcessor) -> None:
     _PROCESSORS[kind] = processor
+
+
+def resolve_quarantine(investor) -> int:
+    """Auto-resolve open quarantine rows whose (security, folio) now has data.
+
+    After a corrected statement is re-imported, a previously-rejected security/folio
+    that now persists cleanly no longer needs attention. Matches on ISIN + folio
+    number; a row with no ISIN can't be matched here and stays until dismissed.
+    Returns the number resolved."""
+    open_rows = (
+        ImportQuarantine.objects.filter(investor=investor, resolved=False)
+        .exclude(isin="")
+        .values("id", "isin", "folio_number")
+    )
+    fixed = [
+        q["id"]
+        for q in open_rows
+        if Transaction.objects.filter(
+            investor=investor, security__isin=q["isin"], folio__number=q["folio_number"]
+        ).exists()
+        or Holding.objects.filter(
+            investor=investor, security__isin=q["isin"], folio__number=q["folio_number"]
+        ).exists()
+    ]
+    if fixed:
+        ImportQuarantine.objects.filter(id__in=fixed).update(
+            resolved=True, resolved_at=timezone.now()
+        )
+    return len(fixed)
+
+
+def _record_quarantine(job: ImportJob) -> None:
+    """Persist the rows a processor set aside (``result["quarantined"]``)."""
+    entries = job.result.get("quarantined") or []
+    if not entries:
+        return
+    kind = job.result.get("detected", "")
+    ImportQuarantine.objects.bulk_create(
+        [
+            ImportQuarantine(
+                investor=job.investor,
+                import_job=job,
+                kind=kind,
+                security_name=entry.get("security", ""),
+                isin=entry.get("isin", ""),
+                folio_number=entry.get("folio", ""),
+                reason=entry.get("reason", ""),
+                raw=entry.get("raw", {}),
+            )
+            for entry in entries
+        ]
+    )
 
 
 def run_import_job(
@@ -55,10 +107,15 @@ def run_import_job(
         if job.result.get("requires_confirmation"):
             # Previewed a destructive import; persisted nothing. Await confirm.
             job.status = ImportJobStatus.NEEDS_CONFIRMATION
-        elif job.result.get("reconcile_errors") or job.result.get("incomplete_history"):
+        elif (
+            job.result.get("reconcile_errors")
+            or job.result.get("incomplete_history")
+            or job.result.get("quarantined")
+        ):
             # Warnings leave real data behind but need the user's attention —
             # COMPLETED_WITH_WARNINGS, not FAILED (which implies nothing imported):
-            # a post-commit reconcile failure, or incomplete-history snapshots.
+            # a post-commit reconcile failure, incomplete-history snapshots, or rows
+            # set aside in quarantine.
             job.status = ImportJobStatus.COMPLETED_WITH_WARNINGS
         else:
             job.status = ImportJobStatus.SUCCESS
@@ -68,4 +125,10 @@ def run_import_job(
         job.error = str(exc)
     job.finished_at = timezone.now()
     job.save()
+    # A run that persisted data may have fixed earlier quarantined rows (a corrected
+    # re-import) — clear those first, then record this run's new rejects. A pure
+    # failure or an unconfirmed destructive preview persisted nothing, so skip both.
+    if job.status in (ImportJobStatus.SUCCESS, ImportJobStatus.COMPLETED_WITH_WARNINGS):
+        resolve_quarantine(job.investor)
+        _record_quarantine(job)
     return job

@@ -21,6 +21,7 @@ from __future__ import annotations
 import io
 
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from folioman_core.cas_reader import read_cas
 from folioman_core.parser import CASParseError, CASPasswordError
 from ninja import File, Form, Router, Status
@@ -28,8 +29,8 @@ from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from folioman_app.api.auth import get_owned_investor, resolve_or_create_investor
-from folioman_app.api.schemas import CasPreviewOut, ImportJobOut
-from folioman_app.models import ImportJob, Investor
+from folioman_app.api.schemas import CasPreviewOut, ImportJobOut, ImportQuarantineOut
+from folioman_app.models import ImportJob, ImportQuarantine, Investor
 from folioman_app.models.jobs import ImportKind
 from folioman_app.security.pan import mask_pan, pan_hash
 from folioman_app.services.imports import run_import_job
@@ -167,6 +168,29 @@ def import_csv(request, investor_id: int, file: UploadedFile = File(...)):
 def list_import_jobs(request, investor_id: int):
     investor = get_owned_investor(request, investor_id)
     return list(investor.import_jobs.all())
+
+
+# Registered before the ``{job_id}`` route below so the literal "quarantine"
+# segment matches here rather than failing int-coercion against {job_id}.
+@router.get("/{investor_id}/imports/quarantine", response=list[ImportQuarantineOut])
+def list_quarantine(request, investor_id: int):
+    """Open (unresolved) import-quarantine rows for the investor — rows a CAS/eCAS
+    import set aside instead of corrupting the ledger. Re-importing a corrected
+    statement auto-resolves a row whose security/folio then persists cleanly."""
+    investor = get_owned_investor(request, investor_id)
+    return list(investor.import_quarantine.filter(resolved=False))
+
+
+@router.delete("/{investor_id}/imports/quarantine/{quarantine_id}", response={204: None})
+def dismiss_quarantine(request, investor_id: int, quarantine_id: int):
+    """Dismiss a quarantine row the user no longer wants flagged (marks it resolved;
+    nothing is deleted from the ledger — there's nothing there to remove)."""
+    investor = get_owned_investor(request, investor_id)
+    row = get_object_or_404(ImportQuarantine, id=quarantine_id, investor=investor, resolved=False)
+    row.resolved = True
+    row.resolved_at = timezone.now()
+    row.save(update_fields=["resolved", "resolved_at", "updated_at"])
+    return Status(204, None)
 
 
 @router.get("/{investor_id}/imports/{job_id}", response=ImportJobOut)

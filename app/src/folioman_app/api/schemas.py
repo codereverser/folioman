@@ -301,6 +301,18 @@ class ImportJobSummaryOut(Schema):
     finished_at: datetime | None
 
 
+class ImportQuarantineOut(Schema):
+    """An import row/block that couldn't be persisted, set aside for review."""
+
+    id: int
+    kind: str
+    security_name: str
+    isin: str
+    folio_number: str
+    reason: str
+    created_at: datetime
+
+
 class ValuationIssueOut(Schema):
     """The real, per-security cause behind a generic valuation error."""
 

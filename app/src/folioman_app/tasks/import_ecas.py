@@ -33,6 +33,24 @@ class StaleStatementError(ValueError):
     """The uploaded eCAS is older than the latest already on file."""
 
 
+def _quarantine_entry(line, account, exc: Exception) -> dict:
+    """Describe an eCAS holding line that couldn't be persisted, for quarantine.
+
+    Identity (name/isin/folio) drives display and the later auto-resolve match; the
+    ``raw`` snapshot is audit-only (never replayed)."""
+    folio = line.folio or account.folio
+    return {
+        "security": getattr(line.security, "name", "") or "",
+        "isin": getattr(line.security, "isin", "") or "",
+        "folio": getattr(folio, "number", "") or "",
+        "reason": str(exc),
+        "raw": {
+            "units": str(line.units) if line.units is not None else None,
+            "value_observed": str(line.value_observed) if line.value_observed is not None else None,
+        },
+    }
+
+
 def _statement_isins(statement: EcasStatement) -> set[str]:
     return {
         line.security.isin
@@ -94,6 +112,7 @@ def persist_ecas_statement(
     removed_security_ids = {h.security_id for h in removed}
     prov_value = Decimal("0")
     prov_invested = Decimal("0")
+    quarantined: list[dict] = []
 
     with db_transaction.atomic():
         # The statement is authoritative: drop this depository's prior holdings,
@@ -110,37 +129,49 @@ def persist_ecas_statement(
             else:
                 mf_folio_numbers |= {line.folio.number for line in account.holdings if line.folio}
             for line in account.holdings:
+                try:
+                    # Savepoint per holding line: one bad line (unmappable security,
+                    # malformed units) is set aside, not allowed to abort the whole
+                    # eCAS. Catching outside the inner ``atomic`` is the supported
+                    # savepoint-rollback pattern.
+                    with db_transaction.atomic():
+                        # MF lines carry their own RTA folio (so they reconcile with
+                        # the MF CAS ledger); equities/bonds use the demat account folio.
+                        folio = upsert_folio(investor, line.folio or account.folio)
+                        # Depository names are garbled (CDSL prefixes MF schemes with
+                        # an internal code; equities arrive in registrar boilerplate) —
+                        # never let them replace a cleaner name from an MF CAS / manual
+                        # entry.
+                        security = upsert_security(line.security, authoritative_name=False)
+                        # update_or_create (not create) tolerates a security listed
+                        # twice in one statement — last row wins, no collision.
+                        _, created = Holding.objects.update_or_create(
+                            investor=investor,
+                            security=security,
+                            folio=folio,
+                            as_of_date=statement.statement_date,
+                            source=source.value,
+                            defaults={
+                                "units": line.units,
+                                "value_observed": line.value_observed,
+                                "avg_cost_observed": line.avg_cost_observed,
+                                "source_ref": source_ref,
+                            },
+                        )
+                except Exception as exc:
+                    quarantined.append(_quarantine_entry(line, account, exc))
+                    continue
                 if line.value_observed is not None:
                     prov_value += line.value_observed
                 if line.avg_cost_observed is not None:
                     prov_invested += line.avg_cost_observed * line.units
-                # MF lines carry their own RTA folio (so they reconcile with the MF
-                # CAS ledger); equities/bonds use the demat account folio.
-                folio = upsert_folio(investor, line.folio or account.folio)
-                # Depository names are garbled (CDSL prefixes MF schemes with an
-                # internal code; equities arrive in registrar boilerplate) — never
-                # let them replace a cleaner name from an MF CAS / manual entry.
-                security = upsert_security(line.security, authoritative_name=False)
                 securities_by_id[security.id] = security
-                # update_or_create (not create) tolerates a security listed twice
-                # in one statement — last row wins, no unique-constraint collision.
-                _, created = Holding.objects.update_or_create(
-                    investor=investor,
-                    security=security,
-                    folio=folio,
-                    as_of_date=statement.statement_date,
-                    source=source.value,
-                    defaults={
-                        "units": line.units,
-                        "value_observed": line.value_observed,
-                        "avg_cost_observed": line.avg_cost_observed,
-                        "source_ref": source_ref,
-                    },
-                )
                 summary["holdings_created" if created else "holdings_updated"] += 1
 
     summary["securities"] = len(securities_by_id)
     summary["mf_folios"] = len(mf_folio_numbers)
+    if quarantined:
+        summary["quarantined"] = quarantined
     # Recovery breadcrumb: what this import removed (no history table, but the job
     # row records it for audit / manual re-creation).
     if removed:

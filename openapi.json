@@ -932,6 +932,51 @@
         "title": "ImportJobSummaryOut",
         "type": "object"
       },
+      "ImportQuarantineOut": {
+        "description": "An import row/block that couldn't be persisted, set aside for review.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "folio_number": {
+            "title": "Folio Number",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "isin": {
+            "title": "Isin",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "security_name": {
+            "title": "Security Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "security_name",
+          "isin",
+          "folio_number",
+          "reason",
+          "created_at"
+        ],
+        "title": "ImportQuarantineOut",
+        "type": "object"
+      },
       "IntegrityStatusOut": {
         "properties": {
           "folio": {
@@ -3738,6 +3783,78 @@
           }
         },
         "summary": "Import Csv",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/imports/quarantine": {
+      "get": {
+        "description": "Open (unresolved) import-quarantine rows for the investor \u2014 rows a CAS/eCAS\nimport set aside instead of corrupting the ledger. Re-importing a corrected\nstatement auto-resolves a row whose security/folio then persists cleanly.",
+        "operationId": "folioman_app_api_imports_list_quarantine",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImportQuarantineOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List Quarantine",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/imports/quarantine/{quarantine_id}": {
+      "delete": {
+        "description": "Dismiss a quarantine row the user no longer wants flagged (marks it resolved;\nnothing is deleted from the ledger \u2014 there's nothing there to remove).",
+        "operationId": "folioman_app_api_imports_dismiss_quarantine",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "quarantine_id",
+            "required": true,
+            "schema": {
+              "title": "Quarantine Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        },
+        "summary": "Dismiss Quarantine",
         "tags": [
           "imports"
         ]

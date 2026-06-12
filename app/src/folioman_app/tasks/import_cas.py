@@ -35,6 +35,24 @@ from folioman_app.tasks.reconcile import reconcile_after_import
 _ZERO = Decimal("0")
 
 
+def _quarantine_entry(block: MfCasSchemeBlock, exc: Exception) -> dict:
+    """Describe a scheme block that couldn't be persisted, for the quarantine row.
+
+    Identity (name/isin/folio) drives display and the later auto-resolve match; the
+    ``raw`` snapshot is audit-only (never replayed)."""
+    return {
+        "security": getattr(block.security, "name", "") or "",
+        "isin": getattr(block.security, "isin", "") or "",
+        "folio": getattr(block.folio, "number", "") or "",
+        "reason": str(exc),
+        "raw": {
+            "opening_units": str(block.opening_units) if block.opening_units is not None else None,
+            "closing_units": str(block.closing_units) if block.closing_units is not None else None,
+            "transactions": len(block.transactions),
+        },
+    }
+
+
 def _prior_ledger_balance(
     investor, security: Security, folio: Folio, before: date_cls | None
 ) -> Decimal:
@@ -239,70 +257,88 @@ def persist_mf_statement(investor, statement: MfCasStatement, *, source_ref: str
         "incomplete_history": [],
     }
     securities_by_id: dict[int, Security] = {}
+    quarantined: list[dict] = []
 
     with db_transaction.atomic():
         for block in statement.schemes:
+            try:
+                # Savepoint per scheme: one block that raises (an unmappable
+                # security, a malformed row) is rolled back and set aside, not
+                # allowed to abort the whole CAS. Catching outside the inner
+                # ``atomic`` is the supported savepoint-rollback pattern.
+                with db_transaction.atomic():
+                    security = upsert_security(block.security)
+                    folio = upsert_folio(investor, block.folio)
+                    # A scheme is ledgerable only if it chains gap-free onto the
+                    # existing ledger: its opening balance must equal what we already
+                    # hold for this (security, folio) as of the statement's start (0
+                    # for a first import).
+                    prior_balance = _prior_ledger_balance(
+                        investor, security, folio, statement.statement_from
+                    )
+                    gap = scheme_history_gap(block, prior_balance=prior_balance)
+                    if gap is None:
+                        created_n, skipped_n = _persist_block(
+                            investor, security, folio, block, source_ref=source_ref
+                        )
+                        summary["transactions_created"] += created_n
+                        summary["transactions_skipped"] += skipped_n
+                    else:
+                        # Doesn't chain — keep the rows (display-only, no cost basis)
+                        # AND the closing-balance snapshot that drives net worth.
+                        created_n, _ = _persist_block(
+                            investor,
+                            security,
+                            folio,
+                            block,
+                            source_ref=source_ref,
+                            cost_basis_complete=False,
+                        )
+                        summary["partial_transactions"] += created_n
+                        if _snapshot_incomplete_block(
+                            investor,
+                            security,
+                            folio,
+                            block,
+                            statement=statement,
+                            source_ref=source_ref,
+                        ):
+                            summary["holdings_snapshotted"] += 1
+                        # Record what the gap check saw so a later earlier-window
+                        # statement can re-evaluate and upgrade this block (see
+                        # upgrade_chained_partials).
+                        PartialBlock.objects.update_or_create(
+                            investor=investor,
+                            security=security,
+                            folio=folio,
+                            defaults={
+                                "opening_units": block.opening_units or _ZERO,
+                                "closing_units": block.closing_units,
+                                "statement_from": statement.statement_from,
+                            },
+                        )
+                        summary["incomplete_history"].append(
+                            {
+                                "security": security.name,
+                                "folio": folio.number,
+                                # Why it's incomplete: "opening_nonzero" (partial-
+                                # period, no prior history), "history_gap" (doesn't
+                                # chain onto the prior ledger), or "rows_unreconciled"
+                                # (a row folioman couldn't map).
+                                "reason": gap,
+                                "opening_units": str(block.opening_units)
+                                if block.opening_units is not None
+                                else None,
+                                "closing_units": str(block.closing_units)
+                                if block.closing_units is not None
+                                else None,
+                            }
+                        )
+            except Exception as exc:
+                quarantined.append(_quarantine_entry(block, exc))
+                continue
             summary["schemes"] += 1
-            security = upsert_security(block.security)
-            folio = upsert_folio(investor, block.folio)
             securities_by_id[security.id] = security
-            # A scheme is ledgerable only if it chains gap-free onto the existing
-            # ledger: its opening balance must equal what we already hold for this
-            # (security, folio) as of the statement's start (0 for a first import).
-            prior_balance = _prior_ledger_balance(
-                investor, security, folio, statement.statement_from
-            )
-            gap = scheme_history_gap(block, prior_balance=prior_balance)
-            if gap is None:
-                created_n, skipped_n = _persist_block(
-                    investor, security, folio, block, source_ref=source_ref
-                )
-                summary["transactions_created"] += created_n
-                summary["transactions_skipped"] += skipped_n
-            else:
-                # Doesn't chain — keep the rows (display-only, no cost basis) AND the
-                # closing-balance snapshot that drives this scheme's net worth.
-                created_n, _ = _persist_block(
-                    investor,
-                    security,
-                    folio,
-                    block,
-                    source_ref=source_ref,
-                    cost_basis_complete=False,
-                )
-                summary["partial_transactions"] += created_n
-                if _snapshot_incomplete_block(
-                    investor, security, folio, block, statement=statement, source_ref=source_ref
-                ):
-                    summary["holdings_snapshotted"] += 1
-                # Record what the gap check saw so a later earlier-window statement can
-                # re-evaluate and upgrade this block (see upgrade_chained_partials).
-                PartialBlock.objects.update_or_create(
-                    investor=investor,
-                    security=security,
-                    folio=folio,
-                    defaults={
-                        "opening_units": block.opening_units or _ZERO,
-                        "closing_units": block.closing_units,
-                        "statement_from": statement.statement_from,
-                    },
-                )
-                summary["incomplete_history"].append(
-                    {
-                        "security": security.name,
-                        "folio": folio.number,
-                        # Why it's incomplete: "opening_nonzero" (partial-period, no
-                        # prior history), "history_gap" (doesn't chain onto the prior
-                        # ledger), or "rows_unreconciled" (a row folioman couldn't map).
-                        "reason": gap,
-                        "opening_units": str(block.opening_units)
-                        if block.opening_units is not None
-                        else None,
-                        "closing_units": str(block.closing_units)
-                        if block.closing_units is not None
-                        else None,
-                    }
-                )
 
         # This statement may have supplied the prior history a previously-partial
         # block was missing — re-evaluate and upgrade any that now chain (cascades
@@ -311,6 +347,8 @@ def persist_mf_statement(investor, statement: MfCasStatement, *, source_ref: str
             securities_by_id.setdefault(upgraded_id, Security.objects.get(id=upgraded_id))
 
     summary["securities"] = len(securities_by_id)
+    if quarantined:
+        summary["quarantined"] = quarantined
     # Reconcile per affected security after the import commits. A reconcile
     # failure does not lose the committed data — it is surfaced as a warning.
     errors = reconcile_after_import(investor, securities_by_id.values())

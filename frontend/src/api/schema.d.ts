@@ -419,6 +419,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/imports/quarantine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Quarantine
+         * @description Open (unresolved) import-quarantine rows for the investor — rows a CAS/eCAS
+         *     import set aside instead of corrupting the ledger. Re-importing a corrected
+         *     statement auto-resolves a row whose security/folio then persists cleanly.
+         */
+        get: operations["folioman_app_api_imports_list_quarantine"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/imports/quarantine/{quarantine_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Dismiss Quarantine
+         * @description Dismiss a quarantine row the user no longer wants flagged (marks it resolved;
+         *     nothing is deleted from the ledger — there's nothing there to remove).
+         */
+        delete: operations["folioman_app_api_imports_dismiss_quarantine"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/imports/{job_id}": {
         parameters: {
             query?: never;
@@ -1103,6 +1146,29 @@ export interface components {
             };
             /** Status */
             status: string;
+        };
+        /**
+         * ImportQuarantineOut
+         * @description An import row/block that couldn't be persisted, set aside for review.
+         */
+        ImportQuarantineOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Folio Number */
+            folio_number: string;
+            /** Id */
+            id: number;
+            /** Isin */
+            isin: string;
+            /** Kind */
+            kind: string;
+            /** Reason */
+            reason: string;
+            /** Security Name */
+            security_name: string;
         };
         /** IntegrityStatusOut */
         IntegrityStatusOut: {
@@ -2468,6 +2534,49 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ImportJobOut"];
                 };
+            };
+        };
+    };
+    folioman_app_api_imports_list_quarantine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportQuarantineOut"][];
+                };
+            };
+        };
+    };
+    folioman_app_api_imports_dismiss_quarantine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                quarantine_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
