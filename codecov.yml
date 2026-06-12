@@ -1,0 +1,18 @@
+coverage:
+  status:
+    # Patch gate: new/changed lines in a PR must be 80% covered. This is the
+    # check that fails the PR — it asks only that new code arrives tested.
+    patch:
+      default:
+        target: 80%
+    # Project status is informational: report the overall number, but allow a
+    # small dip so a large well-tested PR isn't blocked by rounding drift.
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+
+comment:
+  layout: "condensed_header, diff, files"
+  require_changes: true

@@ -51,12 +51,15 @@ DJANGO_SETTINGS_MODULE = "folioman_app.settings.base"
 filterwarnings = [
     "ignore:No directory at:UserWarning",
 ]
-# Core coverage (target 80%): pytest core/tests --cov=folioman_core --cov-report=term-missing
+# Coverage: pytest --cov --cov-report=term-missing
+# Measures the shared domain core and the Django app. The desktop and server
+# shells are thin entrypoint glue (PyWebView launcher, gunicorn wrapper) and
+# sit well below the gate — excluded until they grow testable surface.
 
 [tool.coverage.run]
-source_pkgs = ["folioman_core"]
+source_pkgs = ["folioman_core", "folioman_app"]
 branch = true
 
 [tool.coverage.report]
 show_missing = true
-# fail_under = 80  # enable once core coverage reaches the target
+fail_under = 80
