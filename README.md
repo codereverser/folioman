@@ -4,6 +4,12 @@
 
 # Folioman
 
+[![CI](https://github.com/codereverser/folioman/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/codereverser/folioman/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/github/codereverser/folioman/graph/badge.svg?token=Y9XP97J3G2)](https://codecov.io/github/codereverser/folioman)
+[![License: AGPL-3.0](https://img.shields.io/github/license/codereverser/folioman)](LICENSE)
+[![code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Live demo](https://img.shields.io/badge/demo-live-brightgreen)](https://folioman.atomcoder.com/)
+
 A private net-worth tracker and tax helper for Indian investors — runs on your own
 computer or your own server.
 
