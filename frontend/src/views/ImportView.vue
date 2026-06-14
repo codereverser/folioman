@@ -261,6 +261,18 @@ function goToDashboard(): void {
       </div>
     </div>
 
+    <RouterLink class="alt-import" :to="{ name: 'import-transactions' }">
+      <i class="pi pi-file-excel" aria-hidden="true" />
+      <span class="alt-main">
+        <span class="alt-title">Have a stock tradebook instead?</span>
+        <span class="alt-sub muted">
+          Import a broker CSV/XLSX (Zerodha, Upstox, …) — map the columns once for full
+          cost basis &amp; capital gains.
+        </span>
+      </span>
+      <i class="pi pi-arrow-right" aria-hidden="true" />
+    </RouterLink>
+
     <details class="help">
       <summary>
         <i class="pi pi-question-circle" aria-hidden="true" />
@@ -518,6 +530,40 @@ function goToDashboard(): void {
 .lede {
   margin: 0;
   max-width: 38rem;
+}
+
+/* Secondary entry point to the broker-tradebook (CSV/XLSX) import wizard. */
+.alt-import {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-3);
+  margin-top: var(--fm-space-3);
+  padding: var(--fm-space-4);
+  background: var(--fm-surface-raised);
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-md);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color var(--fm-dur) var(--fm-ease);
+}
+.alt-import:hover {
+  border-color: var(--fm-verified);
+}
+.alt-import > .pi:first-child {
+  font-size: 1.25rem;
+  color: var(--fm-text-subtle);
+}
+.alt-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+}
+.alt-title {
+  font-weight: 600;
+}
+.alt-sub {
+  font-size: 0.8125rem;
 }
 
 /* Collapsed by default so the top stays light; expands to the how-to + scope. */

@@ -110,6 +110,14 @@ const routes: RouteRecordRaw[] = [
     meta: { desktopOnly: true },
   },
   {
+    // Broker stock tradebook (CSV/XLSX) → canonical transaction ledger. Unlike a
+    // CAS, a tradebook carries no owner identity, so the investor is chosen up front.
+    path: '/import/transactions',
+    name: 'import-transactions',
+    component: () => import('@/views/TradebookImportView.vue'),
+    meta: { desktopOnly: true },
+  },
+  {
     path: '/families/:familyId',
     name: 'family',
     component: FamilyView,

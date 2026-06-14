@@ -89,3 +89,28 @@ export async function importCas(
   })
   return unwrap(res, 'Import failed')
 }
+
+/**
+ * Import a canonical-CSV transaction file (e.g. a mapped broker tradebook) for a
+ * specific investor. The wizard derives the canonical CSV client-side; we upload
+ * those bytes as a file so they ride the same content-hashed, idempotent import
+ * path as every other import. Returns the job at HTTP 201 — inspect
+ * `status`/`result` for created/skipped counts, incomplete-history flags, etc.
+ */
+export async function importTransactionsCsv(
+  investorId: number,
+  csvText: string,
+  filename = 'transactions.csv',
+): Promise<ImportJobOut> {
+  const file = new File([csvText], filename, { type: 'text/csv' })
+  const res = await api.POST('/api/investors/{investor_id}/imports/csv', {
+    params: { path: { investor_id: investorId } },
+    body: { file: file as unknown as string },
+    bodySerializer: (body: { file: unknown }) => {
+      const fd = new FormData()
+      fd.append('file', body.file as Blob)
+      return fd
+    },
+  })
+  return unwrap(res, 'Import failed')
+}
