@@ -8,6 +8,7 @@
 
 interface PyWebviewApi {
   pick_cas_file: () => Promise<{ name: string; data: string } | null>
+  pick_tradebook_file?: () => Promise<{ name: string; data: string } | null>
 }
 
 interface PyWebview {
@@ -25,11 +26,19 @@ export function isDesktopShell(): boolean {
   return typeof bridge()?.api?.pick_cas_file === 'function'
 }
 
+const MIME_BY_EXT: Record<string, string> = {
+  pdf: 'application/pdf',
+  csv: 'text/csv',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls: 'application/vnd.ms-excel',
+}
+
 function base64ToFile(name: string, b64: string): File {
   const binary = atob(b64)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return new File([bytes], name, { type: 'application/pdf' })
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return new File([bytes], name, { type: MIME_BY_EXT[ext] ?? 'application/octet-stream' })
 }
 
 /** Open the native OS file dialog and return the chosen CAS as a `File`, or `null`
@@ -38,6 +47,16 @@ export async function pickCasFile(): Promise<File | null> {
   const api = bridge()?.api
   if (!api?.pick_cas_file) return null
   const picked = await api.pick_cas_file()
+  if (!picked) return null
+  return base64ToFile(picked.name, picked.data)
+}
+
+/** Open the native OS file dialog for a broker tradebook (CSV/XLSX) as a `File`,
+ * or `null` if cancelled / not in the desktop shell. */
+export async function pickTradebookFile(): Promise<File | null> {
+  const api = bridge()?.api
+  if (!api?.pick_tradebook_file) return null
+  const picked = await api.pick_tradebook_file()
   if (!picked) return null
   return base64ToFile(picked.name, picked.data)
 }

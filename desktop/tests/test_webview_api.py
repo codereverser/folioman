@@ -44,6 +44,21 @@ def test_pick_returns_none_on_cancel():
     assert api.pick_cas_file() is None
 
 
+def test_pick_tradebook_returns_bytes_and_filters_to_tradebook(tmp_path):
+    book = tmp_path / "tradebook.csv"
+    book.write_bytes(b"symbol,qty\nRELIANCE,10\n")
+    api = WebviewApi()
+    window = _FakeWindow((str(book),))
+    api.bind_window(window)
+
+    result = api.pick_tradebook_file()
+
+    assert result is not None
+    assert result["name"] == "tradebook.csv"
+    assert base64.b64decode(result["data"]) == b"symbol,qty\nRELIANCE,10\n"
+    assert "csv" in window.calls[0]["file_types"][0].lower()
+
+
 def test_pick_single_selection_only(tmp_path):
     pdf = tmp_path / "a.pdf"
     pdf.write_bytes(b"x")

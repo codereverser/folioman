@@ -12,6 +12,7 @@ import { useRosterStore } from '@/stores/roster'
 import { useIntegrityStore } from '@/stores/integrity'
 import { useWriteLock } from '@/composables/useWriteLock'
 import { toCsv } from '@/utils/csv'
+import { isDesktopShell, pickTradebookFile } from '@/utils/desktop'
 import {
   CANONICAL_COLUMNS,
   CANONICAL_FIELDS,
@@ -49,6 +50,14 @@ const fileRows = ref<Record<string, string>[]>([])
 function onPickFile(event: Event): void {
   const picked = (event.target as HTMLInputElement).files?.[0] ?? null
   void loadFile(picked)
+}
+// In the desktop shell the in-page picker is flaky, so open the native dialog via
+// the PyWebView bridge; in a browser this is inert and the <input> handles it.
+async function onBrowse(event: Event): Promise<void> {
+  if (!isDesktopShell()) return
+  event.preventDefault()
+  const picked = await pickTradebookFile()
+  if (picked) void loadFile(picked)
 }
 function onDrop(event: DragEvent): void {
   dragging.value = false
@@ -235,6 +244,7 @@ watch(investorId, () => {
       <label
         class="dropzone"
         :class="{ dragging }"
+        @click="onBrowse"
         @dragover.prevent="dragging = true"
         @dragleave.prevent="dragging = false"
         @drop.prevent="onDrop"

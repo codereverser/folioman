@@ -22,6 +22,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _PDF_FILE_TYPES = ("PDF statement (*.pdf)", "All files (*.*)")
+_TRADEBOOK_FILE_TYPES = ("Tradebook (*.csv;*.xlsx;*.xls)", "All files (*.*)")
 
 
 class WebviewApi:
@@ -43,6 +44,18 @@ class WebviewApi:
         Returns ``None`` when the user cancels (JS sees ``null`` and no-ops). Reads
         and base64-encodes the file so the SPA can build a ``File`` for upload.
         """
+        return self._pick_file(_PDF_FILE_TYPES)
+
+    def pick_tradebook_file(self) -> dict[str, str] | None:
+        """Open a native open-dialog for a broker tradebook (CSV/XLSX); return its
+        name + base64 bytes (or ``None`` on cancel). Same bytes round-trip as
+        ``pick_cas_file`` — the SPA rebuilds a ``File`` and runs the canonical-CSV
+        import path; the in-page picker is flaky in the webview on some platforms."""
+        return self._pick_file(_TRADEBOOK_FILE_TYPES)
+
+    def _pick_file(self, file_types: tuple[str, ...]) -> dict[str, str] | None:
+        """Open a single-file native open-dialog filtered to ``file_types`` and
+        return ``{name, base64 bytes}``, or ``None`` if cancelled/unreadable."""
         import webview
 
         # pywebview 5.x moved the dialog kind to the `FileDialog` enum; the old
@@ -55,7 +68,7 @@ class WebviewApi:
         selection = window.create_file_dialog(
             open_dialog,
             allow_multiple=False,
-            file_types=_PDF_FILE_TYPES,
+            file_types=file_types,
         )
         if not selection:  # cancelled → empty tuple / None
             return None
