@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
-from folioman_app.models import Security, SecurityIntegrityStatus, Transaction
+from folioman_app.models import PartialBlock, Security, SecurityIntegrityStatus, Transaction
 from folioman_app.models.jobs import ImportJob, ImportKind
 from folioman_app.tasks.import_csv import process_csv
 
@@ -304,6 +304,85 @@ def test_csv_same_trade_id_reimport_is_idempotent(make_investor):
     result = _run_csv(inv, header + row)
     assert result["created"] == 0
     assert Transaction.objects.filter(investor=inv).count() == 1
+
+
+# --- incomplete history: orphan sells & unknown openings -------------------
+
+
+_ORPHAN_HEADER = "security_type,name,symbol,isin,date,transaction_type,units,price\n"
+
+
+def test_csv_orphan_sell_flags_incomplete_and_records_partial_block(make_investor):
+    """A tradebook that starts mid-history has a sell with no prior buy. The import
+    must complete (not raise), flag the security's ledger incomplete, and record a
+    partial block — never fabricate cost basis for the orphaned lots."""
+    inv = make_investor()
+    # sell 10 then buy 5: the sell underflows (no prior buy); net is -5.
+    rows = (
+        "equity,Reliance Industries,RELIANCE,INE002A01018,2021-06-01,sell,10,2400\n"
+        "equity,Reliance Industries,RELIANCE,INE002A01018,2022-06-01,buy,5,2600\n"
+    )
+    result = _run_csv(inv, _ORPHAN_HEADER + rows)
+    assert result["created"] == 2
+    assert result["incomplete_history"][0]["reason"] == "orphan_sell"
+    # Selling 10 needs 10 units present at that moment -> 10 must predate the window
+    # (the later buy of 5 doesn't reduce what was required at the sell). Net is -5.
+    assert Decimal(result["incomplete_history"][0]["missing_prior_units"]) == Decimal("10")
+    assert Decimal(result["incomplete_history"][0]["net_units"]) == Decimal("-5")
+
+    sec = Security.objects.get(isin="INE002A01018")
+    assert Transaction.objects.filter(investor=inv, security=sec).count() == 2
+    assert not Transaction.objects.filter(
+        investor=inv, security=sec, cost_basis_complete=True
+    ).exists()
+    pb = PartialBlock.objects.get(investor=inv, security=sec)
+    assert pb.opening_units == Decimal("10")
+    # The cost_basis() filter (the single gate feeding FIFO / realized P&L / 112A /
+    # valuation) excludes the whole bucket, so no bogus gains are computed.
+    assert not Transaction.objects.cost_basis().filter(investor=inv, security=sec).exists()
+
+
+def test_csv_full_history_bucket_stays_complete(make_investor):
+    """Buy-before-sell within the window is solvent: no partial block, rows stay
+    cost_basis_complete."""
+    inv = make_investor()
+    rows = (
+        "equity,Reliance Industries,RELIANCE,INE002A01018,2024-01-15,buy,10,2800\n"
+        "equity,Reliance Industries,RELIANCE,INE002A01018,2024-06-15,sell,4,3100\n"
+    )
+    result = _run_csv(inv, _ORPHAN_HEADER + rows)
+    assert "incomplete_history" not in result
+    sec = Security.objects.get(isin="INE002A01018")
+    assert (
+        Transaction.objects.filter(investor=inv, security=sec, cost_basis_complete=False).count()
+        == 0
+    )
+    assert not PartialBlock.objects.filter(investor=inv, security=sec).exists()
+
+
+def test_csv_earlier_import_upgrades_partial_to_complete(make_investor):
+    """Importing an earlier-period tradebook that supplies the missing buys flips a
+    previously-orphaned equity ledger back to complete and drops the partial block —
+    order-independent convergence, like the MF chaining path."""
+    inv = make_investor()
+    # First: a mid-history file -> orphan sell of 10 (only 5 bought here).
+    first = (
+        "equity,Reliance Industries,RELIANCE,INE002A01018,2021-06-01,sell,10,2400\n"
+        "equity,Reliance Industries,RELIANCE,INE002A01018,2022-06-01,buy,5,2600\n"
+    )
+    _run_csv(inv, _ORPHAN_HEADER + first)
+    sec = Security.objects.get(isin="INE002A01018")
+    assert PartialBlock.objects.filter(investor=inv, security=sec).exists()
+
+    # Then: an earlier-period file supplying the 10 units the orphan sell consumed.
+    earlier = "equity,Reliance Industries,RELIANCE,INE002A01018,2019-01-10,buy,10,1900\n"
+    result = _run_csv(inv, _ORPHAN_HEADER + earlier)
+    assert "incomplete_history" not in result
+    assert not PartialBlock.objects.filter(investor=inv, security=sec).exists()
+    # Every row (across both imports) is now complete.
+    assert not Transaction.objects.filter(
+        investor=inv, security=sec, cost_basis_complete=False
+    ).exists()
 
 
 @override_settings(MANUAL_TRANSACTIONS_ENABLED=True)

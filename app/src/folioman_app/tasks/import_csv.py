@@ -32,13 +32,15 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import transaction as db_transaction
 from folioman_core._dates import parse_loose_date
+from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
 from folioman_core.models import SecurityType, TransactionSource, TransactionType
 from folioman_core.models.investor import Folio as CoreFolio
 from folioman_core.models.investor import FolioType
 from folioman_core.models.security import Security as CoreSecurity
 from pydantic import ValidationError
 
-from folioman_app.models import ImportJob, Security, Transaction
+from folioman_app.mappers import to_core_transaction
+from folioman_app.models import ImportJob, PartialBlock, Security, Transaction
 from folioman_app.models.jobs import ImportKind
 from folioman_app.services.imports import register_processor
 from folioman_app.tasks._upsert import upsert_folio, upsert_security
@@ -46,6 +48,7 @@ from folioman_app.tasks.reconcile import reconcile_after_import, reconcile_secur
 
 _REQUIRED_COLUMNS = ("security_type", "name", "date", "transaction_type", "units", "price")
 _METADATA_COLUMNS = ("coin_id", "principal", "rate", "account_ref")
+_ZERO = Decimal("0")
 
 
 def _core_security(
@@ -179,6 +182,86 @@ def _process_row(investor, row: dict, file_ref: str) -> tuple[Security, bool]:
     return security, created
 
 
+def _fifo_overhang(cores) -> tuple[Decimal, Decimal]:
+    """Implied missing prior units + net units for a chronological ledger.
+
+    Tracks the running balance over the bucket; its lowest point below zero is the
+    quantity that *must* have been acquired before the import window for the sells
+    to be valid (the overhang). ``net`` is the bucket's final net units.
+    """
+    running = _ZERO
+    low = _ZERO
+    for txn in sorted(cores, key=lambda t: t.date):
+        running += net_units_from_transactions([txn])
+        low = min(low, running)
+    return (-low if low < _ZERO else _ZERO), running
+
+
+def _reconcile_cost_basis_completeness(investor, security: Security) -> list[dict]:
+    """Re-derive cost-basis completeness for each of this security's folios.
+
+    A tradebook that begins mid-history carries sells with no matching buy, so a
+    chronological FIFO replay underflows (``InsufficientUnitsError``). Such a
+    (security, folio) ledger has no usable cost basis: flag all its rows
+    ``cost_basis_complete=False`` and record a ``PartialBlock`` so a later
+    earlier-period import can upgrade it — mirroring the MF ``opening_nonzero``
+    handling, but keyed on FIFO solvency rather than a stated opening balance.
+
+    When a replay now balances (the missing buys arrived in a subsequent import),
+    flip the bucket's rows back to complete and drop the block. FIFO buckets are
+    independent per (security, folio), so re-evaluating just the imported security
+    is sufficient and order-independent — completeness here is a property of the
+    ledger, re-derived on every import that touches it (no separate upgrade pass).
+
+    Returns one entry per folio that is incomplete (for the job's warnings).
+    """
+    incomplete: list[dict] = []
+    folio_ids = set(
+        investor.transactions.filter(security=security).values_list("folio_id", flat=True)
+    )
+    for folio_id in folio_ids:
+        bucket = investor.transactions.filter(security=security, folio_id=folio_id)
+        cores = [to_core_transaction(t) for t in bucket.select_related("security", "folio")]
+        try:
+            apply_fifo(cores)
+        except InsufficientUnitsError:
+            pass
+        else:
+            # Solvent: ensure the bucket is complete and clear any stale partial block.
+            bucket.filter(cost_basis_complete=False).update(cost_basis_complete=True)
+            PartialBlock.objects.filter(
+                investor=investor, security=security, folio_id=folio_id
+            ).delete()
+            continue
+
+        # Underflow: the whole bucket's cost basis is unusable (the unseen earlier
+        # buys would, by FIFO, be the first lots consumed). Flag every row and
+        # record the overhang so a later earlier-period import can upgrade it.
+        bucket.filter(cost_basis_complete=True).update(cost_basis_complete=False)
+        overhang, net = _fifo_overhang(cores)
+        statement_from = bucket.order_by("date").values_list("date", flat=True).first()
+        PartialBlock.objects.update_or_create(
+            investor=investor,
+            security=security,
+            folio_id=folio_id,
+            defaults={
+                "opening_units": overhang,
+                "closing_units": net,
+                "statement_from": statement_from,
+            },
+        )
+        incomplete.append(
+            {
+                "security": security.name,
+                "isin": security.isin,
+                "reason": "orphan_sell",
+                "missing_prior_units": str(overhang),
+                "net_units": str(net),
+            }
+        )
+    return incomplete
+
+
 def process_csv(
     job: ImportJob, content: bytes, password: str = "", *, confirm: bool = False, parsed=None
 ) -> dict:
@@ -203,6 +286,17 @@ def process_csv(
             continue
         affected[security.id] = security
         summary["created" if created else "skipped"] += 1
+
+    # Mark incomplete-history ledgers (orphan sells) before reconciling, so a
+    # mid-history tradebook doesn't feed FIFO-underflowing rows into cost basis,
+    # realized P&L, or tax. MF keeps its CAS opening-balance partial mechanism.
+    incomplete: list[dict] = []
+    for security in affected.values():
+        if security.security_type == SecurityType.MF.value:
+            continue
+        incomplete.extend(_reconcile_cost_basis_completeness(job.investor, security))
+    if incomplete:
+        summary["incomplete_history"] = incomplete
 
     errors = reconcile_after_import(job.investor, affected.values())
     if errors:
