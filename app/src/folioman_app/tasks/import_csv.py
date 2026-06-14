@@ -27,6 +27,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import re
 from datetime import date as date_cls
 from decimal import Decimal, InvalidOperation
 
@@ -40,7 +41,7 @@ from folioman_core.models.security import Security as CoreSecurity
 from pydantic import ValidationError
 
 from folioman_app.mappers import to_core_transaction
-from folioman_app.models import ImportJob, PartialBlock, Security, Transaction
+from folioman_app.models import Folio, ImportJob, PartialBlock, Security, Transaction
 from folioman_app.models.jobs import ImportKind
 from folioman_app.services.imports import register_processor
 from folioman_app.tasks._upsert import upsert_folio, upsert_security
@@ -113,6 +114,47 @@ def _cell_decimal(row: dict, key: str, default):
     return Decimal(raw) if raw else default
 
 
+# A demat account number (BO ID) is either a 16-digit CDSL beneficiary id or an
+# NSDL id rendered as "IN" + 14 digits. Validating the shape rejects an obvious
+# mistype on entry; a *well-formed but wrong* number can't be caught here — it
+# surfaces later as a dangling folio the eCAS re-point reconciles (see import_ecas).
+_DEMAT_NUMBER_RE = re.compile(r"^(?:\d{16}|IN\d{14})$")
+
+
+def _resolve_folio(investor, row: dict, security: Security) -> Folio | None:
+    """The folio (demat account / MF folio) a row belongs to, or None.
+
+    Equity (and any other demat-held security) **requires** a real demat account
+    number — the BO ID a later eCAS ``upsert_folio`` matches by ``(investor,
+    number)``, so the ledger reconciles directly. We never invent a placeholder:
+    a missing or mis-shaped number is a per-row error (caught, row skipped). A
+    crypto/other row with no demat number stays folio-less, as before.
+    """
+    number = (row.get("folio_number") or "").strip().upper()
+    broker = (row.get("broker") or "").strip()
+    if security.security_type == SecurityType.MF.value:
+        if not number:
+            return None
+        return upsert_folio(investor, CoreFolio(folio_type=FolioType.MF, number=number))
+    if security.security_type == SecurityType.EQUITY.value:
+        if not number:
+            msg = "equity import requires a demat account number (folio_number)"
+            raise ValueError(msg)
+        if not _DEMAT_NUMBER_RE.match(number):
+            msg = (
+                f"invalid demat account number {number!r}: expected a 16-digit CDSL "
+                "BO ID or an NSDL id like 'IN' + 14 digits"
+            )
+            raise ValueError(msg)
+        # CoreFolio validation requires a broker for a demat folio; a missing
+        # broker surfaces as a per-row error too — the wizard always injects it.
+        return upsert_folio(
+            investor, CoreFolio(folio_type=FolioType.DEMAT, number=number, broker=broker)
+        )
+    # Other types (e.g. crypto) carry no demat account — folio-less, as before.
+    return None
+
+
 def _process_row(investor, row: dict, file_ref: str) -> tuple[Security, bool]:
     missing = [c for c in _REQUIRED_COLUMNS if not (row.get(c) or "").strip()]
     if missing:
@@ -131,6 +173,8 @@ def _process_row(investor, row: dict, file_ref: str) -> tuple[Security, bool]:
             metadata=metadata,
         )
     )
+
+    folio = _resolve_folio(investor, row, security)
 
     on = parse_loose_date(row["date"])
     if on is None:
@@ -166,6 +210,7 @@ def _process_row(investor, row: dict, file_ref: str) -> tuple[Security, bool]:
         ),
         defaults={
             "security": security,
+            "folio": folio,
             "date": on,
             "transaction_type": txn_type,
             "units": units,

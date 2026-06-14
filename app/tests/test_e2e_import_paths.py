@@ -104,7 +104,9 @@ def _ecas_reliance(units: str) -> EcasStatement:
     )
 
 
-_CSV_HEADER = "security_type,name,symbol,isin,date,transaction_type,units,price,amount\n"
+_CSV_HEADER = (
+    "security_type,name,symbol,isin,date,transaction_type,units,price,amount,folio_number,broker\n"
+)
 
 
 @override_settings(MANUAL_TRANSACTIONS_ENABLED=True)
@@ -182,7 +184,11 @@ def test_cross_source_mismatch_withheld_from_112a(
 def test_csv_import_path_creates_transactions(client, make_investor):
     # A canonical-CSV upload runs end to end and lands ledger rows for the investor.
     inv = make_investor()
-    csv = _CSV_HEADER + f"equity,Reliance,RELIANCE,{_RELIANCE},2024-01-15,buy,10,2800,28000\n"
+    row = (
+        f"equity,Reliance,RELIANCE,{_RELIANCE},2024-01-15,buy,10,2800,28000,"
+        "1208160000000001,ZERODHA\n"
+    )
+    csv = _CSV_HEADER + row
     resp = _upload(client, inv.id, "csv", "txns.csv", csv.encode())
     assert resp.status_code == 201
     assert len(client.get(f"/api/investors/{inv.id}/transactions").json()) == 1

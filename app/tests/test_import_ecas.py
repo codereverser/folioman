@@ -12,9 +12,17 @@ from decimal import Decimal
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from folioman_app.models import Folio, Holding, Security, SecurityIntegrityStatus
+from folioman_app.models import (
+    Folio,
+    Holding,
+    ImportJob,
+    Security,
+    SecurityIntegrityStatus,
+    Transaction,
+)
+from folioman_app.models.jobs import ImportKind
 from folioman_app.tasks.import_cas import persist_mf_statement
-from folioman_app.tasks.import_csv import create_manual_transaction
+from folioman_app.tasks.import_csv import create_manual_transaction, process_csv
 from folioman_app.tasks.import_ecas import persist_ecas_statement
 from folioman_core.models import SecurityType, TransactionType
 from folioman_core.models.cas import (
@@ -293,6 +301,126 @@ def test_ledger_and_ecas_in_same_folio_reconcile(make_investor):
     status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio__number=demat)
     assert status.status == "reconciled"
     assert status.tax_safe is True
+
+
+# --- out-of-order eCAS: re-point a dangling tradebook folio -------------------
+
+_RELIANCE = "INE002A01018"
+_TRADEBOOK_HEADER = (
+    "security_type,name,symbol,isin,date,transaction_type,units,price,folio_number,broker\n"
+)
+
+
+def _import_tradebook(inv, demat_number: str, *, units="10", isin=_RELIANCE):
+    """Import a one-row equity tradebook for `inv` onto `demat_number`."""
+    row = (
+        f"equity,Reliance Industries,RELIANCE,{isin},2024-01-15,buy,{units},2800,"
+        f"{demat_number},ZERODHA\n"
+    )
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    return process_csv(job, (_TRADEBOOK_HEADER + row).encode(), "")
+
+
+def _ecas_reliance(demat_number: str, units="10") -> EcasStatement:
+    reliance = CoreSecurity(type=SecurityType.EQUITY, name="Reliance Industries", isin=_RELIANCE)
+    return EcasStatement(
+        depository=Depository.CDSL,
+        statement_date=dt.date(2025, 6, 1),
+        investor_name="Test Investor",
+        pan_masked="XXXXX1234X",
+        accounts=[
+            EcasAccountBlock(
+                folio=CoreFolio(folio_type="demat", number=demat_number, broker="ZERODHA"),
+                holdings=[EcasHoldingLine(security=reliance, units=units, value_observed="28500")],
+            )
+        ],
+    )
+
+
+def test_ecas_repoints_dangling_tradebook_folio(make_investor):
+    """A tradebook imported onto a mistyped/unknown demat number is re-pointed onto
+    the real demat folio when an overlapping eCAS arrives, then reconciles."""
+    inv = make_investor()
+    typo = "1208169999999999"  # valid shape, wrong account
+    _import_tradebook(inv, typo)
+    assert Folio.objects.filter(investor=inv, number=typo).exists()
+
+    real = "1208160001234567"
+    persist_ecas_statement(inv, _ecas_reliance(real), source_ref="e1")
+
+    sec = Security.objects.get(isin=_RELIANCE)
+    # The dangling folio is gone; the ledger now lives on the real demat folio.
+    assert not Folio.objects.filter(investor=inv, number=typo).exists()
+    txn = Transaction.objects.get(investor=inv, security=sec)
+    assert txn.folio.number == real
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio__number=real)
+    assert status.status == "reconciled"
+
+
+def test_ecas_direct_match_needs_no_repoint(make_investor):
+    """When the tradebook already carries the real BO ID, the later eCAS matches it
+    by number — one folio, reconciled, nothing re-pointed."""
+    inv = make_investor()
+    real = "1208160001234567"
+    _import_tradebook(inv, real)
+    persist_ecas_statement(inv, _ecas_reliance(real), source_ref="e1")
+
+    assert Folio.objects.filter(investor=inv, folio_type="demat").count() == 1
+    sec = Security.objects.get(isin=_RELIANCE)
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio__number=real)
+    assert status.status == "reconciled"
+
+
+def test_tradebook_net_below_ecas_holding_is_acknowledgeable_mismatch(make_investor):
+    """A complete tradebook whose net units fall short of the eCAS holding (missing
+    buys) reconciles as a flagged mismatch, not silent corruption."""
+    inv = make_investor()
+    real = "1208160001234567"
+    _import_tradebook(inv, real, units="6")  # ledger net 6
+    persist_ecas_statement(inv, _ecas_reliance(real, units="10"), source_ref="e1")  # holding 10
+
+    sec = Security.objects.get(isin=_RELIANCE)
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio__number=real)
+    assert status.status == "mismatch"
+    assert status.tax_safe is False
+    assert status.units_from_transactions == Decimal("6")
+    assert status.units_from_holdings == Decimal("10")
+
+
+def test_ecas_ambiguous_overlap_prompts_not_auto(make_investor):
+    """A dangling folio overlapping two eCAS demat accounts is not auto-merged — a
+    folio-link suggestion is raised for the user instead."""
+    inv = make_investor()
+    typo = "1208169999999999"
+    _import_tradebook(inv, typo)
+
+    reliance = CoreSecurity(type=SecurityType.EQUITY, name="Reliance Industries", isin=_RELIANCE)
+    two_accounts = EcasStatement(
+        depository=Depository.CDSL,
+        statement_date=dt.date(2025, 6, 1),
+        investor_name="Test Investor",
+        pan_masked="XXXXX1234X",
+        accounts=[
+            EcasAccountBlock(
+                folio=CoreFolio(folio_type="demat", number="1208160001234567", broker="ZERODHA"),
+                holdings=[EcasHoldingLine(security=reliance, units="6", value_observed="17000")],
+            ),
+            EcasAccountBlock(
+                folio=CoreFolio(folio_type="demat", number="1208160007654321", broker="ZERODHA"),
+                holdings=[EcasHoldingLine(security=reliance, units="4", value_observed="11500")],
+            ),
+        ],
+    )
+    summary = persist_ecas_statement(inv, two_accounts, source_ref="e1")
+
+    # Not auto-merged: the dangling folio survives, and a link suggestion is recorded.
+    assert Folio.objects.filter(investor=inv, number=typo).exists()
+    suggestions = [q for q in summary.get("quarantined", []) if q.get("kind") == "folio_link"]
+    assert len(suggestions) == 1
+    assert set(suggestions[0]["raw"]["candidate_folios"]) == {
+        "1208160001234567",
+        "1208160007654321",
+    }
 
 
 def test_import_via_api_end_to_end(client, patch_cas, make_parsed_cas):

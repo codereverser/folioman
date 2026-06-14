@@ -38,6 +38,9 @@ def resolve_quarantine(investor) -> int:
     Returns the number resolved."""
     open_rows = (
         ImportQuarantine.objects.filter(investor=investor, resolved=False)
+        # A folio-link suggestion is resolved by the user picking a target, not by
+        # an (isin, folio) match — exclude it from the data-presence auto-resolver.
+        .exclude(kind="folio_link")
         .exclude(isin="")
         .values("id", "isin", "folio_number")
     )
@@ -69,7 +72,9 @@ def _record_quarantine(job: ImportJob) -> None:
             ImportQuarantine(
                 investor=job.investor,
                 import_job=job,
-                kind=kind,
+                # An entry may override the job-level kind (e.g. a "folio_link"
+                # suggestion raised mid-eCAS, distinct from the eCAS's own rejects).
+                kind=entry.get("kind") or kind,
                 security_name=entry.get("security", ""),
                 isin=entry.get("isin", ""),
                 folio_number=entry.get("folio", ""),
