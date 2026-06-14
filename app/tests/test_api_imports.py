@@ -87,16 +87,19 @@ def test_list_jobs_for_investor(client, make_investor):
     assert {j["kind"] for j in jobs} == {"cas"}
 
 
-def test_csv_upload_is_disabled(client, make_investor):
-    # Generic CSV import is parked until the multi-asset release: the endpoint
-    # rejects the upload and creates no job.
+def test_csv_upload_creates_job(client, make_investor):
+    # A canonical-CSV upload runs through the import-job runner and records a CSV
+    # job for the investor.
     inv = make_investor()
+    header = "security_type,name,symbol,isin,date,transaction_type,units,price\n"
+    row = "equity,Reliance Industries,RELIANCE,INE002A01018,2024-01-15,buy,10,2800\n"
     resp = client.post(
         f"/api/investors/{inv.id}/imports/csv",
-        {"file": SimpleUploadedFile("txns.csv", b"date,type,units")},
+        {"file": SimpleUploadedFile("txns.csv", (header + row).encode())},
     )
-    assert resp.status_code == 503
-    assert client.get(f"/api/investors/{inv.id}/imports").json() == []
+    assert resp.status_code == 201
+    jobs = client.get(f"/api/investors/{inv.id}/imports").json()
+    assert {j["kind"] for j in jobs} == {"csv"}
 
 
 def test_preview_reports_content_stats_and_flags_snapshot(client, patch_cas, make_parsed_cas):

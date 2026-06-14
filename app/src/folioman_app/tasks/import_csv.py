@@ -11,8 +11,12 @@ intentional, so an identical second entry is allowed.
 
 Expected CSV columns (header row): security_type, name, date, transaction_type,
 units, price (required); symbol, isin, amfi_code, coin_id, principal, amount,
-fees, stamp_duty, brokerage, currency (optional). The frontend maps arbitrary
-CSVs onto these; the backend consumes this canonical shape.
+fees, stamp_duty, brokerage, currency, source_ref (optional). The frontend maps
+arbitrary CSVs onto these; the backend consumes this canonical shape.
+
+``source_ref`` carries the broker's per-fill id (e.g. a tradebook trade_id). It
+enters the dedup key so two genuine fills with otherwise-identical fields stay
+distinct, and is stored as the row's audit ref.
 
 Charge semantics: ``brokerage`` is buy-side and enters cost basis; ``fees`` is
 sell-side STT and ``stamp_duty`` a transfer expense — neither enters cost basis.
@@ -70,11 +74,20 @@ def _dedup_key(
     stamp_duty,
     brokerage,
     currency,
+    source_ref="",
 ) -> str:
     # Hash every field that distinguishes one ledger row from another. Omitting a
     # field collapses genuinely distinct rows (e.g. two sells differing only in
     # fees/STT) into one, under-reporting. Re-importing the same row stays
     # idempotent because identical content yields the same hash — no row index.
+    #
+    # ``source_ref`` is the broker's per-fill id (e.g. a tradebook trade_id). A
+    # broker can report two genuine fills with identical
+    # (security, date, type, units, price) — without the id in the key they would
+    # collapse into one row. With it, distinct fills stay distinct and a re-import
+    # of the same fill (same id) still hashes the same, so it stays idempotent.
+    # Blank when the source carries no per-row id — the key reduces to the
+    # content-only form unchanged.
     identity = security.amfi_code or security.isin or security.symbol or security.name
     parts = [
         identity,
@@ -87,6 +100,7 @@ def _dedup_key(
         str(stamp_duty),
         str(brokerage),
         currency,
+        source_ref,
     ]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()
 
@@ -96,7 +110,7 @@ def _cell_decimal(row: dict, key: str, default):
     return Decimal(raw) if raw else default
 
 
-def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
+def _process_row(investor, row: dict, file_ref: str) -> tuple[Security, bool]:
     missing = [c for c in _REQUIRED_COLUMNS if not (row.get(c) or "").strip()]
     if missing:
         msg = f"missing required column(s): {', '.join(missing)}"
@@ -127,6 +141,10 @@ def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
     stamp = _cell_decimal(row, "stamp_duty", Decimal("0"))
     brokerage = _cell_decimal(row, "brokerage", Decimal("0"))
     currency = (row.get("currency") or "INR").strip().upper()
+    # Per-fill broker id (e.g. tradebook trade_id) when the source supplies one;
+    # it both disambiguates the dedup key and is the audit ref worth keeping. Fall
+    # back to the file hash so a folio-less CSV row still carries a provenance ref.
+    row_ref = (row.get("source_ref") or "").strip()
 
     _, created = Transaction.objects.get_or_create(
         investor=investor,
@@ -141,6 +159,7 @@ def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
             stamp_duty=stamp,
             brokerage=brokerage,
             currency=currency,
+            source_ref=row_ref,
         ),
         defaults={
             "security": security,
@@ -154,13 +173,18 @@ def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
             "brokerage": brokerage,
             "currency": currency,
             "source": TransactionSource.CSV_IMPORT.value,
-            "source_ref": source_ref,
+            "source_ref": row_ref or file_ref,
         },
     )
     return security, created
 
 
-def process_csv(job: ImportJob, content: bytes, password: str) -> dict:
+def process_csv(
+    job: ImportJob, content: bytes, password: str = "", *, confirm: bool = False, parsed=None
+) -> dict:
+    # ``confirm``/``parsed`` are part of the processor contract (the runner passes
+    # them to every processor); a CSV is non-destructive and pre-parsed by the
+    # frontend into the canonical shape, so neither applies here.
     reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
     if not reader.fieldnames:
         msg = "CSV has no header row"
@@ -238,18 +262,4 @@ def create_manual_transaction(investor, data: dict) -> Transaction:
     return txn
 
 
-def _csv_disabled(job: ImportJob, content: bytes, password: str, *, confirm: bool = False) -> dict:
-    """Guard: the generic CSV importer is parked for the multi-asset release.
-
-    Imports are security-specific now — mutual funds via CAS PDF, equities via
-    eCAS or per-broker templated CSV (with completeness checks). `process_csv`
-    above is kept intact; re-enable by registering it again in place of this
-    guard. The HTTP endpoint (`api/imports.py`) is also gated, so a user can't
-    reach this path; the guard is defense-in-depth for any internal caller.
-    """
-    msg = "CSV import isn't available yet (mutual funds import via CAS PDF)."
-    raise NotImplementedError(msg)
-
-
-# Disabled — see _csv_disabled. Re-enable: register `process_csv` here instead.
-register_processor(ImportKind.CSV.value, _csv_disabled)
+register_processor(ImportKind.CSV.value, process_csv)

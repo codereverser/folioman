@@ -3737,6 +3737,7 @@
     },
     "/api/investors/{investor_id}/imports/csv": {
       "post": {
+        "description": "Import a canonical-CSV transaction file for an investor.\n\nThe frontend wizard maps an arbitrary broker export (e.g. an equity\ntradebook) onto the canonical column shape and uploads the resulting CSV\nbytes; the backend consumes them through the same content-hashed,\nper-row-idempotent path as every other import. Investor is taken from the\npath (the file carries no owner identity), unlike a PAN-bearing CAS.",
         "operationId": "folioman_app_api_imports_import_csv",
         "parameters": [
           {

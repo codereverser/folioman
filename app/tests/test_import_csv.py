@@ -88,15 +88,36 @@ def test_csv_rows_are_folio_less_so_not_reconciled(make_investor):
     assert not SecurityIntegrityStatus.objects.filter(investor=inv, security=sec).exists()
 
 
-def test_csv_import_endpoint_is_disabled(client, make_investor):
-    # Disabled until the multi-asset release — the endpoint rejects the upload and
-    # persists nothing. (process_csv logic is still covered via _run_csv above.)
+def test_csv_import_endpoint_creates_transactions(client, make_investor):
     inv = make_investor()
     upload = SimpleUploadedFile("txns.csv", (_HEADER + _EQUITY + _CRYPTO).encode())
     resp = client.post(f"/api/investors/{inv.id}/imports/csv", {"file": upload})
-    assert resp.status_code == 503
-    assert "csv" in resp.json()["detail"].lower()
-    assert Transaction.objects.filter(investor=inv).count() == 0
+    assert resp.status_code == 201
+    assert resp.json()["result"]["created"] == 2
+    assert Transaction.objects.filter(investor=inv).count() == 2
+
+
+def test_csv_import_endpoint_reimport_creates_no_rows(client, make_investor):
+    # Done-when for E0: a canonical CSV imports, and re-importing the same file
+    # adds 0 new rows (content-hash dedup is idempotent).
+    inv = make_investor()
+    body = (_HEADER + _EQUITY + _CRYPTO).encode()
+    client.post(
+        f"/api/investors/{inv.id}/imports/csv", {"file": SimpleUploadedFile("txns.csv", body)}
+    )
+    resp = client.post(
+        f"/api/investors/{inv.id}/imports/csv", {"file": SimpleUploadedFile("txns.csv", body)}
+    )
+    assert resp.status_code == 201
+    assert resp.json()["result"]["created"] == 0
+    assert Transaction.objects.filter(investor=inv).count() == 2
+
+
+def test_csv_import_endpoint_requires_owned_investor(client):
+    # Investor comes from the path; an unknown/unowned investor 404s.
+    upload = SimpleUploadedFile("txns.csv", (_HEADER + _EQUITY).encode())
+    resp = client.post("/api/investors/999999/imports/csv", {"file": upload})
+    assert resp.status_code == 404
 
 
 # --- manual transaction entry ----------------------------------------------
@@ -255,6 +276,34 @@ def test_csv_sells_differing_only_in_fees_are_not_deduped(make_investor):
     result = _run_csv(inv, header + row_a + row_b)
     assert result["created"] == 2
     assert Transaction.objects.filter(investor=inv).count() == 2
+
+
+def test_csv_identical_fills_with_distinct_trade_ids_not_deduped(make_investor):
+    """Two genuine fills with identical (symbol,date,type,qty,price) but distinct
+    broker trade_ids must both persist — without source_ref in the dedup key the
+    second would collapse into the first."""
+    inv = make_investor()
+    header = "security_type,name,symbol,isin,date,transaction_type,units,price,source_ref\n"
+    row_a = "equity,Reliance Industries,RELIANCE,INE002A01018,2024-01-15,buy,10,2800,TRADE001\n"
+    row_b = "equity,Reliance Industries,RELIANCE,INE002A01018,2024-01-15,buy,10,2800,TRADE002\n"
+    result = _run_csv(inv, header + row_a + row_b)
+    assert result["created"] == 2
+    assert Transaction.objects.filter(investor=inv).count() == 2
+    assert set(Transaction.objects.filter(investor=inv).values_list("source_ref", flat=True)) == {
+        "TRADE001",
+        "TRADE002",
+    }
+
+
+def test_csv_same_trade_id_reimport_is_idempotent(make_investor):
+    """Re-importing the same fill (same trade_id) hashes the same → 0 new rows."""
+    inv = make_investor()
+    header = "security_type,name,symbol,isin,date,transaction_type,units,price,source_ref\n"
+    row = "equity,Reliance Industries,RELIANCE,INE002A01018,2024-01-15,buy,10,2800,TRADE001\n"
+    _run_csv(inv, header + row)
+    result = _run_csv(inv, header + row)
+    assert result["created"] == 0
+    assert Transaction.objects.filter(investor=inv).count() == 1
 
 
 @override_settings(MANUAL_TRANSACTIONS_ENABLED=True)
