@@ -86,7 +86,10 @@ const totalGain = computed(() => rows.value.reduce((s, r) => s + Number(r.gain),
 // Disposals whose pre-2018 grandfathering FMV is missing — gain may be overstated.
 const grandfatheringGaps = computed(() => rows.value.filter((r) => r.grandfathering_unavailable))
 
-const integrityTo = computed(() => ({ name: 'integrity', params: { investorId: props.investorId } }))
+const integrityTo = computed(() => ({
+  name: 'integrity',
+  params: { investorId: props.investorId },
+}))
 
 const computedAt = computed(() =>
   props.builtAt
@@ -155,13 +158,15 @@ function excludedFix(row: IntegrityRow): string | null {
 
     <Message v-if="grandfatheringGaps.length" severity="warn" :closable="false" class="gf-note">
       {{ grandfatheringGaps.length }} long-term
-      {{ grandfatheringGaps.length === 1 ? 'disposal is' : 'disposals are' }} missing the
-      31 Jan 2018 fair market value used for grandfathering, so their cost is understated and the
-      gain (and any tax) may be <strong>overstated</strong>. Verify these before relying on the figure.
+      {{ grandfatheringGaps.length === 1 ? 'disposal is' : 'disposals are' }} missing the 31 Jan
+      2018 fair market value used for grandfathering, so their cost is understated and the gain (and
+      any tax) may be <strong>overstated</strong>. Verify these before relying on the figure.
     </Message>
 
     <section class="included">
-      <h2>Realised gains <span class="count">{{ summaries.length }}</span></h2>
+      <h2>
+        Realised gains <span class="count">{{ summaries.length }}</span>
+      </h2>
       <DataTable
         v-if="summaries.length"
         v-model:expanded-rows="expandedRows"
@@ -176,7 +181,10 @@ function excludedFix(row: IntegrityRow): string | null {
           <template #body="{ data }">
             <button class="holding-name" type="button" @click="openScheme(data.securityId)">
               <span>{{ data.name }}</span>
-              <small>{{ data.isin }} · {{ data.lots.length }} {{ data.lots.length === 1 ? 'lot' : 'lots' }}</small>
+              <small
+                >{{ data.isin }} · {{ data.lots.length }}
+                {{ data.lots.length === 1 ? 'lot' : 'lots' }}</small
+              >
             </button>
           </template>
         </Column>
@@ -212,7 +220,9 @@ function excludedFix(row: IntegrityRow): string | null {
             <DataTable :value="data.lots" size="small" class="lots-table">
               <Column header="Term">
                 <template #body="{ data: lot }">
-                  <span class="term" :class="lot.term">{{ lot.term === 'long' ? 'LTCG' : 'STCG' }}</span>
+                  <span class="term" :class="lot.term">{{
+                    lot.term === 'long' ? 'LTCG' : 'STCG'
+                  }}</span>
                 </template>
               </Column>
               <Column header="Held">
@@ -258,8 +268,8 @@ function excludedFix(row: IntegrityRow): string | null {
         </ColumnGroup>
       </DataTable>
       <p v-else class="empty">
-        No realised gains in this year. Redeem a fully-reconciled holding (or pick another
-        year) and they’ll appear here.
+        No realised gains in this year. Redeem a fully-reconciled holding (or pick another year) and
+        they’ll appear here.
       </p>
       <p v-if="computedAt && summaries.length" class="freshness">
         Computed {{ computedAt }} from tax-ready folios.
@@ -268,7 +278,9 @@ function excludedFix(row: IntegrityRow): string | null {
 
     <section v-if="excluded.length" class="excluded">
       <header class="ex-head-row">
-        <h2>Left out <span class="count">{{ excluded.length }}</span></h2>
+        <h2>
+          Left out <span class="count">{{ excluded.length }}</span>
+        </h2>
         <RouterLink :to="integrityTo" class="review-link">Review in Data integrity →</RouterLink>
       </header>
       <ul class="excluded-list">

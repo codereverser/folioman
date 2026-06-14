@@ -12,8 +12,12 @@ import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { formatInr } from '@/utils/format'
 
-const AllocationDonut = defineAsyncComponent(() => import('@/components/charts/AllocationDonut.vue'))
-const PortfolioValueChart = defineAsyncComponent(() => import('@/components/charts/PortfolioValueChart.vue'))
+const AllocationDonut = defineAsyncComponent(
+  () => import('@/components/charts/AllocationDonut.vue'),
+)
+const PortfolioValueChart = defineAsyncComponent(
+  () => import('@/components/charts/PortfolioValueChart.vue'),
+)
 const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
 const route = useRoute()
@@ -132,8 +136,8 @@ function openInvestor(investorId: number): void {
         <template v-if="!valuationReady">
           <div class="chart-placeholder value-placeholder" aria-hidden="true" />
           <p class="chart-progress">
-            Portfolio valuation in progress — refresh in a bit. Showing values as of
-            the latest statements meanwhile.
+            Portfolio valuation in progress — refresh in a bit. Showing values as of the latest
+            statements meanwhile.
             <RouterLink class="navs-link" :to="{ name: 'settings', params: { tab: 'navs' } }"
               >Check NAV freshness →</RouterLink
             >
@@ -169,7 +173,12 @@ function openInvestor(investorId: number): void {
           </Column>
           <Column header="Return" class="num">
             <template #body="{ data }">
-              <DeltaChip v-if="data.returnPct !== null" :percent="data.returnPct" :value="data.returnPct" size="sm" />
+              <DeltaChip
+                v-if="data.returnPct !== null"
+                :percent="data.returnPct"
+                :value="data.returnPct"
+                size="sm"
+              />
               <span v-else class="muted">—</span>
             </template>
           </Column>
@@ -228,12 +237,24 @@ function openInvestor(investorId: number): void {
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: var(--fm-space-5);
 }
-.span-2 { grid-column: span 2; }
-.span-4 { grid-column: span 4; }
-.span-5 { grid-column: span 5; }
-.span-6 { grid-column: span 6; }
-.span-7 { grid-column: span 7; }
-.span-8 { grid-column: span 8; }
+.span-2 {
+  grid-column: span 2;
+}
+.span-4 {
+  grid-column: span 4;
+}
+.span-5 {
+  grid-column: span 5;
+}
+.span-6 {
+  grid-column: span 6;
+}
+.span-7 {
+  grid-column: span 7;
+}
+.span-8 {
+  grid-column: span 8;
+}
 
 /* Every grid item must also opt out of the auto min-width floor. */
 .bento > * {
@@ -272,7 +293,12 @@ function openInvestor(investorId: number): void {
   width: 100%;
   border-radius: var(--fm-radius-sm);
   background:
-    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
     var(--fm-surface-raised);
 }
 .donut-placeholder {
@@ -299,7 +325,12 @@ function openInvestor(investorId: number): void {
   height: 12rem;
   border-radius: var(--fm-radius-sm);
   background:
-    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
     var(--fm-surface-raised);
 }
 
@@ -366,7 +397,11 @@ function openInvestor(investorId: number): void {
 /* Tablet: charts + tables go full width, but the three small metric cards
    (XIRR / Investors / Folios) stay in a row beside each other. */
 @media (max-width: 1024px) {
-  .span-4, .span-5, .span-6, .span-7, .span-8 {
+  .span-4,
+  .span-5,
+  .span-6,
+  .span-7,
+  .span-8 {
     grid-column: span 12;
   }
   .span-2 {
@@ -381,8 +416,14 @@ function openInvestor(investorId: number): void {
 }
 /* Phone: trim the chrome so content keeps the width. */
 @media (max-width: 640px) {
-  .family { padding: var(--fm-space-4); }
-  .bento { gap: var(--fm-space-4); }
-  .card { padding: var(--fm-space-4); }
+  .family {
+    padding: var(--fm-space-4);
+  }
+  .bento {
+    gap: var(--fm-space-4);
+  }
+  .card {
+    padding: var(--fm-space-4);
+  }
 }
 </style>

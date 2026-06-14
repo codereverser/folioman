@@ -114,8 +114,24 @@ describe('buildCanonicalRows', () => {
 
   it('falls back to symbol then isin for an unmapped name', () => {
     const rows = [
-      { symbol: 'RELIANCE', isin: 'INE002A01018', trade_date: 'd', trade_type: 'buy', quantity: '1', price: '1', trade_id: 'x' },
-      { symbol: '', isin: 'INE999', trade_date: 'd', trade_type: 'buy', quantity: '1', price: '1', trade_id: 'y' },
+      {
+        symbol: 'RELIANCE',
+        isin: 'INE002A01018',
+        trade_date: 'd',
+        trade_type: 'buy',
+        quantity: '1',
+        price: '1',
+        trade_id: 'x',
+      },
+      {
+        symbol: '',
+        isin: 'INE999',
+        trade_date: 'd',
+        trade_type: 'buy',
+        quantity: '1',
+        price: '1',
+        trade_id: 'y',
+      },
     ]
     const built = buildCanonicalRows(rows, mapping, opts)
     expect(built[0].name).toBe('RELIANCE')
@@ -124,8 +140,24 @@ describe('buildCanonicalRows', () => {
 
   it('drops a fully-blank trailing row', () => {
     const rows = [
-      { symbol: 'RELIANCE', isin: 'INE002A01018', trade_date: 'd', trade_type: 'buy', quantity: '1', price: '1', trade_id: 'x' },
-      { symbol: '', isin: '', trade_date: '', trade_type: '', quantity: '', price: '', trade_id: '' },
+      {
+        symbol: 'RELIANCE',
+        isin: 'INE002A01018',
+        trade_date: 'd',
+        trade_type: 'buy',
+        quantity: '1',
+        price: '1',
+        trade_id: 'x',
+      },
+      {
+        symbol: '',
+        isin: '',
+        trade_date: '',
+        trade_type: '',
+        quantity: '',
+        price: '',
+        trade_id: '',
+      },
     ]
     expect(buildCanonicalRows(rows, mapping, opts)).toHaveLength(1)
   })

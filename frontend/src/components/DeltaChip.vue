@@ -32,7 +32,9 @@ const glyph = computed(() => trendGlyph(basis.value))
   <span class="delta-chip" :class="[dir, size]">
     <span class="glyph" aria-hidden="true">{{ glyph }}</span>
     <span v-if="amount !== undefined && amount !== null" class="amount">{{ amountText }}</span>
-    <span v-if="percent !== undefined && percent !== null" class="percent">{{ formatPercent(percent) }}</span>
+    <span v-if="percent !== undefined && percent !== null" class="percent">{{
+      formatPercent(percent)
+    }}</span>
   </span>
 </template>
 

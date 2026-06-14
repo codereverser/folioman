@@ -74,7 +74,10 @@ function monthsAgo(n: number): string {
 // day, mid ranges thin to weekly, multi-year ranges to monthly. "All" reaches
 // back far enough to cover any real portfolio; leading all-zero points (before
 // the first holding) are trimmed by the consumer.
-export const RANGES: Record<RangeKey, { from: () => string; granularity: 'daily' | 'weekly' | 'monthly' }> = {
+export const RANGES: Record<
+  RangeKey,
+  { from: () => string; granularity: 'daily' | 'weekly' | 'monthly' }
+> = {
   '1M': { from: () => monthsAgo(1), granularity: 'daily' },
   '3M': { from: () => monthsAgo(3), granularity: 'daily' },
   '6M': { from: () => monthsAgo(6), granularity: 'weekly' },

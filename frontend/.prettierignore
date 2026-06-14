@@ -1,0 +1,7 @@
+dist
+coverage
+node_modules
+dev-dist
+# Generated from the backend OpenAPI schema — never hand-edited.
+src/api/schema.d.ts
+pnpm-lock.yaml

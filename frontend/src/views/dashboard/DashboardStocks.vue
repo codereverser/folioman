@@ -31,8 +31,8 @@ function ticker(s: StockRow): string {
     </div>
 
     <p v-if="empty" class="empty">
-      No priced stocks yet. Equities from an eCAS snapshot price once their symbol
-      resolves and price history backfills.
+      No priced stocks yet. Equities from an eCAS snapshot price once their symbol resolves and
+      price history backfills.
     </p>
     <article v-else class="card stock-list">
       <DataTable

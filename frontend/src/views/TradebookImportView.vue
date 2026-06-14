@@ -117,7 +117,10 @@ async function loadFolios(): Promise<void> {
   }
 }
 const folioOptions = computed(() =>
-  demat.value.map((f) => ({ label: `${f.number}${f.broker ? ` · ${f.broker}` : ''}`, value: f.id })),
+  demat.value.map((f) => ({
+    label: `${f.number}${f.broker ? ` · ${f.broker}` : ''}`,
+    value: f.id,
+  })),
 )
 
 const account = computed<{ folioNumber: string; broker: string }>(() => {
@@ -140,7 +143,8 @@ const dematWarning = computed(() => {
 
 const accountErrors = computed(() => {
   const errs: string[] = []
-  if (!account.value.folioNumber) errs.push('Choose or enter the demat account this tradebook is for.')
+  if (!account.value.folioNumber)
+    errs.push('Choose or enter the demat account this tradebook is for.')
   if (folioMode.value === 'manual' && account.value.folioNumber && !account.value.broker) {
     errs.push('Enter the broker name for this account.')
   }
@@ -178,7 +182,11 @@ async function runImport(): Promise<void> {
   errorMessage.value = ''
   try {
     const csv = toCsv(CANONICAL_COLUMNS, canonicalRows.value)
-    job.value = await importTransactionsCsv(investorId.value, csv, file.value?.name ?? 'tradebook.csv')
+    job.value = await importTransactionsCsv(
+      investorId.value,
+      csv,
+      file.value?.name ?? 'tradebook.csv',
+    )
     step.value = 'result'
     if (succeeded.value) {
       ui.notify({ severity: 'success', summary: 'Import complete', detail: file.value?.name })
@@ -249,7 +257,12 @@ watch(investorId, () => {
         @dragleave.prevent="dragging = false"
         @drop.prevent="onDrop"
       >
-        <input type="file" accept=".csv,.xlsx,.xls,text/csv" class="file-input" @change="onPickFile" />
+        <input
+          type="file"
+          accept=".csv,.xlsx,.xls,text/csv"
+          class="file-input"
+          @change="onPickFile"
+        />
         <i class="pi pi-file-excel" aria-hidden="true" />
         <span v-if="file" class="file-name">{{ file.name }}</span>
         <span v-else class="dropzone-hint">Drop a CSV/XLSX tradebook here, or click to browse</span>
@@ -371,8 +384,9 @@ watch(investorId, () => {
       </Message>
       <template v-if="succeeded">
         <Message severity="success" :closable="false">
-          Imported {{ result.created ?? 0 }} transaction(s)<span v-if="result.skipped">,
-          {{ result.skipped }} already on file</span>.
+          Imported {{ result.created ?? 0 }} transaction(s)<span v-if="result.skipped"
+            >, {{ result.skipped }} already on file</span
+          >.
         </Message>
 
         <div v-if="result.incomplete_history?.length" class="warn-block">
@@ -385,7 +399,9 @@ watch(investorId, () => {
           <ul class="incomplete">
             <li v-for="s in result.incomplete_history" :key="s.security">
               <span class="sec-name">{{ s.security }}</span>
-              <span class="muted small">{{ s.missing_prior_units }} units missing before the file</span>
+              <span class="muted small"
+                >{{ s.missing_prior_units }} units missing before the file</span
+              >
             </li>
           </ul>
         </div>
@@ -405,7 +421,13 @@ watch(investorId, () => {
       </template>
 
       <div class="actions">
-        <Button label="Import another" severity="secondary" outlined icon="pi pi-replay" @click="reset" />
+        <Button
+          label="Import another"
+          severity="secondary"
+          outlined
+          icon="pi pi-replay"
+          @click="reset"
+        />
         <Button
           v-if="succeeded"
           label="View dashboard"
@@ -496,7 +518,9 @@ watch(investorId, () => {
   border: 1.5px dashed var(--fm-border);
   border-radius: var(--fm-radius-md);
   cursor: pointer;
-  transition: border-color var(--fm-dur) var(--fm-ease), background var(--fm-dur) var(--fm-ease);
+  transition:
+    border-color var(--fm-dur) var(--fm-ease),
+    background var(--fm-dur) var(--fm-ease);
 }
 .dropzone:hover,
 .dropzone.dragging {

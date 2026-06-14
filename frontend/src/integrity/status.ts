@@ -98,8 +98,7 @@ export function integrityMeta(status: IntegrityStatus): IntegrityMeta {
 
 // One canonical remediation for an incomplete mutual-fund ledger — the same advice
 // the Import screen gives, so guidance never contradicts itself.
-const REIMPORT_FIX =
-  'Re-import a since-inception (Detailed) CAS that includes zero-balance folios.'
+const REIMPORT_FIX = 'Re-import a since-inception (Detailed) CAS that includes zero-balance folios.'
 
 /**
  * The concrete next step for a status, or null when none is needed (already

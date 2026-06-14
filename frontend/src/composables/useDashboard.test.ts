@@ -140,7 +140,12 @@ describe('useDashboard', () => {
     expect(summary.value.allocation[0]).toMatchObject({ name: 'Mutual funds', value: 7500 })
     expect(summary.value.allocation[0].color).toBeTruthy()
     const top = summary.value.topHoldings[0]
-    expect(top).toMatchObject({ securityId: 1, name: 'Fund A', assetClass: 'Mutual funds', units: 100 })
+    expect(top).toMatchObject({
+      securityId: 1,
+      name: 'Fund A',
+      assetClass: 'Mutual funds',
+      units: 100,
+    })
     expect(top.integrity).toBe('full_history')
     expect(top.returnPct).toBeCloseTo(65) // 0.65 fraction → percent
   })

@@ -85,7 +85,14 @@ const navLinks = computed<NavLink[]>(() => {
 
 // Mobile bottom tab bar: primary destinations only. Import is desktop-only; any
 // other link (e.g. nothing extra today) is reachable via the scope switcher.
-const MOBILE_TABS = new Set(['Investors', 'Dashboard', 'Integrity', 'Capital Gains', 'Family', 'Settings'])
+const MOBILE_TABS = new Set([
+  'Investors',
+  'Dashboard',
+  'Integrity',
+  'Capital Gains',
+  'Family',
+  'Settings',
+])
 const mobileTabs = computed<NavLink[]>(() => navLinks.value.filter((l) => MOBILE_TABS.has(l.label)))
 
 // In the collapsed icon rail, the label lives in a hover tooltip; an empty string
@@ -100,7 +107,12 @@ watch(
   (len) => {
     if (len === 0) return
     for (const t of ui.drainToasts()) {
-      toast.add({ severity: t.severity, summary: t.summary, detail: t.detail, life: t.life ?? 4000 })
+      toast.add({
+        severity: t.severity,
+        summary: t.summary,
+        detail: t.detail,
+        life: t.life ?? 4000,
+      })
     }
   },
 )
@@ -127,7 +139,11 @@ onBeforeUnmount(() => {
     <ConfirmDialog />
   </template>
 
-  <div v-else class="app-shell" :class="{ 'is-mobile': ui.isMobile, 'is-collapsed': ui.sidebarCollapsed && !ui.isMobile }">
+  <div
+    v-else
+    class="app-shell"
+    :class="{ 'is-mobile': ui.isMobile, 'is-collapsed': ui.sidebarCollapsed && !ui.isMobile }"
+  >
     <aside class="app-nav">
       <div class="brand">
         <img src="/logo.svg" alt="" width="28" height="28" />
@@ -140,7 +156,9 @@ onBeforeUnmount(() => {
           :aria-pressed="ui.sidebarCollapsed"
           @click="ui.toggleSidebar()"
         >
-          <i :class="ui.sidebarCollapsed ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'" />
+          <i
+            :class="ui.sidebarCollapsed ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'"
+          />
         </button>
       </div>
       <nav class="side-nav">
@@ -154,7 +172,9 @@ onBeforeUnmount(() => {
         >
           <i :class="link.icon" />
           <span class="nav-label">{{ link.label }}</span>
-          <span v-if="link.badge" class="nav-badge" :title="`${link.badge} need attention`">{{ link.badge }}</span>
+          <span v-if="link.badge" class="nav-badge" :title="`${link.badge} need attention`">{{
+            link.badge
+          }}</span>
         </RouterLink>
       </nav>
     </aside>
@@ -225,7 +245,9 @@ onBeforeUnmount(() => {
       >
         <span class="tab-icon">
           <i :class="tab.icon" />
-          <span v-if="tab.badge" class="tab-badge" :aria-label="`${tab.badge} need attention`">{{ tab.badge }}</span>
+          <span v-if="tab.badge" class="tab-badge" :aria-label="`${tab.badge} need attention`">{{
+            tab.badge
+          }}</span>
         </span>
         <span class="tab-label">{{ tab.label }}</span>
       </RouterLink>
@@ -441,7 +463,12 @@ nav {
   display: block;
   border-radius: var(--fm-radius-sm);
   background:
-    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
     var(--fm-surface-raised);
   /* Shared branded shimmer (keyframe in style.css). */
   background-size:

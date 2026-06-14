@@ -10,7 +10,9 @@ import { useScheme } from '@/composables/useScheme'
 import { useUiStore } from '@/stores/ui'
 import { formatInr, formatInrPaise, formatUnits, formatDate } from '@/utils/format'
 
-const NavHistoryChart = defineAsyncComponent(() => import('@/components/charts/NavHistoryChart.vue'))
+const NavHistoryChart = defineAsyncComponent(
+  () => import('@/components/charts/NavHistoryChart.vue'),
+)
 
 const route = useRoute()
 const router = useRouter()
@@ -168,7 +170,9 @@ function back(): void {
 
     <template v-else-if="detail">
       <header class="page-head">
-        <button class="back" type="button" @click="back"><i class="pi pi-arrow-left" /> Dashboard</button>
+        <button class="back" type="button" @click="back">
+          <i class="pi pi-arrow-left" /> Dashboard
+        </button>
         <div class="title-row">
           <h1>{{ detail.security.name }}</h1>
           <IntegrityBadge :status="integrityStatus" size="lg" />
@@ -233,8 +237,11 @@ function back(): void {
       </article>
 
       <Message v-if="navStale" severity="warn" :closable="false">
-        Current value is unavailable — the latest NAV on file is stale<span v-if="detail.latest_nav_date">
-        (last priced {{ formatDate(detail.latest_nav_date) }})</span>. Invested cost still shows.
+        Current value is unavailable — the latest NAV on file is stale<span
+          v-if="detail.latest_nav_date"
+        >
+          (last priced {{ formatDate(detail.latest_nav_date) }})</span
+        >. Invested cost still shows.
       </Message>
 
       <article ref="chartRegion" class="card">
@@ -244,7 +251,11 @@ function back(): void {
           :data="navSeries"
           :markers="navMarkers"
         />
-        <div v-else-if="navSeries.length" class="chart-placeholder nav-placeholder" aria-hidden="true" />
+        <div
+          v-else-if="navSeries.length"
+          class="chart-placeholder nav-placeholder"
+          aria-hidden="true"
+        />
         <p v-else class="muted empty">No NAV history on file for this scheme yet.</p>
       </article>
 
@@ -288,7 +299,9 @@ function back(): void {
             </Column>
             <Column field="transaction_type" header="Type">
               <template #body="{ data }">
-                <span class="flow" :class="txnFlow(data.transaction_type)">{{ txnLabel(data.transaction_type) }}</span>
+                <span class="flow" :class="txnFlow(data.transaction_type)">{{
+                  txnLabel(data.transaction_type)
+                }}</span>
               </template>
             </Column>
             <Column header="Units" class="num">
@@ -298,7 +311,9 @@ function back(): void {
               <template #body="{ data }">{{ formatInrPaise(data.nav_or_price) }}</template>
             </Column>
             <Column header="Amount" class="num">
-              <template #body="{ data }">{{ data.amount == null ? '—' : formatInr(data.amount) }}</template>
+              <template #body="{ data }">{{
+                data.amount == null ? '—' : formatInr(data.amount)
+              }}</template>
             </Column>
             <Column header="Balance" class="num">
               <template #body="{ data }">{{
@@ -408,7 +423,12 @@ function back(): void {
   width: 100%;
   border-radius: var(--fm-radius-sm);
   background:
-    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
     var(--fm-surface-raised);
 }
 .nav-placeholder {
@@ -418,7 +438,12 @@ function back(): void {
   height: 12rem;
   border-radius: var(--fm-radius-sm);
   background:
-    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
     var(--fm-surface-raised);
 }
 .empty {
@@ -508,7 +533,11 @@ function back(): void {
 }
 /* Phone: trim the chrome so content keeps the width. */
 @media (max-width: 640px) {
-  .scheme { padding: var(--fm-space-4); }
-  .card { padding: var(--fm-space-4); }
+  .scheme {
+    padding: var(--fm-space-4);
+  }
+  .card {
+    padding: var(--fm-space-4);
+  }
 }
 </style>

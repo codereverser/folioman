@@ -398,7 +398,10 @@ const lastRefreshText = computed(() => {
 }
 .row {
   display: grid;
-  grid-template-columns: minmax(14rem, 2.2fr) minmax(6.5rem, 0.9fr) minmax(8rem, 1fr) minmax(12rem, 1.4fr);
+  grid-template-columns: minmax(14rem, 2.2fr) minmax(6.5rem, 0.9fr) minmax(8rem, 1fr) minmax(
+      12rem,
+      1.4fr
+    );
   gap: var(--fm-space-4);
   align-items: center;
   padding: 0.5rem 0;

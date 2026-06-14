@@ -45,10 +45,13 @@ const empty = computed(() => props.funds.length === 0)
 // Per-fund list grouped by the active dimension. Group totals drive both the
 // subheader value and the group ordering (largest group first; largest fund
 // first within a group) — the order PrimeVue's subheader grouping renders.
-const groupField = computed<'amc' | 'category'>(() => (grouping.value === 'amc' ? 'amc' : 'category'))
+const groupField = computed<'amc' | 'category'>(() =>
+  grouping.value === 'amc' ? 'amc' : 'category',
+)
 const groupTotals = computed(() => {
   const totals = new Map<string, number>()
-  for (const f of props.funds) totals.set(f[groupField.value], (totals.get(f[groupField.value]) ?? 0) + f.value)
+  for (const f of props.funds)
+    totals.set(f[groupField.value], (totals.get(f[groupField.value]) ?? 0) + f.value)
   return totals
 })
 const sortedFunds = computed(() => {
@@ -115,7 +118,9 @@ const sortedFunds = computed(() => {
         >
           <template #groupheader="{ data }">
             <span class="grp">{{ data[groupField] }}</span>
-            <span class="grp-total">{{ formatInrCompact(groupTotals.get(data[groupField]) ?? 0) }}</span>
+            <span class="grp-total">{{
+              formatInrCompact(groupTotals.get(data[groupField]) ?? 0)
+            }}</span>
           </template>
           <Column field="name" header="Fund">
             <template #body="{ data }">

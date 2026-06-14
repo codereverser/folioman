@@ -72,6 +72,9 @@ importers:
       openapi-typescript:
         specifier: ^7.4.4
         version: 7.13.0(typescript@6.0.3)
+      prettier:
+        specifier: ^3.8.4
+        version: 3.8.4
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
@@ -2562,6 +2565,11 @@ packages:
     resolution: {integrity: sha512-8Mf2cbV7x1cXPUILADGI3wuhfqWvtiLA1iclTDbFRZkgRQS0NqsPZphna9V+HyTEadheuPmjaJMsbzKQFOzLug==}
     engines: {node: '>=10'}
     deprecated: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.
+    hasBin: true
+
+  prettier@3.8.4:
+    resolution: {integrity: sha512-N2MylSdi48+5N/6S5j+maeHbUSIzzZ5uOcX5Hm4QpV8Dkb1HFjfAKTKX6yNPJQD9AhcT3ifHNB66tWTTJDi11Q==}
+    engines: {node: '>=14'}
     hasBin: true
 
   pretty-bytes@5.6.0:
@@ -5936,6 +5944,8 @@ snapshots:
       simple-get: 4.0.1
       tar-fs: 2.1.4
       tunnel-agent: 0.6.0
+
+  prettier@3.8.4: {}
 
   pretty-bytes@5.6.0: {}
 

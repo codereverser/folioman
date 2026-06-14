@@ -14,7 +14,13 @@ const mockPost = vi.mocked(api.POST)
 
 function statusRow(overrides: Record<string, unknown> = {}) {
   return {
-    security: { id: 1, name: 'Acme Flexi Cap', isin: 'INF000A01234', symbol: '', security_type: 'mf' },
+    security: {
+      id: 1,
+      name: 'Acme Flexi Cap',
+      isin: 'INF000A01234',
+      symbol: '',
+      security_type: 'mf',
+    },
     folio: { id: 7, number: 'F-001', broker: '', folio_type: 'mf' },
     status: 'reconciled',
     tax_safe: true,
@@ -70,7 +76,14 @@ describe('integrity store', () => {
 
   it('acknowledge updates the matching row in place to user_acknowledged', async () => {
     mockGet.mockResolvedValue({
-      data: [statusRow({ security: { id: 1, name: 'A', isin: 'X', symbol: '', security_type: 'mf' }, folio: { id: 7, number: 'F-001', broker: '', folio_type: 'mf' }, status: 'mismatch', tax_safe: false })],
+      data: [
+        statusRow({
+          security: { id: 1, name: 'A', isin: 'X', symbol: '', security_type: 'mf' },
+          folio: { id: 7, number: 'F-001', broker: '', folio_type: 'mf' },
+          status: 'mismatch',
+          tax_safe: false,
+        }),
+      ],
     } as never)
     mockPost.mockResolvedValue({
       data: statusRow({ status: 'user_acknowledged', tax_safe: false }),
@@ -89,8 +102,12 @@ describe('integrity store', () => {
   })
 
   it('recompute replaces the cached rows', async () => {
-    mockGet.mockResolvedValue({ data: [statusRow({ status: 'mismatch', tax_safe: false })] } as never)
-    mockPost.mockResolvedValue({ data: [statusRow({ status: 'reconciled', tax_safe: true })] } as never)
+    mockGet.mockResolvedValue({
+      data: [statusRow({ status: 'mismatch', tax_safe: false })],
+    } as never)
+    mockPost.mockResolvedValue({
+      data: [statusRow({ status: 'reconciled', tax_safe: true })],
+    } as never)
 
     const store = useIntegrityStore()
     await store.load(10)

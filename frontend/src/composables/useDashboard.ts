@@ -329,15 +329,21 @@ export function useDashboard(investorId: Ref<number>) {
         gain: h.invested_inr == null ? null : num(h.value_inr) - num(h.invested_inr),
         nav: h.latest_nav == null ? null : num(h.latest_nav),
         avgNav:
-          h.invested_inr == null || num(h.units) === 0
-            ? null
-            : num(h.invested_inr) / num(h.units),
+          h.invested_inr == null || num(h.units) === 0 ? null : num(h.invested_inr) / num(h.units),
         dayChangeAmount: h.day_change_inr == null ? null : num(h.day_change_inr),
         dayChangePercent: h.day_change_pct == null ? null : h.day_change_pct * 100,
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
-      mfByCategory: toSlices(mfMix((h) => h.category), categoryColor),
-      mfByAmc: toSlices(mfMix((h) => h.amc), (_label, i) => rampColor(i), 6, shortAmc),
+      mfByCategory: toSlices(
+        mfMix((h) => h.category),
+        categoryColor,
+      ),
+      mfByAmc: toSlices(
+        mfMix((h) => h.amc),
+        (_label, i) => rampColor(i),
+        6,
+        shortAmc,
+      ),
       mfTotal: mfHoldings.reduce((sum, h) => sum + num(h.value_inr), 0),
       stocks: (s.holdings ?? [])
         .filter((h) => h.security_type === 'equity')
@@ -362,7 +368,7 @@ export function useDashboard(investorId: Ref<number>) {
       stockTotal: (s.holdings ?? [])
         .filter((h) => h.security_type === 'equity')
         .reduce((sum, h) => sum + num(h.value_inr), 0),
-      holdingsCount: s.holdings_count ?? (s.holdings?.length ?? 0),
+      holdingsCount: s.holdings_count ?? s.holdings?.length ?? 0,
     }
   })
 

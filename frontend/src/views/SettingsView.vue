@@ -99,7 +99,11 @@ async function exportHoldings(): Promise<void> {
     })
     if (typeof res.data === 'string') downloadText(`holdings_${id}.csv`, res.data)
     else
-      ui.notify({ severity: 'error', summary: 'Export failed', detail: 'Could not build the holdings CSV.' })
+      ui.notify({
+        severity: 'error',
+        summary: 'Export failed',
+        detail: 'Could not build the holdings CSV.',
+      })
   } finally {
     exporting.value = null
   }
@@ -183,9 +187,9 @@ async function exportTransactions(): Promise<void> {
         <div class="setting-text">
           <h2><i class="pi pi-lock" /> Privacy</h2>
           <p>
-            Folioman is local-first. Your CAS statements and portfolio data live only where this
-            app runs — there's no account, no cloud sync, and no analytics or tracking. PAN numbers
-            are encrypted at rest and are never shown in full.
+            Folioman is local-first. Your CAS statements and portfolio data live only where this app
+            runs — there's no account, no cloud sync, and no analytics or tracking. PAN numbers are
+            encrypted at rest and are never shown in full.
           </p>
         </div>
       </article>
@@ -280,7 +284,9 @@ async function exportTransactions(): Promise<void> {
       <article class="card setting block">
         <div class="setting-text">
           <h2><i class="pi pi-info-circle" /> About</h2>
-          <p class="kv"><span>Version</span><strong>{{ meta?.version ?? '—' }}</strong></p>
+          <p class="kv">
+            <span>Version</span><strong>{{ meta?.version ?? '—' }}</strong>
+          </p>
           <p v-if="SUPPORT_URL" class="kv">
             <span>Help &amp; issues</span>
             <a :href="SUPPORT_URL" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a>

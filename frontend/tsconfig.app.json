@@ -27,10 +27,5 @@
     "noUncheckedSideEffectImports": true,
     "skipLibCheck": true
   },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.vue",
-    "env.d.ts",
-    "pwa-assets.config.ts"
-  ]
+  "include": ["src/**/*.ts", "src/**/*.vue", "env.d.ts", "pwa-assets.config.ts"]
 }

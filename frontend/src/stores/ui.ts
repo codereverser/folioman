@@ -130,8 +130,7 @@ export const useUiStore = defineStore('ui', () => {
   const themePreference = ref<ThemePreference>(loadThemePreference())
   // The resolved scheme actually applied (`system` collapses to light/dark).
   const isDark = ref(
-    themePreference.value === 'dark' ||
-      (themePreference.value === 'system' && systemPrefersDark()),
+    themePreference.value === 'dark' || (themePreference.value === 'system' && systemPrefersDark()),
   )
 
   function applyTheme(): void {
@@ -151,7 +150,13 @@ export const useUiStore = defineStore('ui', () => {
 
   function toggleTheme(): void {
     // Cycle through the three explicit states so `system` stays reachable.
-    setTheme(themePreference.value === 'light' ? 'dark' : themePreference.value === 'dark' ? 'system' : 'light')
+    setTheme(
+      themePreference.value === 'light'
+        ? 'dark'
+        : themePreference.value === 'dark'
+          ? 'system'
+          : 'light',
+    )
   }
 
   /** Apply the saved theme and re-resolve when the OS scheme changes in `system` mode. */

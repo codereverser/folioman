@@ -27,9 +27,26 @@ const CG = {
   ],
   disclaimer: 'Not tax advice.',
 }
-const WORKSHEET = { fy: '2024-25', row_count: 1, columns: ['ISIN Code(2)'], rows: [{}], title: 't', is_draft: true, disclaimer: 'd' }
+const WORKSHEET = {
+  fy: '2024-25',
+  row_count: 1,
+  columns: ['ISIN Code(2)'],
+  rows: [{}],
+  title: 't',
+  is_draft: true,
+  disclaimer: 'd',
+}
 const INTEGRITY = [
-  { security: { id: 2, name: 'B', isin: 'Y', symbol: '', security_type: 'mf' }, folio: { id: 2, number: 'F2', broker: '', folio_type: 'mf' }, status: 'snapshot_only', tax_safe: false, units_from_holdings: '5', units_from_transactions: null, issues: [], last_reconciled_at: null },
+  {
+    security: { id: 2, name: 'B', isin: 'Y', symbol: '', security_type: 'mf' },
+    folio: { id: 2, number: 'F2', broker: '', folio_type: 'mf' },
+    status: 'snapshot_only',
+    tax_safe: false,
+    units_from_holdings: '5',
+    units_from_transactions: null,
+    issues: [],
+    last_reconciled_at: null,
+  },
 ]
 
 function routeGet(path: string) {

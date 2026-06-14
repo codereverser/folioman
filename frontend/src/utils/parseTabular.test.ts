@@ -26,7 +26,10 @@ describe('rowsFromMatrix', () => {
   })
 
   it('disambiguates duplicate headers', () => {
-    const { headers } = rowsFromMatrix([['price', 'price'], ['1', '2']])
+    const { headers } = rowsFromMatrix([
+      ['price', 'price'],
+      ['1', '2'],
+    ])
     expect(headers).toEqual(['price', 'price (2)'])
   })
 

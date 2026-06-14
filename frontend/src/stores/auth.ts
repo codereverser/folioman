@@ -50,9 +50,7 @@ export const useAuthStore = defineStore('auth', () => {
   // "Authenticated" = we hold an access token, or a refresh token we can mint one
   // from. A stale refresh token reads as authenticated until its first use fails,
   // which clears it (and the interceptor then routes to login).
-  const isAuthenticated = computed(
-    () => accessToken.value !== null || refreshToken.value !== null,
-  )
+  const isAuthenticated = computed(() => accessToken.value !== null || refreshToken.value !== null)
 
   function persistRefresh(token: string | null): void {
     refreshToken.value = token

@@ -158,7 +158,11 @@ async function unacknowledge(row: IntegrityRow): Promise<void> {
   const ok = await integrity.unacknowledge(investorId.value, row.securityId, row.folioId)
   ui.notify(
     ok
-      ? { severity: 'success', summary: 'Acknowledgement removed', detail: 'The gap is tracked again.' }
+      ? {
+          severity: 'success',
+          summary: 'Acknowledgement removed',
+          detail: 'The gap is tracked again.',
+        }
       : { severity: 'error', summary: 'Could not undo', detail: integrity.error ?? '' },
   )
 }
@@ -174,7 +178,9 @@ function back(): void {
 <template>
   <section class="integrity-page">
     <header class="page-head">
-      <button class="back" type="button" @click="back"><i class="pi pi-arrow-left" /> Dashboard</button>
+      <button class="back" type="button" @click="back">
+        <i class="pi pi-arrow-left" /> Dashboard
+      </button>
       <div class="title-row">
         <h1>Data integrity</h1>
         <Button
@@ -193,10 +199,16 @@ function back(): void {
       </p>
     </header>
 
-    <Message v-if="rollup.mismatch || rollup.snapshot" severity="info" :closable="false" class="guidance">
+    <Message
+      v-if="rollup.mismatch || rollup.snapshot"
+      severity="info"
+      :closable="false"
+      class="guidance"
+    >
       <strong>How to resolve:</strong> a holding ties out once it has full transaction history.
       Re-import a <em>since-inception (Detailed) CAS</em> to close a gap or mismatch. You can also
-      <em>acknowledge</em> a mismatch to mark it as known — it stays out of the worksheet either way.
+      <em>acknowledge</em> a mismatch to mark it as known — it stays out of the worksheet either
+      way.
     </Message>
 
     <div class="toolbar">
@@ -212,7 +224,12 @@ function back(): void {
     </div>
 
     <!-- Loading shimmer: a couple of group sketches while the first load runs. -->
-    <div v-if="showShimmer" class="integrity-skeleton" aria-label="Checking integrity" aria-busy="true">
+    <div
+      v-if="showShimmer"
+      class="integrity-skeleton"
+      aria-label="Checking integrity"
+      aria-busy="true"
+    >
       <div v-for="n in 3" :key="n" class="skel-group">
         <span class="fm-skeleton skel-head" />
         <span class="fm-skeleton skel-row" />

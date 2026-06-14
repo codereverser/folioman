@@ -78,11 +78,7 @@ export async function previewCas(file: File, password = ''): Promise<CasPreviewO
  * `needs_confirmation`, or `failed`). Pass `confirm` to apply a destructive eCAS
  * that removes holdings.
  */
-export async function importCas(
-  file: File,
-  password = '',
-  confirm = false,
-): Promise<ImportJobOut> {
+export async function importCas(file: File, password = '', confirm = false): Promise<ImportJobOut> {
   const res = await api.POST('/api/imports/cas', {
     body: { file: file as unknown as string, password, confirm },
     bodySerializer: casFormData(true),

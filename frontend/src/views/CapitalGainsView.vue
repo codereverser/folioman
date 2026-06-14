@@ -63,7 +63,9 @@ function back(): void {
 <template>
   <section class="cg-page">
     <header class="page-head">
-      <button class="back" type="button" @click="back"><i class="pi pi-arrow-left" /> Dashboard</button>
+      <button class="back" type="button" @click="back">
+        <i class="pi pi-arrow-left" /> Dashboard
+      </button>
       <div class="title-row">
         <h1>Capital Gains</h1>
       </div>
@@ -98,7 +100,12 @@ function back(): void {
       :investor-id="investorId"
       :built-at="builtAt"
     />
-    <div v-else-if="loading" class="cg-skeleton" aria-label="Computing capital gains" aria-busy="true">
+    <div
+      v-else-if="loading"
+      class="cg-skeleton"
+      aria-label="Computing capital gains"
+      aria-busy="true"
+    >
       <div class="cg-skel-cards">
         <span class="fm-skeleton skel-card" />
         <span class="fm-skeleton skel-card" />

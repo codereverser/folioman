@@ -3,7 +3,13 @@ import { toCsv } from './csv'
 
 describe('toCsv', () => {
   it('emits a header row then one row per record, keyed by column', () => {
-    const csv = toCsv(['a', 'b'], [{ a: '1', b: '2' }, { a: '3', b: '4' }])
+    const csv = toCsv(
+      ['a', 'b'],
+      [
+        { a: '1', b: '2' },
+        { a: '3', b: '4' },
+      ],
+    )
     expect(csv).toBe('a,b\r\n1,2\r\n3,4')
   })
 

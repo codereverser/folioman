@@ -31,7 +31,8 @@ export const useFamilyStore = defineStore('family', () => {
 
   function createFamily(name: string): Promise<FamilyOut | null> {
     return guard(
-      async () => unwrap(await api.POST('/api/families/', { body: { name } }), 'create family failed'),
+      async () =>
+        unwrap(await api.POST('/api/families/', { body: { name } }), 'create family failed'),
       'Could not create family',
     )
   }
