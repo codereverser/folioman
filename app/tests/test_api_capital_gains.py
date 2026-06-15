@@ -6,12 +6,38 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from folioman_app.services.tax_export import build_capital_gains
-from folioman_app.tasks.import_csv import create_manual_transaction
+from folioman_app.models.jobs import ImportJob, ImportKind
+from folioman_app.services.tax_export import build_capital_gains, build_schedule_112a
+from folioman_app.tasks.import_csv import create_manual_transaction, process_csv
 
 pytestmark = pytest.mark.django_db
 
 _ISIN = "INE002A01018"  # Reliance — a real, 112A-eligible equity ISIN
+_DEMAT = "1208160000000001"
+_EQ_HEADER = (
+    "security_type,name,symbol,isin,date,transaction_type,units,price,folio_number,broker\n"
+)
+
+
+def _eq_row(date, ttype, units, price) -> str:
+    fields = [
+        "equity",
+        "Reliance Industries",
+        "RELIANCE",
+        _ISIN,
+        date,
+        ttype,
+        units,
+        price,
+        _DEMAT,
+        "Zerodha",
+    ]
+    return ",".join(str(f) for f in fields) + "\n"
+
+
+def _run_csv(investor, text: str) -> dict:
+    job = ImportJob.objects.create(investor=investor, kind=ImportKind.CSV)
+    return process_csv(job, text.encode(), "")
 
 
 def _equity_txn(inv, *, txn_type, units, price, on):
@@ -124,3 +150,45 @@ def test_capital_gains_malformed_fy_422(client, make_investor):
 def test_capital_gains_missing_investor_404(client):
     resp = client.get("/api/investors/999999/exports/capital-gains", {"fy": "2024-25"})
     assert resp.status_code == 404
+
+
+def test_orphan_sell_tradebook_excluded_from_capital_gains(make_investor):
+    """Mid-history tradebook with orphan sells must not fabricate STCG/LTCG."""
+    inv = make_investor()
+    rows = _eq_row("2024-08-01", "sell", 10, 2000) + _eq_row("2024-09-01", "buy", 5, 2100)
+    _run_csv(inv, _EQ_HEADER + rows)
+
+    cg = build_capital_gains(inv, "2024-25", fmv_lookup=lambda *_: None)
+    assert cg["rows"] == []
+    assert cg["stcg_total"] == Decimal("0.00")
+    assert cg["ltcg_total"] == Decimal("0.00")
+
+    s112a = build_schedule_112a(inv, "2024-25", fmv_lookup=lambda *_: None)
+    assert s112a["row_count"] == 0
+
+
+def test_complete_tradebook_equity_in_capital_gains(make_investor):
+    """A solvent equity tradebook ledger produces realised LTCG rows."""
+    inv = make_investor()
+    rows = _eq_row("2020-01-01", "buy", 10, 1000) + _eq_row("2024-08-01", "sell", 10, 2000)
+    _run_csv(inv, _EQ_HEADER + rows)
+
+    cg = build_capital_gains(inv, "2024-25", fmv_lookup=lambda *_: None)
+    assert len(cg["rows"]) == 1
+    assert cg["rows"][0]["term"] == "long"
+    assert cg["ltcg_total"] == Decimal("10000.00")
+    assert cg["stcg_total"] == Decimal("0.00")
+
+    s112a = build_schedule_112a(inv, "2024-25", fmv_lookup=lambda *_: None)
+    assert s112a["row_count"] == 1
+
+
+def test_pre_2018_equity_grandfathering_in_schedule_112a(make_investor):
+    inv = make_investor()
+    rows = _eq_row("2017-01-01", "buy", 10, 50) + _eq_row("2024-08-01", "sell", 10, 150)
+    _run_csv(inv, _EQ_HEADER + rows)
+
+    s112a = build_schedule_112a(inv, "2024-25", fmv_lookup=lambda _isin, _on: Decimal("90"))
+    assert s112a["row_count"] == 1
+    assert s112a["rows"][0]["Share/Unit acquired(1a)"] == "BE"
+    assert s112a["rows"][0]["Cost of acquisition without indexation(7)"] == "900.00"

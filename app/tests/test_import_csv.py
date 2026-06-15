@@ -387,6 +387,10 @@ def test_csv_orphan_sell_flags_incomplete_and_records_partial_block(make_investo
     # valuation) excludes the whole bucket, so no bogus gains are computed.
     assert not Transaction.objects.cost_basis().filter(investor=inv, security=sec).exists()
 
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec)
+    assert status.tax_safe is False
+    assert status.issues[0]["type"] == "incomplete_history"
+
 
 def test_csv_full_history_bucket_stays_complete(make_investor):
     """Buy-before-sell within the window is solvent: no partial block, rows stay

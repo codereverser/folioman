@@ -548,7 +548,8 @@ class CapitalGainRow(Schema):
 
 
 class CapitalGainsOut(Schema):
-    """Realised capital gains for one FY — STCG/LTCG split, equity-MF only in v1."""
+    """Realised capital gains for one FY — STCG/LTCG split for listed equity and
+    equity-oriented mutual funds."""
 
     fy: str
     stcg_total: Decimal

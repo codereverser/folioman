@@ -12,11 +12,38 @@ router builds list/acknowledge endpoints on top of this.
 from __future__ import annotations
 
 from django.utils import timezone
+from folioman_core.fifo import net_units_from_transactions
 from folioman_core.models import HoldingSource
-from folioman_core.reconciliation import IntegrityStatus, reconcile
+from folioman_core.reconciliation import IntegrityStatus, ReconciliationResult, reconcile
 
 from folioman_app.mappers import to_core_holding, to_core_transaction
-from folioman_app.models import Folio, Investor, Security, SecurityIntegrityStatus
+from folioman_app.models import Folio, Investor, PartialBlock, Security, SecurityIntegrityStatus
+
+
+def _incomplete_history_issue(partial: PartialBlock) -> dict:
+    return {
+        "type": "incomplete_history",
+        "reason": "orphan_sell",
+        "missing_prior_units": str(partial.opening_units),
+    }
+
+
+def _annotate_incomplete_history(
+    result: ReconciliationResult,
+    *,
+    partial: PartialBlock,
+    display_net,
+) -> ReconciliationResult:
+    """Tag a non-tax-ready folio whose ledger has orphan sells / missing buys."""
+    issues = [i for i in result.issues if i.get("type") != "incomplete_history"]
+    issues.insert(0, _incomplete_history_issue(partial))
+    return result.model_copy(
+        update={
+            "tax_safe": False,
+            "units_from_transactions": display_net,
+            "issues": issues,
+        }
+    )
 
 
 def reconcile_security_folio(
@@ -75,7 +102,25 @@ def reconcile_security_folio(
     )
     user_acknowledged = False if clear_acknowledgement else (already_acknowledged or acknowledge)
 
+    partial = PartialBlock.objects.filter(investor=investor, security=security, folio=folio).first()
+    display_txns = [
+        to_core_transaction(t) for t in investor.transactions.filter(security=security, folio=folio)
+    ]
+    display_net = net_units_from_transactions(display_txns) if display_txns else None
+
     result = reconcile(txns or None, holdings or None, user_acknowledged=user_acknowledged)
+
+    if partial is not None and not txns and display_txns:
+        if result is None:
+            result = ReconciliationResult(
+                status=IntegrityStatus.SNAPSHOT_ONLY,
+                tax_safe=False,
+                units_from_transactions=display_net,
+                units_from_holdings=None,
+                issues=[_incomplete_history_issue(partial)],
+            )
+        else:
+            result = _annotate_incomplete_history(result, partial=partial, display_net=display_net)
 
     if result is None:
         # Nothing to reconcile in this folio — drop any stale status.
@@ -85,6 +130,8 @@ def reconcile_security_folio(
 
     # Temporal context for the comparison: how far each side's evidence reaches.
     ledger_through = max((t.date for t in txns), default=None)
+    if ledger_through is None and display_txns:
+        ledger_through = max(t.date for t in display_txns)
     snapshot_as_of = max((h.as_of_date for h in holdings), default=None)
 
     status, _ = SecurityIntegrityStatus.objects.update_or_create(

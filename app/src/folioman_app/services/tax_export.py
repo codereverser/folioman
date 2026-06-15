@@ -65,8 +65,8 @@ def build_capital_gains(
     fmv_lookup: Callable | None = None,
 ) -> dict:
     """Realised capital gains for one India FY: per-disposal rows split into
-    short-/long-term, plus STCG/LTCG totals. Equity-MF only in v1 (the only asset
-    class with full transaction history); same tax-ready gating as the 112A export.
+    short-/long-term, plus STCG/LTCG totals. Listed equity and equity-oriented
+    mutual funds with tax-ready folios; same gating as the 112A export.
     """
     fmv = fmv_lookup if fmv_lookup is not None else _default_fmv
     fy_start, fy_end = india_fy_range(fy_label)  # raises ValueError on a bad label
