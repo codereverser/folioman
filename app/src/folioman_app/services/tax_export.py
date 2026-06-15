@@ -5,8 +5,9 @@ FIFO, so disposals (and the resulting 112A rows) can only come from buckets whos
 integrity status is tax-ready. This is done in the app by pre-filtering the
 ledger, which keeps the core tax engine folio-agnostic. India-only in v1.
 
-FMV-as-of-31-Jan-2018 (grandfathering) comes from casparser-isin via
-``casparser_fmv.fmv_lookup`` — injectable so tests stay deterministic.
+FMV-as-of-31-Jan-2018 (grandfathering) comes from the layered ``services.fmv``
+lookup (MF via casparser's NAV dataset, listed equity via backfilled price
+history) — injectable so tests stay deterministic.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from decimal import ROUND_HALF_EVEN, Decimal
 
-from folioman_core.price_feeds.casparser_fmv import fmv_lookup as _default_fmv
 from folioman_core.reconciliation import IntegrityStatus
 from folioman_core.tax import compute_gain_lines, compute_schedule_112a, get_policy
 from folioman_core.tax.india import india_fy_range
@@ -23,6 +23,7 @@ from folioman_core.tax.schedule_112a import SCHEDULE_112A_CSV_COLUMNS
 
 from folioman_app.mappers import to_core_transaction
 from folioman_app.models import Investor, Security
+from folioman_app.services.fmv import fmv_lookup as _default_fmv
 
 _Q2 = Decimal("0.01")
 

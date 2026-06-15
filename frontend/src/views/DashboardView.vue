@@ -317,6 +317,11 @@ function openScheme(securityId: number): void {
             >
           </p>
         </template>
+        <p v-else-if="loadCharts && !summary.valueSeries?.length" class="chart-progress">
+          No day-wise history yet — snapshot holdings (a demat eCAS) count toward net worth but not
+          the trend. Import a transaction statement (a CAS or a broker tradebook) to build the
+          history.
+        </p>
         <PortfolioValueChart
           v-else-if="loadCharts"
           :data="summary.valueSeries"

@@ -390,6 +390,9 @@ def test_csv_orphan_sell_flags_incomplete_and_records_partial_block(make_investo
     status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec)
     assert status.tax_safe is False
     assert status.issues[0]["type"] == "incomplete_history"
+    assert Decimal(status.issues[0]["missing_prior_units"]) == Decimal("10")
+    # The raw mid-history net (-5 here) is not a real holding, so it isn't surfaced.
+    assert status.units_from_transactions is None
 
 
 def test_csv_full_history_bucket_stays_complete(make_investor):

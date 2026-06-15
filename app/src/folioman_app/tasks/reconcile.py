@@ -12,7 +12,6 @@ router builds list/acknowledge endpoints on top of this.
 from __future__ import annotations
 
 from django.utils import timezone
-from folioman_core.fifo import net_units_from_transactions
 from folioman_core.models import HoldingSource
 from folioman_core.reconciliation import IntegrityStatus, ReconciliationResult, reconcile
 
@@ -32,18 +31,17 @@ def _annotate_incomplete_history(
     result: ReconciliationResult,
     *,
     partial: PartialBlock,
-    display_net,
 ) -> ReconciliationResult:
-    """Tag a non-tax-ready folio whose ledger has orphan sells / missing buys."""
+    """Tag a non-tax-ready folio whose ledger has orphan sells / missing buys.
+
+    Leaves ``units_from_transactions`` as the reconcile set it (``None`` — the
+    cost-basis ledger is empty here): the raw net of a mid-history ledger isn't a
+    real holding (it omits the missing prior buys and can even go negative), so we
+    don't surface it. ``missing_prior_units`` on the issue carries the real story.
+    """
     issues = [i for i in result.issues if i.get("type") != "incomplete_history"]
     issues.insert(0, _incomplete_history_issue(partial))
-    return result.model_copy(
-        update={
-            "tax_safe": False,
-            "units_from_transactions": display_net,
-            "issues": issues,
-        }
-    )
+    return result.model_copy(update={"tax_safe": False, "issues": issues})
 
 
 def reconcile_security_folio(
@@ -103,10 +101,11 @@ def reconcile_security_folio(
     user_acknowledged = False if clear_acknowledgement else (already_acknowledged or acknowledge)
 
     partial = PartialBlock.objects.filter(investor=investor, security=security, folio=folio).first()
+    # Rows kept for display only (a partial bucket has no cost-basis txns above);
+    # used to date the ledger, not to state a holding.
     display_txns = [
         to_core_transaction(t) for t in investor.transactions.filter(security=security, folio=folio)
     ]
-    display_net = net_units_from_transactions(display_txns) if display_txns else None
 
     result = reconcile(txns or None, holdings or None, user_acknowledged=user_acknowledged)
 
@@ -115,12 +114,14 @@ def reconcile_security_folio(
             result = ReconciliationResult(
                 status=IntegrityStatus.SNAPSHOT_ONLY,
                 tax_safe=False,
-                units_from_transactions=display_net,
+                # No reliable net for a mid-history ledger (missing prior buys);
+                # the incomplete_history issue carries `missing_prior_units`.
+                units_from_transactions=None,
                 units_from_holdings=None,
                 issues=[_incomplete_history_issue(partial)],
             )
         else:
-            result = _annotate_incomplete_history(result, partial=partial, display_net=display_net)
+            result = _annotate_incomplete_history(result, partial=partial)
 
     if result is None:
         # Nothing to reconcile in this folio — drop any stale status.

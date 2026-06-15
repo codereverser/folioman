@@ -266,7 +266,12 @@ function back(): void {
                 <span class="folio-num">{{ row.folioNumber || '—' }}</span>
                 <small v-if="row.broker">{{ row.broker }}</small>
               </div>
-              <IntegrityBadge :status="row.status" size="sm" />
+              <IntegrityBadge
+                :status="row.status"
+                :label="hasIncompleteHistory(row.issues) ? 'Incomplete history' : undefined"
+                :severity="hasIncompleteHistory(row.issues) ? 'warn' : undefined"
+                size="sm"
+              />
               <div class="row-action">
                 <Button
                   v-if="row.status === 'mismatch'"

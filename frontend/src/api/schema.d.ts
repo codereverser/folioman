@@ -275,7 +275,7 @@ export interface paths {
         /**
          * Capital Gains
          * @description Realised capital gains for one FY: STCG/LTCG totals + per-disposal rows
-         *     (equity-MF only in v1). A read view to review — not a filed return.
+         *     (listed equity and equity-oriented MF). A read view to review — not a filed return.
          */
         get: operations["folioman_app_api_exports_capital_gains"];
         put?: never;
@@ -411,7 +411,16 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Import Csv */
+        /**
+         * Import Csv
+         * @description Import a canonical-CSV transaction file for an investor.
+         *
+         *     The frontend wizard maps an arbitrary broker export (e.g. an equity
+         *     tradebook) onto the canonical column shape and uploads the resulting CSV
+         *     bytes; the backend consumes them through the same content-hashed,
+         *     per-row-idempotent path as every other import. Investor is taken from the
+         *     path (the file carries no owner identity), unlike a PAN-bearing CAS.
+         */
         post: operations["folioman_app_api_imports_import_csv"];
         delete?: never;
         options?: never;
@@ -816,7 +825,8 @@ export interface components {
         };
         /**
          * CapitalGainsOut
-         * @description Realised capital gains for one FY — STCG/LTCG split, equity-MF only in v1.
+         * @description Realised capital gains for one FY — STCG/LTCG split for listed equity and
+         *     equity-oriented mutual funds.
          */
         CapitalGainsOut: {
             /**
