@@ -103,6 +103,56 @@ def apply_bonus(
     return _sort_transactions([*transactions, bonus])
 
 
+def apply_merger(
+    transactions: list[Transaction],
+    *,
+    old_security: Security,
+    new_security: Security,
+    ratio: Decimal,
+    source_ref: str = "",
+) -> list[Transaction]:
+    """Convert a merged-away security's history into the acquiring security.
+
+    Every ``old_security`` row is re-based onto ``new_security`` at ``ratio`` new
+    shares per old share: ``units * ratio`` and ``nav_or_price / ratio`` so each
+    lot's **cost basis is preserved**, and its **acquisition date is unchanged** --
+    holding period and 31-Jan-2018 grandfathering carry to the new shares (a
+    merger is tax-neutral under s.47(vii)/s.49(2); the new shares inherit the
+    original cost and period). A pre-merger disposal re-bases identically, so its
+    realised gain is invariant — only the scrip label changes. Other securities'
+    rows pass through untouched.
+
+    ``ratio`` is new-per-old: ``2 old → 1 new`` is ``ratio=0.5``; ``1 old → 3 new``
+    is ``ratio=3``.
+    """
+    if ratio <= _ZERO:
+        msg = "merger ratio must be positive"
+        raise ValueError(msg)
+    if old_security == new_security:
+        msg = "merger needs distinct old and new securities"
+        raise ValueError(msg)
+
+    ref = source_ref or f"merger:{old_security.isin or old_security.symbol}"
+    converted: list[Transaction] = []
+    for txn in transactions:
+        if txn.security != old_security:
+            converted.append(txn)
+            continue
+        converted.append(
+            txn.model_copy(
+                update={
+                    "security": new_security,
+                    "units": txn.units * ratio,
+                    "nav_or_price": txn.nav_or_price / ratio,
+                    # Keep the original date/type so FIFO inherits the holding
+                    # period; tag provenance only where the row had none.
+                    "source_ref": txn.source_ref or ref,
+                }
+            )
+        )
+    return _sort_transactions(converted)
+
+
 def record_dividend(
     *,
     amount: Decimal,
