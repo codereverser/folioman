@@ -6,7 +6,12 @@ import Message from 'primevue/message'
 import SelectButton from 'primevue/selectbutton'
 import { useConfirm } from 'primevue/useconfirm'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
-import { remediation } from '@/integrity/status'
+import {
+  hasIncompleteHistory,
+  incompleteHistoryFix,
+  incompleteHistoryReason,
+  remediation,
+} from '@/integrity/status'
 import { useIntegrityStore, type IntegrityRow } from '@/stores/integrity'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
@@ -91,6 +96,8 @@ function deltaLabel(row: IntegrityRow): string {
 
 // The always-visible explanation under each row: what the evidence says, in words.
 function reasonFor(row: IntegrityRow): string {
+  const incomplete = incompleteHistoryReason(row.issues)
+  if (incomplete) return incomplete
   const ledger = formatUnits(row.unitsFromTransactions)
   const snap = formatUnits(row.unitsFromHoldings)
   const through = row.ledgerThrough ? ` through ${formatDate(row.ledgerThrough)}` : ''
@@ -113,6 +120,7 @@ function reasonFor(row: IntegrityRow): string {
   }
 }
 function fixFor(row: IntegrityRow): string | null {
+  if (hasIncompleteHistory(row.issues)) return incompleteHistoryFix()
   return remediation(row.status, { folioType: row.folioType })
 }
 

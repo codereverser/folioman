@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { rollupIntegrity, toIntegrityStatus } from './status'
+import {
+  hasIncompleteHistory,
+  incompleteHistoryFix,
+  incompleteHistoryReason,
+  rollupIntegrity,
+  toIntegrityStatus,
+} from './status'
 
 describe('toIntegrityStatus', () => {
   it('passes through known statuses case-insensitively', () => {
@@ -36,5 +42,19 @@ describe('rollupIntegrity', () => {
 
   it('handles an empty set', () => {
     expect(rollupIntegrity([])).toMatchObject({ total: 0, taxReady: 0, needsAttention: 0 })
+  })
+})
+
+describe('incomplete history issues', () => {
+  const issues = [{ type: 'incomplete_history', reason: 'orphan_sell' }]
+
+  it('detects orphan-sell folios', () => {
+    expect(hasIncompleteHistory(issues)).toBe(true)
+    expect(hasIncompleteHistory([])).toBe(false)
+  })
+
+  it('returns user-facing reason and fix copy', () => {
+    expect(incompleteHistoryReason(issues)).toMatch(/earlier tradebook/)
+    expect(incompleteHistoryFix()).toMatch(/earlier-period tradebook/)
   })
 })

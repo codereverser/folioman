@@ -96,6 +96,23 @@ export function integrityMeta(status: IntegrityStatus): IntegrityMeta {
   return META[status]
 }
 
+/** A mid-history tradebook with orphan sells (PartialBlock). */
+export function hasIncompleteHistory(issues: Record<string, unknown>[]): boolean {
+  return issues.some((i) => i.type === 'incomplete_history')
+}
+
+export function incompleteHistoryReason(issues: Record<string, unknown>[]): string | null {
+  if (!hasIncompleteHistory(issues)) return null
+  return (
+    'Incomplete transaction history — sells without matching buys, so no ' +
+    'capital-gains worksheet until an earlier tradebook supplies the missing purchases.'
+  )
+}
+
+export function incompleteHistoryFix(): string {
+  return 'Import an earlier-period tradebook that includes the missing buy transactions.'
+}
+
 // One canonical remediation for an incomplete mutual-fund ledger — the same advice
 // the Import screen gives, so guidance never contradicts itself.
 const REIMPORT_FIX = 'Re-import a since-inception (Detailed) CAS that includes zero-balance folios.'

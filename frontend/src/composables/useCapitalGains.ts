@@ -11,8 +11,9 @@ export type Schedule112A = Schemas['Schedule112AResponse']
 /**
  * Realised capital gains for one investor + FY: the STCG/LTCG view (a read) plus
  * the Schedule 112A worksheet (LTCG, for the CSV download). Both are built from
- * the same tax-ready disposals. Equity-MF only in v1. Also surfaces the holdings
- * left out (snapshot / mismatch / acknowledged) so the page can explain the gaps.
+ * the same tax-ready disposals. Listed equity and equity-oriented MF. Also surfaces
+ * the holdings left out (snapshot / mismatch / incomplete history / acknowledged)
+ * so the page can explain the gaps.
  *
  * Fails soft: on error `gains` stays null and `error` carries the message.
  */

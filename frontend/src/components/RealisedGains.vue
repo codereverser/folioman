@@ -8,7 +8,13 @@ import Message from 'primevue/message'
 import Row from 'primevue/row'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import type { CapitalGainRow, CapitalGains } from '@/composables/useCapitalGains'
-import { integrityMeta, remediation } from '@/integrity/status'
+import {
+  integrityMeta,
+  hasIncompleteHistory,
+  incompleteHistoryFix,
+  incompleteHistoryReason,
+  remediation,
+} from '@/integrity/status'
 import type { IntegrityRow } from '@/stores/integrity'
 import { formatDate, formatInr, formatUnits } from '@/utils/format'
 
@@ -136,9 +142,10 @@ function holdingPeriod(acquired: string, sold: string): string {
 // "Left out" rows reuse the shared integrity vocabulary so the wording matches
 // the Data integrity screen exactly (incl. demat-inherent vs fixable snapshot).
 function excludedReason(row: IntegrityRow): string {
-  return integrityMeta(row.status).tooltip
+  return incompleteHistoryReason(row.issues) ?? integrityMeta(row.status).tooltip
 }
 function excludedFix(row: IntegrityRow): string | null {
+  if (hasIncompleteHistory(row.issues)) return incompleteHistoryFix()
   return remediation(row.status, { folioType: row.folioType })
 }
 </script>
