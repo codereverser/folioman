@@ -178,6 +178,7 @@ interface CsvResult {
   skipped?: number
   errors?: { row: number; error: string }[]
   incomplete_history?: IncompleteEntry[]
+  unresolved_securities?: { name: string; isin: string; symbol: string }[]
   reconcile_errors?: unknown
 }
 const result = computed<CsvResult>(() => (job.value?.result as CsvResult) ?? {})
@@ -479,6 +480,21 @@ watch(investorId, () => {
               <span class="muted small"
                 >{{ s.missing_prior_units }} units missing before the file</span
               >
+            </li>
+          </ul>
+        </div>
+
+        <div v-if="result.unresolved_securities?.length" class="warn-block">
+          <h2>Couldn’t identify ({{ result.unresolved_securities.length }})</h2>
+          <p class="muted small">
+            We couldn’t match these to a listed scrip (a delisted/SME/foreign symbol, or an ISIN our
+            database doesn’t know yet), so they stay unpriced under a provisional name until a later
+            update resolves them.
+          </p>
+          <ul class="incomplete">
+            <li v-for="s in result.unresolved_securities" :key="s.isin || s.symbol">
+              <span class="sec-name">{{ s.symbol || s.name }}</span>
+              <span class="muted small">{{ s.isin }}</span>
             </li>
           </ul>
         </div>

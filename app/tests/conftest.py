@@ -61,6 +61,17 @@ def _no_live_nse(monkeypatch):
     monkeypatch.setattr(yfinance_feed, "shared_client", lambda: _DummyClient())
 
 
+@pytest.fixture(autouse=True)
+def _no_isin_resolution(monkeypatch):
+    """CSV equity import resolves ISIN→name/symbol from the casparser-isin DB; stub
+    it to a no-op so the suite doesn't depend on bundled-DB contents (which would
+    rename test securities). The dedicated E5 tests exercise the real resolver with
+    a fake DB."""
+    from folioman_app.tasks import import_csv
+
+    monkeypatch.setattr(import_csv, "resolve_equity_identity", lambda securities: [])
+
+
 @pytest.fixture
 def user(db):
     """The single local advisor user — the one local-mode API auth resolves, so

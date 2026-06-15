@@ -43,6 +43,7 @@ from pydantic import ValidationError
 from folioman_app.mappers import to_core_transaction
 from folioman_app.models import Folio, ImportJob, PartialBlock, Security, Transaction
 from folioman_app.models.jobs import ImportKind
+from folioman_app.services.equity_identity import resolve_equity_identity
 from folioman_app.services.imports import register_processor
 from folioman_app.tasks._upsert import upsert_folio, upsert_security
 from folioman_app.tasks.reconcile import reconcile_after_import, reconcile_security_folio
@@ -331,6 +332,15 @@ def process_csv(
             continue
         affected[security.id] = security
         summary["created" if created else "skipped"] += 1
+
+    # Trust the ISIN, not the import-supplied name: resolve each equity's
+    # authoritative name + trading symbol + exchange from the ISIN DB (also makes
+    # it priceable). A miss keeps the provisional name and is reported, not fatal.
+    unresolved = resolve_equity_identity(affected.values())
+    if unresolved:
+        summary["unresolved_securities"] = [
+            {"name": s.name, "isin": s.isin, "symbol": s.symbol} for s in unresolved
+        ]
 
     # Mark incomplete-history ledgers (orphan sells) before reconciling, so a
     # mid-history tradebook doesn't feed FIFO-underflowing rows into cost basis,
