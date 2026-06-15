@@ -299,6 +299,7 @@ nav {
 }
 
 .nav-link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -313,10 +314,26 @@ nav {
   background: var(--fm-surface-raised);
 }
 
+/* Selected route reads as a tinted teal pill with a leading accent rail — the
+   pale highlight token alone didn't separate from the white sidebar. */
 .nav-link.is-active {
-  background: var(--p-highlight-background);
+  background: color-mix(in oklab, var(--p-primary-color) 14%, var(--fm-surface));
   color: var(--p-primary-color);
   font-weight: 600;
+}
+.nav-link.is-active:hover {
+  background: color-mix(in oklab, var(--p-primary-color) 20%, var(--fm-surface));
+}
+.nav-link.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 1.25rem;
+  width: 3px;
+  transform: translateY(-50%);
+  border-radius: 0 var(--fm-radius-pill) var(--fm-radius-pill) 0;
+  background: var(--p-primary-color);
 }
 .nav-label {
   flex: 1;

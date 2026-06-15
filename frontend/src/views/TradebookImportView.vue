@@ -224,6 +224,9 @@ watch(investorId, () => {
 <template>
   <section class="tb-page">
     <header class="page-head">
+      <RouterLink class="back" :to="{ name: 'import' }">
+        <i class="pi pi-arrow-left" aria-hidden="true" /> Import
+      </RouterLink>
       <h1>Import a broker tradebook</h1>
       <p class="muted lede">
         Upload a stock tradebook (CSV or XLSX) from any broker, map its columns once, and we’ll
@@ -448,6 +451,19 @@ watch(investorId, () => {
 }
 .page-head {
   margin-bottom: var(--fm-space-5);
+}
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: var(--fm-space-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fm-text-muted);
+  text-decoration: none;
+}
+.back:hover {
+  color: var(--p-primary-color);
 }
 .page-head h1 {
   margin: 0 0 var(--fm-space-2);

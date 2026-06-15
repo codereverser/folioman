@@ -133,19 +133,33 @@ const sources: Source[] = [
   margin-top: var(--fm-space-4);
 }
 .source {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: flex-start;
   gap: var(--fm-space-4);
   padding: var(--fm-space-5);
-  background: var(--fm-surface-raised);
-  border: 1px solid var(--fm-border-subtle);
+  /* White surface lifts off the off-white ground; surface-raised was too close
+     to the canvas to read as a card. */
+  background: var(--fm-surface);
+  border: 1px solid var(--fm-border);
   border-radius: var(--fm-radius-lg);
+  box-shadow: var(--fm-shadow-sm);
   text-decoration: none;
   color: inherit;
   transition:
     border-color var(--fm-dur) var(--fm-ease),
     box-shadow var(--fm-dur) var(--fm-ease),
     transform var(--fm-dur) var(--fm-ease);
+}
+/* Per-source colored spine (equity teal / gold) ties each card to its icon
+   accent and gives the two options a distinct edge. */
+.source::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--accent);
 }
 .source:hover {
   border-color: color-mix(in oklab, var(--accent) 55%, var(--fm-border));
