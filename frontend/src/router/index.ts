@@ -101,11 +101,20 @@ const routes: RouteRecordRaw[] = [
     redirect: (to) => ({ name: 'capital-gains', params: { investorId: to.params.investorId } }),
   },
   {
-    // Single CAS import — advisor-level: the statement identifies its own
-    // investor by PAN (the server auto-detects MF CAS vs NSDL/CDSL eCAS and
-    // resolves or creates the investor). Not scoped to a pre-selected investor.
+    // Import hub: pick a source (CAS/eCAS PDF, stock tradebook, …), then route to
+    // that flow. Intent-first, because the flows differ (CAS is PAN-resolved; a
+    // tradebook is investor-chosen + column-mapped).
     path: '/import',
     name: 'import',
+    component: () => import('@/views/ImportHubView.vue'),
+    meta: { desktopOnly: true },
+  },
+  {
+    // CAS/eCAS PDF — advisor-level: the statement identifies its own investor by
+    // PAN (the server auto-detects MF CAS vs NSDL/CDSL eCAS and resolves or creates
+    // the investor). Not scoped to a pre-selected investor.
+    path: '/import/cas',
+    name: 'import-cas',
     component: () => import('@/views/ImportView.vue'),
     meta: { desktopOnly: true },
   },

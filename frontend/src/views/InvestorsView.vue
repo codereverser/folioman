@@ -385,7 +385,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
           @click="openCreateInvestor()"
         />
         <!-- Primary path: an import creates the investor from the CAS automatically. -->
-        <Button label="Import CAS" icon="pi pi-file-pdf" size="small" @click="goImport" />
+        <Button label="Import" icon="pi pi-download" size="small" @click="goImport" />
       </div>
     </header>
 
@@ -427,7 +427,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
         their full holdings.
       </p>
       <div v-if="!ui.isMobile" class="empty-actions">
-        <Button label="Import CAS" icon="pi pi-file-pdf" @click="goImport" />
+        <Button label="Import" icon="pi pi-download" @click="goImport" />
         <Button
           label="Add manually"
           icon="pi pi-user-plus"

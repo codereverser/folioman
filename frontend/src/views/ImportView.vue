@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -16,25 +16,13 @@ import { useRosterStore } from '@/stores/roster'
 import { useIntegrityStore } from '@/stores/integrity'
 import { useWriteLock } from '@/composables/useWriteLock'
 import { formatDate } from '@/utils/format'
-import { importSummary } from '@/utils/jobs'
 import { isDesktopShell, pickCasFile } from '@/utils/desktop'
-import JobStatusBadge from '@/components/JobStatusBadge.vue'
 
 const router = useRouter()
 const ui = useUiStore()
 const roster = useRosterStore()
 const integrity = useIntegrityStore()
 const { readOnly } = useWriteLock()
-
-// Recent imports across all investors, so a past outcome / re-import is visible in
-// context on the landing step. Reuses the advisor-wide /api/jobs endpoint; the full
-// list (with valuation status) lives on the Settings → Jobs & valuation tab.
-const recentImports = ref<Schemas['ImportJobSummaryOut'][]>([])
-async function loadHistory(): Promise<void> {
-  const res = await api.GET('/api/jobs')
-  if (res.data) recentImports.value = res.data.imports.slice(0, 5)
-}
-onMounted(loadHistory)
 
 // --- result view-model ------------------------------------------------------
 // The job's `result` is an open dict on the wire; narrow it to the keys the two
@@ -167,7 +155,6 @@ async function submit(confirm = false): Promise<void> {
     job.value = await importCas(file.value, password.value, confirm)
     if (succeeded.value) {
       ui.notify({ severity: 'success', summary: 'Import complete', detail: file.value.name })
-      void loadHistory() // reflect the just-completed import in the recent list
       // An import resolves/creates an investor by PAN and changes its holdings —
       // refresh the cached roster (so the switcher + Investors list show it) and
       // drop the integrity cache (so the affected investor re-fetches on next view).
@@ -215,7 +202,10 @@ function goToDashboard(): void {
 <template>
   <section class="import-page">
     <header class="page-head">
-      <h1>Import CAS</h1>
+      <RouterLink class="back" :to="{ name: 'import' }">
+        <i class="pi pi-arrow-left" aria-hidden="true" /> Import
+      </RouterLink>
+      <h1>Consolidated statement</h1>
       <p class="muted lede">
         Drop a CAMS/KFintech <strong>Mutual Fund CAS</strong> or an NSDL/CDSL
         <strong>eCAS</strong> — we auto-detect the type and find the right investor by PAN.
@@ -268,18 +258,6 @@ function goToDashboard(): void {
         </div>
       </div>
 
-      <RouterLink class="alt-import" :to="{ name: 'import-transactions' }">
-        <i class="pi pi-file-excel" aria-hidden="true" />
-        <span class="alt-main">
-          <span class="alt-title">Have a stock tradebook instead?</span>
-          <span class="alt-sub muted">
-            Import a broker CSV/XLSX (Zerodha, Upstox, …) — map the columns once for full cost basis
-            &amp; capital gains.
-          </span>
-        </span>
-        <i class="pi pi-arrow-right" aria-hidden="true" />
-      </RouterLink>
-
       <details class="help">
         <summary>
           <i class="pi pi-question-circle" aria-hidden="true" />
@@ -324,26 +302,6 @@ function goToDashboard(): void {
           </p>
         </div>
       </details>
-
-      <!-- Recent imports (in context): newest first, advisor-wide. Detail in Settings. -->
-      <section v-if="recentImports.length" class="recent">
-        <header class="recent-head">
-          <h2>Recent imports</h2>
-          <RouterLink class="recent-all" :to="{ name: 'settings', params: { tab: 'jobs' } }"
-            >View all in Settings ↗</RouterLink
-          >
-        </header>
-        <ul class="recent-list">
-          <li v-for="j in recentImports" :key="j.id" class="recent-row">
-            <span class="r-main">
-              <span class="r-name">{{ j.filename || j.kind.toUpperCase() }}</span>
-              <span class="r-sub">{{ j.investor_name }} · {{ formatDate(j.created_at) }}</span>
-            </span>
-            <span class="r-detail" :class="{ 'is-error': !!j.error }">{{ importSummary(j) }}</span>
-            <JobStatusBadge :status="j.status" />
-          </li>
-        </ul>
-      </section>
     </template>
 
     <!-- Step 2: confirm who the statement belongs to before importing -->
@@ -598,38 +556,19 @@ function goToDashboard(): void {
   max-width: 38rem;
 }
 
-/* Secondary entry point to the broker-tradebook (CSV/XLSX) import wizard. */
-.alt-import {
-  display: flex;
+/* Back-to-hub crumb above the page title. */
+.back {
+  display: inline-flex;
   align-items: center;
-  gap: var(--fm-space-3);
-  margin-top: var(--fm-space-3);
-  padding: var(--fm-space-4);
-  background: var(--fm-surface-raised);
-  border: 1px solid var(--fm-border-subtle);
-  border-radius: var(--fm-radius-md);
-  text-decoration: none;
-  color: inherit;
-  transition: border-color var(--fm-dur) var(--fm-ease);
-}
-.alt-import:hover {
-  border-color: var(--fm-verified);
-}
-.alt-import > .pi:first-child {
-  font-size: 1.25rem;
-  color: var(--fm-text-subtle);
-}
-.alt-main {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  flex: 1;
-}
-.alt-title {
-  font-weight: 600;
-}
-.alt-sub {
+  gap: 0.35rem;
+  margin-bottom: var(--fm-space-2);
   font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fm-text-muted);
+  text-decoration: none;
+}
+.back:hover {
+  color: var(--p-primary-color);
 }
 
 /* Collapsed by default so the top stays light; expands to the how-to + scope. */
@@ -837,78 +776,5 @@ function goToDashboard(): void {
   flex-basis: 100%;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
-}
-
-/* Recent imports list (landing step) */
-.recent {
-  margin-top: var(--fm-space-5);
-}
-.recent-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--fm-space-3);
-  margin-bottom: var(--fm-space-2);
-}
-.recent-head h2 {
-  margin: 0;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--fm-text-muted);
-}
-.recent-all {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--p-primary-color);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.recent-all:hover {
-  text-decoration: underline;
-}
-.recent-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.recent-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--fm-space-3);
-  padding: 0.55rem 0;
-  border-top: 1px solid var(--fm-border-subtle);
-}
-.recent-row:first-child {
-  border-top: none;
-}
-.r-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1 1 12rem;
-}
-.r-name {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--fm-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.r-sub {
-  font-size: 0.75rem;
-  color: var(--fm-text-muted);
-}
-.r-detail {
-  flex: 1 1 8rem;
-  font-size: 0.8125rem;
-  color: var(--fm-text-muted);
-  text-align: right;
-}
-.r-detail.is-error {
-  color: var(--p-red-500, #ef4444);
 }
 </style>

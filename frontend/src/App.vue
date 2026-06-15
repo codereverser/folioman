@@ -47,11 +47,11 @@ watch(
 
 // Nav matches the page list; scoped links appear once a scope is selected.
 const navLinks = computed<NavLink[]>(() => {
-  // Import is advisor-level (the CAS identifies its own investor by PAN), so it's
-  // always available — it's the primary way to onboard an investor.
+  // Import is always available (the primary way to onboard an investor); the hub
+  // routes to each source — CAS/eCAS PDF, stock tradebook, …
   const links: NavLink[] = [
     { label: 'Investors', icon: 'pi pi-users', to: { name: 'investors' } },
-    { label: 'Import CAS', icon: 'pi pi-file-pdf', to: { name: 'import' } },
+    { label: 'Import', icon: 'pi pi-download', to: { name: 'import' } },
   ]
   if (ui.selectedInvestorId !== null) {
     const investorId = ui.selectedInvestorId
