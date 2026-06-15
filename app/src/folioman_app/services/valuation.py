@@ -805,8 +805,11 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
 
 # ---------------------------------------------------------------------------
 # Value-series (net worth over time) + XIRR — reconstructed on demand from the
-# transaction ledger + NAVHistory. No snapshot tables: a sampled date's value is
-# the ledger's net units as-of that date, priced at the latest NAV on/before it.
+# cost-basis transaction ledger + NAVHistory. Two-tier rule: only ledger-backed
+# holdings enter the day-wise trend; snapshot-only positions (eCAS equity, MF
+# statement close, partial-history ledgers) contribute to headline net worth via
+# ``_current_positions`` but are omitted here. A sampled date's value is the
+# ledger's net units as-of that date, priced at the latest NAV on/before it.
 # ---------------------------------------------------------------------------
 
 
@@ -950,13 +953,14 @@ def _sample_dates(from_: date, to: date, granularity: str) -> list[date]:
 
 
 def _value_series(investors: list[Investor], from_: date, to: date, granularity: str) -> list[dict]:
-    txn_keys, hold_keys = _ledger_index(investors)
-    sec_ids = {k[0] for k in txn_keys} | {k[0] for k in hold_keys}
+    txn_keys, _hold_keys = _ledger_index(investors)
+    sec_ids = {k[0] for k in txn_keys}
     nav_idx = _nav_index(sec_ids, to)
 
     points: list[dict] = []
     for sample in _sample_dates(from_, to, granularity):
-        agg = _positions_asof(txn_keys, hold_keys, sample)
+        # Ledger-only: snapshot holdings are today-only (headline), not historical trend.
+        agg = _positions_asof(txn_keys, {}, sample)
         value = _ZERO
         invested = _ZERO
         stale = False
