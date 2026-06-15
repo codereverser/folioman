@@ -23,6 +23,8 @@ import {
   type Mapping,
 } from '@/utils/tradebook'
 import { parseTabularFile } from '@/utils/parseTabular'
+import IntegrityBadge from '@/components/IntegrityBadge.vue'
+import type { IntegrityStatus } from '@/integrity/status'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -163,18 +165,49 @@ const previewRows = computed(() => canonicalRows.value.slice(0, 20))
 // --- step 3: import + result ------------------------------------------------
 const job = ref<ImportJobOut | null>(null)
 
+interface IncompleteEntry {
+  security: string
+  isin?: string
+  reason: string
+  missing_prior_units?: string
+  net_units?: string
+}
 interface CsvResult {
   rows?: number
   created?: number
   skipped?: number
   errors?: { row: number; error: string }[]
-  incomplete_history?: { security: string; reason: string; missing_prior_units?: string }[]
+  incomplete_history?: IncompleteEntry[]
   reconcile_errors?: unknown
 }
 const result = computed<CsvResult>(() => (job.value?.result as CsvResult) ?? {})
 const succeeded = computed(
   () => job.value?.status === 'success' || job.value?.status === 'completed_with_warnings',
 )
+
+// Holdings-anchor reconciliation for the demat account this import targeted: each
+// (security, folio) ledger-net vs the eCAS closing balance. Fetched after import
+// (it's written by the server's post-import reconcile), scoped to this folio.
+const integrityRows = ref<Schemas['IntegrityStatusOut'][]>([])
+async function loadReconciliation(): Promise<void> {
+  if (investorId.value == null) return
+  const res = await api.GET('/api/investors/{investor_id}/integrity', {
+    params: { path: { investor_id: investorId.value } },
+  })
+  const folio = account.value.folioNumber
+  integrityRows.value = (res.data ?? []).filter((r) => r.folio?.number === folio)
+}
+// Full-history securities: a clean ledger (no opposing snapshot → full_history) or
+// one that matches its eCAS holding (reconciled). Counted across all rows, so a
+// tradebook with no eCAS yet still reports its full-history securities.
+const reconciledCount = computed(
+  () =>
+    integrityRows.value.filter((r) => r.status === 'reconciled' || r.status === 'full_history')
+      .length,
+)
+const mismatchRows = computed(() => integrityRows.value.filter((r) => r.status === 'mismatch'))
+// Securities with an eCAS holding to reconcile against (others have no anchor yet).
+const anchorRows = computed(() => integrityRows.value.filter((r) => r.units_from_holdings != null))
 
 async function runImport(): Promise<void> {
   if (investorId.value == null || blockingErrors.value.length > 0 || busy.value) return
@@ -191,6 +224,7 @@ async function runImport(): Promise<void> {
     if (succeeded.value) {
       ui.notify({ severity: 'success', summary: 'Import complete', detail: file.value?.name })
       integrity.clear()
+      await loadReconciliation()
     }
   } catch (err) {
     errorMessage.value = err instanceof Error ? err.message : 'Import failed'
@@ -206,6 +240,7 @@ function reset(): void {
   fileRows.value = []
   mapping.value = {}
   job.value = null
+  integrityRows.value = []
   errorMessage.value = ''
 }
 
@@ -392,12 +427,51 @@ watch(investorId, () => {
           >.
         </Message>
 
+        <!-- Completeness scorecard: at a glance, what's tax-ready vs not. -->
+        <div class="scorecard">
+          <div class="score">
+            <span class="score-num">{{ reconciledCount }}</span>
+            <span class="score-label">full history</span>
+          </div>
+          <div class="score" :class="{ flag: (result.incomplete_history?.length ?? 0) > 0 }">
+            <span class="score-num">{{ result.incomplete_history?.length ?? 0 }}</span>
+            <span class="score-label">incomplete</span>
+          </div>
+          <div class="score" :class="{ flag: mismatchRows.length > 0 }">
+            <span class="score-num">{{ mismatchRows.length }}</span>
+            <span class="score-label">eCAS mismatch</span>
+          </div>
+          <div class="score" :class="{ flag: (result.errors?.length ?? 0) > 0 }">
+            <span class="score-num">{{ result.errors?.length ?? 0 }}</span>
+            <span class="score-label">skipped rows</span>
+          </div>
+        </div>
+
+        <!-- Holdings-anchor reconciliation: ledger net vs the eCAS closing balance. -->
+        <div v-if="anchorRows.length" class="panel">
+          <h2 class="step-title">Reconciled against your eCAS holdings</h2>
+          <ul class="recon">
+            <li v-for="r in anchorRows" :key="r.security.isin || r.security.id">
+              <span class="sec-name">{{ r.security.name }}</span>
+              <span class="recon-units muted small">
+                ledger {{ r.units_from_transactions ?? 0 }} · eCAS {{ r.units_from_holdings }}
+              </span>
+              <IntegrityBadge :status="r.status as IntegrityStatus" size="sm" />
+            </li>
+          </ul>
+          <p v-if="mismatchRows.length" class="muted small">
+            A mismatch means the tradebook’s net units differ from your demat holding — a known gap
+            you can acknowledge on the Integrity page (it won’t corrupt the ledger).
+          </p>
+        </div>
+
+        <!-- Incomplete cost basis: orphan sells, excluded from P&L / tax. -->
         <div v-if="result.incomplete_history?.length" class="warn-block">
           <h2>Incomplete cost basis ({{ result.incomplete_history.length }})</h2>
           <p class="muted small">
-            These securities have sells with no matching buy — earlier trades are missing, so we
-            can’t compute realized gains or tax for them yet. Import an earlier-period tradebook to
-            complete them.
+            These securities have sells with no matching buy — earlier trades are missing, so
+            <strong>no realized gains or tax</strong> are computed for them. Import an
+            earlier-period tradebook to complete them.
           </p>
           <ul class="incomplete">
             <li v-for="s in result.incomplete_history" :key="s.security">
@@ -589,6 +663,66 @@ watch(investorId, () => {
   justify-content: flex-end;
   gap: var(--fm-space-2);
 }
+/* Completeness scorecard */
+.scorecard {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--fm-space-2);
+}
+.score {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: var(--fm-space-3);
+  background: var(--fm-surface);
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-md);
+  text-align: center;
+}
+.score.flag {
+  border-color: color-mix(in oklab, var(--fm-warn) 55%, var(--fm-border));
+  background: var(--fm-warn-bg);
+}
+.score-num {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.score-label {
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fm-text-muted);
+}
+
+/* Reconciliation panel (ledger vs eCAS) */
+.panel {
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-md);
+  padding: var(--fm-space-4);
+}
+.recon {
+  list-style: none;
+  margin: var(--fm-space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-2);
+}
+.recon li {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-3);
+}
+.recon li .sec-name {
+  flex: 1;
+  min-width: 0;
+}
+.recon-units {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .warn-block {
   border: 1px solid var(--fm-warn);
   background: var(--fm-warn-bg);
