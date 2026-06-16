@@ -18,10 +18,17 @@ from folioman_app.models.ledger import (
     ValuationStatus,
 )
 from folioman_app.models.licensing import License
-from folioman_app.models.master import AMC, FXRate, NAVHistory, Security
+from folioman_app.models.master import (
+    AMC,
+    CorporateActionReference,
+    FXRate,
+    NAVHistory,
+    Security,
+)
 
 __all__ = [
     "AMC",
+    "CorporateActionReference",
     "FXRate",
     "Family",
     "Folio",
