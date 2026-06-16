@@ -67,6 +67,47 @@
         "title": "AppMetaOut",
         "type": "object"
       },
+      "ApplyCorporateActionIn": {
+        "description": "Apply one cached corporate-action reference to close a unit gap.",
+        "properties": {
+          "reference_id": {
+            "title": "Reference Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reference_id"
+        ],
+        "title": "ApplyCorporateActionIn",
+        "type": "object"
+      },
+      "ApplyCorporateActionOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "events_applied": {
+            "title": "Events Applied",
+            "type": "integer"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/IntegrityStatusOut"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "updated",
+          "created",
+          "events_applied",
+          "integrity"
+        ],
+        "title": "ApplyCorporateActionOut",
+        "type": "object"
+      },
       "AssetMixRow": {
         "properties": {
           "security_type": {
@@ -4019,6 +4060,67 @@
           }
         },
         "summary": "Acknowledge",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-corporate-action": {
+      "post": {
+        "description": "Apply a cached corporate-action reference to the folio ledger and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_apply_corporate_action",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyCorporateActionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyCorporateActionOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Apply Corporate Action",
         "tags": [
           "integrity"
         ]

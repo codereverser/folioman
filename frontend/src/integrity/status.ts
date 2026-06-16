@@ -113,6 +113,85 @@ export function incompleteHistoryFix(): string {
   return 'Import an earlier-period tradebook that includes the missing buy transactions.'
 }
 
+/** A high-confidence corporate-action suggestion from reconciliation. */
+export interface CorporateActionSuggestion {
+  referenceId: number
+  actionType: string
+  subject: string
+  exDate: string
+  unitMultiplier: string
+}
+
+function asRecord(issue: Record<string, unknown>): Record<string, unknown> {
+  return issue
+}
+
+export function corporateActionSuggestions(
+  issues: Record<string, unknown>[],
+): CorporateActionSuggestion[] {
+  return issues
+    .filter((i) => i.type === 'corporate_action_suggestion')
+    .map((raw) => {
+      const i = asRecord(raw)
+      return {
+        referenceId: Number(i.reference_id),
+        actionType: String(i.action_type ?? ''),
+        subject: String(i.subject ?? ''),
+        exDate: String(i.ex_date ?? ''),
+        unitMultiplier: String(i.unit_multiplier ?? ''),
+      }
+    })
+    .filter((s) => Number.isFinite(s.referenceId) && s.referenceId > 0)
+}
+
+export function hasCorporateActionSuggestion(issues: Record<string, unknown>[]): boolean {
+  return corporateActionSuggestions(issues).length > 0
+}
+
+const MANUAL_CA_COPY: Record<string, string> = {
+  incomplete_history:
+    'A unit gap might be a bonus or split, but transaction history is incomplete — review the corporate action manually.',
+  snapshot_only:
+    'Holdings are snapshot-only — corporate actions cannot be matched against a tradebook ledger.',
+  ledger_position_not_in_holdings:
+    'The ledger shows units this eCAS snapshot does not list — often a pre-merger ISIN or an off-book transfer. Enter the merger or opening lot manually.',
+  holding_below_ledger:
+    'Statement holdings are below the ledger — check for an off-market transfer or a trade on another broker.',
+  non_integer_ratio:
+    'The unit gap is not a clean bonus/split ratio — review corporate actions manually.',
+  ratio_without_matching_event:
+    'The unit ratio does not match any cached corporate action — refresh the feed or enter the event manually.',
+}
+
+/** User-facing copy for a manual corporate-action flag, if any. */
+export function corporateActionManualNote(issues: Record<string, unknown>[]): string | null {
+  const manual = issues.find((i) => i.type === 'corporate_action_manual')
+  if (!manual) return null
+  const reason = String(manual.reason ?? '')
+  const base = MANUAL_CA_COPY[reason]
+  if (base) return base
+  if (reason === 'ratio_without_matching_event' && manual.unit_ratio) {
+    return `${MANUAL_CA_COPY.ratio_without_matching_event} (ratio ×${manual.unit_ratio}).`
+  }
+  return 'This unit gap needs a manual corporate-action review.'
+}
+
+export function corporateActionSuggestionSummary(s: CorporateActionSuggestion): string {
+  const when = s.exDate ? ` (ex ${s.exDate})` : ''
+  return `Suggested corporate action: ${s.subject}${when} — applies a ×${s.unitMultiplier} unit adjustment.`
+}
+
+export function corporateActionApplyConfirmMessage(
+  s: CorporateActionSuggestion,
+  name: string,
+): string {
+  return (
+    `Apply "${s.subject}" to "${name}"? ` +
+    'This writes bonus/split ledger rows and re-reconciles the folio. ' +
+    'You can undo only by editing the ledger — review before confirming.'
+  )
+}
+
 // One canonical remediation for an incomplete mutual-fund ledger — the same advice
 // the Import screen gives, so guidance never contradicts itself.
 const REIMPORT_FIX = 'Re-import a since-inception (Detailed) CAS that includes zero-balance folios.'

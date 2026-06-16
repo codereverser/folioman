@@ -125,4 +125,40 @@ describe('integrity store', () => {
     expect(store.rowsFor(10)).toEqual([])
     expect(store.error).not.toBeNull()
   })
+
+  it('applyCorporateAction patches the row from the response integrity payload', async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        statusRow({
+          status: 'mismatch',
+          tax_safe: false,
+          issues: [
+            {
+              type: 'corporate_action_suggestion',
+              reference_id: 99,
+              subject: 'Bonus 3:1',
+              ex_date: '2024-06-15',
+              unit_multiplier: '4',
+              action_type: 'bonus',
+            },
+          ],
+        }),
+      ],
+    } as never)
+    mockPost.mockResolvedValue({
+      data: {
+        updated: 0,
+        created: 1,
+        events_applied: 1,
+        integrity: statusRow({ status: 'reconciled', tax_safe: true, issues: [] }),
+      },
+    } as never)
+
+    const store = useIntegrityStore()
+    await store.load(10)
+    const ok = await store.applyCorporateAction(10, 1, 7, 99)
+    expect(ok).toBe(true)
+    expect(store.rowsFor(10)[0].status).toBe('reconciled')
+    expect(store.rowsFor(10)[0].issues).toEqual([])
+  })
 })

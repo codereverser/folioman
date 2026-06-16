@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  corporateActionManualNote,
+  corporateActionSuggestions,
+  corporateActionSuggestionSummary,
+  hasCorporateActionSuggestion,
   hasIncompleteHistory,
   incompleteHistoryFix,
   incompleteHistoryReason,
@@ -56,5 +60,34 @@ describe('incomplete history issues', () => {
   it('returns user-facing reason and fix copy', () => {
     expect(incompleteHistoryReason(issues)).toMatch(/earlier tradebook/)
     expect(incompleteHistoryFix()).toMatch(/earlier-period tradebook/)
+  })
+})
+
+describe('corporate action issues', () => {
+  const suggestion = {
+    type: 'corporate_action_suggestion',
+    confidence: 'high',
+    action_type: 'bonus',
+    subject: 'Bonus 3:1',
+    ex_date: '2024-06-15',
+    unit_multiplier: '4',
+    reference_id: 42,
+  }
+
+  it('parses high-confidence suggestions', () => {
+    expect(hasCorporateActionSuggestion([suggestion])).toBe(true)
+    const parsed = corporateActionSuggestions([suggestion])
+    expect(parsed).toHaveLength(1)
+    expect(parsed[0].referenceId).toBe(42)
+    expect(corporateActionSuggestionSummary(parsed[0])).toMatch(/Bonus 3:1/)
+  })
+
+  it('maps manual review reasons to copy', () => {
+    expect(
+      corporateActionManualNote([
+        { type: 'corporate_action_manual', reason: 'incomplete_history' },
+      ]),
+    ).toMatch(/incomplete/)
+    expect(corporateActionManualNote([])).toBeNull()
   })
 })

@@ -66,6 +66,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
   const byInvestor = ref<Record<number, IntegrityRow[]>>({})
   const loading = ref(false)
   const acknowledging = ref(false)
+  const applyingCorporateAction = ref(false)
   const error = ref<string | null>(null)
 
   function rowsFor(investorId: number): IntegrityRow[] {
@@ -181,6 +182,36 @@ export const useIntegrityStore = defineStore('integrity', () => {
     }
   }
 
+  /** Apply one cached corporate-action reference; patch the row from the response. */
+  async function applyCorporateAction(
+    investorId: number,
+    securityId: number,
+    folioId: number,
+    referenceId: number,
+  ): Promise<boolean> {
+    applyingCorporateAction.value = true
+    error.value = null
+    try {
+      const { data, error: apiError } = await api.POST(
+        '/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-corporate-action',
+        {
+          params: {
+            path: { investor_id: investorId, security_id: securityId, folio_id: folioId },
+          },
+          body: { reference_id: referenceId },
+        },
+      )
+      if (apiError || !data?.integrity) throw new Error('apply corporate action failed')
+      patchRow(investorId, data.integrity)
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'unknown error'
+      return false
+    } finally {
+      applyingCorporateAction.value = false
+    }
+  }
+
   function clear(): void {
     byInvestor.value = {}
   }
@@ -189,6 +220,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
     byInvestor,
     loading,
     acknowledging,
+    applyingCorporateAction,
     error,
     rowsFor,
     rollupFor,
@@ -196,6 +228,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
     recompute,
     acknowledge,
     unacknowledge,
+    applyCorporateAction,
     clear,
   }
 })

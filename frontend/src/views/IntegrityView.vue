@@ -7,10 +7,16 @@ import SelectButton from 'primevue/selectbutton'
 import { useConfirm } from 'primevue/useconfirm'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import {
+  corporateActionManualNote,
+  corporateActionApplyConfirmMessage,
+  corporateActionSuggestionSummary,
+  corporateActionSuggestions,
+  hasCorporateActionSuggestion,
   hasIncompleteHistory,
   incompleteHistoryFix,
   incompleteHistoryReason,
   remediation,
+  type CorporateActionSuggestion,
 } from '@/integrity/status'
 import { useIntegrityStore, type IntegrityRow } from '@/stores/integrity'
 import { useRosterStore } from '@/stores/roster'
@@ -121,7 +127,48 @@ function reasonFor(row: IntegrityRow): string {
 }
 function fixFor(row: IntegrityRow): string | null {
   if (hasIncompleteHistory(row.issues)) return incompleteHistoryFix()
+  const caManual = corporateActionManualNote(row.issues)
+  if (caManual) return caManual
+  const suggestion = corporateActionSuggestions(row.issues)[0]
+  if (suggestion) return corporateActionSuggestionSummary(suggestion)
   return remediation(row.status, { folioType: row.folioType })
+}
+
+function suggestionFor(row: IntegrityRow): CorporateActionSuggestion | null {
+  return corporateActionSuggestions(row.issues)[0] ?? null
+}
+
+function askApplyCorporateAction(row: IntegrityRow): void {
+  const suggestion = suggestionFor(row)
+  if (!suggestion) return
+  confirm.require({
+    header: 'Apply corporate action?',
+    message: corporateActionApplyConfirmMessage(suggestion, row.name),
+    icon: 'pi pi-bolt',
+    acceptLabel: 'Apply',
+    rejectLabel: 'Cancel',
+    accept: async () => {
+      const ok = await integrity.applyCorporateAction(
+        investorId.value,
+        row.securityId,
+        row.folioId,
+        suggestion.referenceId,
+      )
+      ui.notify(
+        ok
+          ? {
+              severity: 'success',
+              summary: 'Corporate action applied',
+              detail: 'Ledger updated and folio re-reconciled.',
+            }
+          : {
+              severity: 'error',
+              summary: 'Could not apply',
+              detail: integrity.error ?? '',
+            },
+      )
+    },
+  })
 }
 
 const lastChecked = computed(() => {
@@ -268,13 +315,35 @@ function back(): void {
               </div>
               <IntegrityBadge
                 :status="row.status"
-                :label="hasIncompleteHistory(row.issues) ? 'Incomplete history' : undefined"
-                :severity="hasIncompleteHistory(row.issues) ? 'warn' : undefined"
+                :label="
+                  hasIncompleteHistory(row.issues)
+                    ? 'Incomplete history'
+                    : hasCorporateActionSuggestion(row.issues)
+                      ? 'CA suggested'
+                      : undefined
+                "
+                :severity="
+                  hasIncompleteHistory(row.issues)
+                    ? 'warn'
+                    : hasCorporateActionSuggestion(row.issues)
+                      ? 'warn'
+                      : undefined
+                "
                 size="sm"
               />
               <div class="row-action">
                 <Button
-                  v-if="row.status === 'mismatch'"
+                  v-if="suggestionFor(row)"
+                  label="Apply CA"
+                  icon="pi pi-bolt"
+                  size="small"
+                  text
+                  :loading="integrity.applyingCorporateAction"
+                  :disabled="readOnly"
+                  @click="askApplyCorporateAction(row)"
+                />
+                <Button
+                  v-else-if="row.status === 'mismatch'"
                   label="Acknowledge"
                   icon="pi pi-minus-circle"
                   size="small"

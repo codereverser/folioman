@@ -539,6 +539,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-corporate-action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Corporate Action
+         * @description Apply a cached corporate-action reference to the folio ledger and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_apply_corporate_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/unacknowledge": {
         parameters: {
             query?: never;
@@ -778,6 +798,24 @@ export interface components {
             storage: string;
             /** Version */
             version: string;
+        };
+        /**
+         * ApplyCorporateActionIn
+         * @description Apply one cached corporate-action reference to close a unit gap.
+         */
+        ApplyCorporateActionIn: {
+            /** Reference Id */
+            reference_id: number;
+        };
+        /** ApplyCorporateActionOut */
+        ApplyCorporateActionOut: {
+            /** Created */
+            created: number;
+            /** Events Applied */
+            events_applied: number;
+            integrity: components["schemas"]["IntegrityStatusOut"];
+            /** Updated */
+            updated: number;
         };
         /** AssetMixRow */
         AssetMixRow: {
@@ -2677,6 +2715,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntegrityStatusOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_apply_corporate_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyCorporateActionIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyCorporateActionOut"];
                 };
             };
         };
