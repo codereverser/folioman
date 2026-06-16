@@ -66,3 +66,30 @@ class WebviewApi:
             logger.exception("desktop: could not read picked file %s", path)
             return None
         return {"name": path.name, "data": base64.b64encode(data).decode("ascii")}
+
+    def save_csv_file(self, default_filename: str, content: str) -> bool:
+        """Open a native save-dialog for a CSV file and write `content` to it.
+
+        Returns True if saved, False if cancelled or failed.
+        """
+        import webview
+
+        open_dialog = getattr(webview, "FileDialog", None)
+        save_dialog = open_dialog.SAVE if open_dialog is not None else webview.SAVE_DIALOG
+
+        window = self._window or webview.active_window()
+        selection = window.create_file_dialog(
+            save_dialog,
+            save_filename=default_filename,
+            file_types=("CSV file (*.csv)", "All files (*.*)"),
+        )
+        if not selection:  # cancelled
+            return False
+
+        path = Path(selection) if isinstance(selection, str) else Path(selection[0])
+        try:
+            path.write_text(content, encoding="utf-8")
+            return True
+        except OSError:
+            logger.exception("desktop: could not save file %s", path)
+            return False

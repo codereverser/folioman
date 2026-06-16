@@ -8,6 +8,7 @@
 
 interface PyWebviewApi {
   pick_cas_file: () => Promise<{ name: string; data: string } | null>
+  save_csv_file: (filename: string, content: string) => Promise<boolean>
 }
 
 interface PyWebview {
@@ -40,4 +41,12 @@ export async function pickCasFile(): Promise<File | null> {
   const picked = await api.pick_cas_file()
   if (!picked) return null
   return base64ToFile(picked.name, picked.data)
+}
+
+/** Open the native OS file save dialog and save `content` to `filename`.
+ * Returns true if saved, false if cancelled (or not in desktop shell). */
+export async function saveCsvFile(filename: string, content: string): Promise<boolean> {
+  const api = bridge()?.api
+  if (!api?.save_csv_file) return false
+  return await api.save_csv_file(filename, content)
 }
