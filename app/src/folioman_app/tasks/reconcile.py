@@ -11,12 +11,25 @@ router builds list/acknowledge endpoints on top of this.
 
 from __future__ import annotations
 
+from django.db.models import Q
 from django.utils import timezone
-from folioman_core.models import HoldingSource
+from folioman_core.corporate_action_detect import (
+    CachedCorporateAction,
+    detect_corporate_action_issues,
+    strip_corporate_action_issues,
+)
+from folioman_core.models import HoldingSource, SecurityType
 from folioman_core.reconciliation import IntegrityStatus, ReconciliationResult, reconcile
 
 from folioman_app.mappers import to_core_holding, to_core_transaction
-from folioman_app.models import Folio, Investor, PartialBlock, Security, SecurityIntegrityStatus
+from folioman_app.models import (
+    CorporateActionReference,
+    Folio,
+    Investor,
+    PartialBlock,
+    Security,
+    SecurityIntegrityStatus,
+)
 
 
 def _incomplete_history_issue(partial: PartialBlock) -> dict:
@@ -42,6 +55,47 @@ def _annotate_incomplete_history(
     issues = [i for i in result.issues if i.get("type") != "incomplete_history"]
     issues.insert(0, _incomplete_history_issue(partial))
     return result.model_copy(update={"tax_safe": False, "issues": issues})
+
+
+def _cached_actions_for_security(security: Security) -> list[CachedCorporateAction]:
+    """Load cached feed rows for ``security`` (ISIN-first, then symbol fallback)."""
+    if security.security_type != SecurityType.EQUITY.value:
+        return []
+    filt = Q(security=security)
+    if security.isin:
+        filt |= Q(isin=security.isin)
+    rows: dict[int, CachedCorporateAction] = {}
+    for row in CorporateActionReference.objects.filter(filt).distinct():
+        rows[row.id] = CachedCorporateAction(
+            ex_date=row.ex_date,
+            subject=row.subject,
+            parsed_type=row.parsed_type,
+            unit_multiplier=row.unit_multiplier,
+            needs_review=row.needs_review,
+            reference_id=row.id,
+        )
+    return list(rows.values())
+
+
+def _annotate_corporate_actions(
+    result: ReconciliationResult,
+    *,
+    security: Security,
+    incomplete_history: bool,
+) -> ReconciliationResult:
+    """Run the detection ruleset and merge issues into ``result``."""
+    issues = strip_corporate_action_issues(result.issues)
+    ca_issues = detect_corporate_action_issues(
+        net_units=result.units_from_transactions,
+        holding_units=result.units_from_holdings,
+        incomplete_history=incomplete_history,
+        cached_actions=_cached_actions_for_security(security),
+    )
+    if ca_issues:
+        issues = [*issues, *ca_issues]
+    if not issues:
+        return result
+    return result.model_copy(update={"issues": issues})
 
 
 def reconcile_security_folio(
@@ -122,6 +176,18 @@ def reconcile_security_folio(
             )
         else:
             result = _annotate_incomplete_history(result, partial=partial)
+
+    incomplete_history = partial is not None or (
+        result is not None
+        and result.units_from_transactions is not None
+        and result.units_from_transactions < 0
+    )
+    if result is not None and security.security_type == SecurityType.EQUITY.value:
+        result = _annotate_corporate_actions(
+            result,
+            security=security,
+            incomplete_history=incomplete_history,
+        )
 
     if result is None:
         # Nothing to reconcile in this folio — drop any stale status.

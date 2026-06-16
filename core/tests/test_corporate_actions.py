@@ -239,3 +239,194 @@ def test_apply_split_preserves_acquisition_date():
     )
     buy = next(t for t in txns if t.type is TransactionType.BUY)
     assert buy.date == date(2017, 1, 2)  # split must not reset the holding period
+
+
+# --- golden fixtures (E10.4) -------------------------------------------------
+
+_ALLCARGO = Security(
+    type=SecurityType.EQUITY,
+    name="Allcargo Logistics Ltd",
+    isin="INE418H01026",
+    symbol="ALLCARGO",
+)
+_HDFC = Security(
+    type=SecurityType.EQUITY,
+    name="HDFC Ltd",
+    isin="INE001A01036",
+    symbol="HDFC",
+)
+_HDFCBANK = Security(
+    type=SecurityType.EQUITY,
+    name="HDFC Bank Ltd",
+    isin="INE040A01034",
+    symbol="HDFCBANK",
+)
+
+
+def test_allcargo_bonus_3_1_reconciles_240_to_960():
+    """Tradebook net 240 + Bonus 3:1 → 960 units, cost basis preserved."""
+    from folioman_core.corporate_action_subject import CorpActionType
+    from folioman_core.corporate_actions import (
+        CorporateActionApplyEvent,
+        apply_corporate_action_events,
+    )
+
+    buy = Transaction(
+        security=_ALLCARGO,
+        date=date(2023, 6, 1),
+        type=TransactionType.BUY,
+        units="240",
+        nav_or_price="50",
+        amount="12000",
+        source=TransactionSource.MANUAL,
+    )
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.BONUS,
+            ex_date=date(2024, 1, 2),
+            security=_ALLCARGO,
+            unit_multiplier=Decimal("4"),
+            source_ref="bonus:3:1",
+        )
+    ]
+    txns = apply_corporate_action_events([buy], events)
+    fifo = apply_fifo(txns)
+    assert fifo.balance == Decimal("960")
+    assert fifo.invested == Decimal("12000")
+
+
+def test_hdfc_merger_then_bonus_reconstructs_168_hdfcbank():
+    """50 HDFC @ ₹2200 → merger 42:25 → bonus 1:1 → 168 HDFCBANK, ₹1,10,000 cost."""
+    from folioman_core.corporate_action_subject import CorpActionType
+    from folioman_core.corporate_actions import (
+        CorporateActionApplyEvent,
+        apply_corporate_action_events,
+    )
+
+    buy = Transaction(
+        security=_HDFC,
+        date=date(2022, 6, 27),
+        type=TransactionType.BUY,
+        units="50",
+        nav_or_price="2200",
+        amount="110000",
+        source=TransactionSource.MANUAL,
+    )
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.MERGER,
+            ex_date=date(2023, 7, 13),
+            security=_HDFCBANK,
+            merger_old_security=_HDFC,
+            merger_new_security=_HDFCBANK,
+            merger_ratio=Decimal("42") / Decimal("25"),
+            source_ref="merger:hdfc",
+        ),
+        CorporateActionApplyEvent(
+            kind=CorpActionType.BONUS,
+            ex_date=date(2025, 8, 26),
+            security=_HDFCBANK,
+            unit_multiplier=Decimal("2"),
+            source_ref="bonus:1:1",
+        ),
+    ]
+    txns = apply_corporate_action_events([buy], events)
+    fifo = apply_fifo([t for t in txns if t.type is not TransactionType.SPLIT])
+    assert fifo.balance == Decimal("168")
+    assert fifo.invested.quantize(Decimal("0.01")) == Decimal("110000.00")
+    assert all(t.security == _HDFCBANK for t in txns if t.type is not TransactionType.SPLIT)
+
+
+def test_apply_corporate_action_events_orders_by_ex_date():
+    """Merger before bonus even when passed in reverse."""
+    from folioman_core.corporate_action_subject import CorpActionType
+    from folioman_core.corporate_actions import (
+        CorporateActionApplyEvent,
+        apply_corporate_action_events,
+    )
+
+    buy = Transaction(
+        security=_HDFC,
+        date=date(2022, 6, 27),
+        type=TransactionType.BUY,
+        units="50",
+        nav_or_price="2200",
+        source=TransactionSource.MANUAL,
+    )
+    bonus = CorporateActionApplyEvent(
+        kind=CorpActionType.BONUS,
+        ex_date=date(2025, 8, 26),
+        security=_HDFCBANK,
+        unit_multiplier=Decimal("2"),
+    )
+    merger = CorporateActionApplyEvent(
+        kind=CorpActionType.MERGER,
+        ex_date=date(2023, 7, 13),
+        security=_HDFCBANK,
+        merger_old_security=_HDFC,
+        merger_new_security=_HDFCBANK,
+        merger_ratio=Decimal("42") / Decimal("25"),
+    )
+    fifo = apply_fifo(
+        apply_corporate_action_events([buy], [bonus, merger]),
+    )
+    assert fifo.balance == Decimal("168")
+
+
+def test_held_units_matches_by_isin_not_symbol():
+    """Bonus entitlement after a merger must not depend on symbol/exchange drift."""
+    from folioman_core.corporate_actions import held_units_asof
+
+    drifted = Security(
+        type=SecurityType.EQUITY,
+        name="HDFC Bank",
+        isin="INE040A01034",
+        symbol="HDFCBANK",
+        exchange="NSE",
+    )
+    feed_style = Security(
+        type=SecurityType.EQUITY,
+        name="HDFC Bank Ltd",
+        isin="INE040A01034",
+        symbol="HDFCBANK",
+        exchange="",
+    )
+    buy = Transaction(
+        security=drifted,
+        date=date(2022, 6, 27),
+        type=TransactionType.BUY,
+        units="84",
+        nav_or_price="1309.52",
+        source=TransactionSource.MANUAL,
+    )
+    assert held_units_asof([buy], feed_style, date(2025, 8, 26)) == Decimal("84")
+
+
+def test_apply_bonus_from_multiplier_is_idempotent_on_source_ref():
+    from folioman_core.corporate_actions import apply_bonus_from_multiplier
+
+    buy = Transaction(
+        security=_ALLCARGO,
+        date=date(2023, 6, 1),
+        type=TransactionType.BUY,
+        units="240",
+        nav_or_price="50",
+        source=TransactionSource.MANUAL,
+    )
+    ref = "ca-ref:99"
+    first = apply_bonus_from_multiplier(
+        [buy],
+        unit_multiplier=Decimal("4"),
+        effective_date=date(2024, 1, 2),
+        security=_ALLCARGO,
+        source_ref=ref,
+    )
+    second = apply_bonus_from_multiplier(
+        first,
+        unit_multiplier=Decimal("4"),
+        effective_date=date(2024, 1, 2),
+        security=_ALLCARGO,
+        source_ref=ref,
+    )
+    assert second == first
+    assert sum(1 for t in second if t.type is TransactionType.BONUS) == 1

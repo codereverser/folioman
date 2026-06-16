@@ -12,8 +12,13 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from folioman_app.api.auth import get_owned_investor
-from folioman_app.api.schemas import IntegrityStatusOut
+from folioman_app.api.schemas import (
+    ApplyCorporateActionIn,
+    ApplyCorporateActionOut,
+    IntegrityStatusOut,
+)
 from folioman_app.models import Folio, Investor, Security, SecurityIntegrityStatus
+from folioman_app.services.corporate_actions import apply_suggested_corporate_action
 from folioman_app.tasks.reconcile import recompute_investor, reconcile_security_folio
 
 router = Router(tags=["integrity"])
@@ -66,3 +71,28 @@ def unacknowledge(request, investor_id: int, security_id: int, folio_id: int):
     investor = get_owned_investor(request, investor_id)
     security, folio = _owned_status(investor, security_id, folio_id)
     return reconcile_security_folio(investor, security, folio, clear_acknowledgement=True)
+
+
+@router.post(
+    "/{investor_id}/integrity/{security_id}/{folio_id}/apply-corporate-action",
+    response=ApplyCorporateActionOut,
+)
+def apply_corporate_action(
+    request,
+    investor_id: int,
+    security_id: int,
+    folio_id: int,
+    payload: ApplyCorporateActionIn,
+):
+    """Apply a cached corporate-action reference to the folio ledger and re-reconcile."""
+    investor = get_owned_investor(request, investor_id)
+    security, folio = _owned_status(investor, security_id, folio_id)
+    try:
+        summary = apply_suggested_corporate_action(investor, folio, security, payload.reference_id)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    status = SecurityIntegrityStatus.objects.get(investor=investor, security=security, folio=folio)
+    return {
+        **summary,
+        "integrity": status,
+    }

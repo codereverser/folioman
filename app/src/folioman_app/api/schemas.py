@@ -449,6 +449,19 @@ class IntegrityStatusOut(Schema):
     last_reconciled_at: datetime | None
 
 
+class ApplyCorporateActionIn(Schema):
+    """Apply one cached corporate-action reference to close a unit gap."""
+
+    reference_id: int
+
+
+class ApplyCorporateActionOut(Schema):
+    updated: int
+    created: int
+    events_applied: int
+    integrity: IntegrityStatusOut
+
+
 class SchemeRef(Schema):
     """Security identity for the scheme-detail header band."""
 

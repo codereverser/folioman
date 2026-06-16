@@ -47,6 +47,7 @@ def to_core_transaction(txn: Transaction) -> CoreTransaction:
         source_ref=txn.source_ref,
         folio_number=txn.folio.number if txn.folio else "",
         broker=txn.folio.broker if txn.folio else "",
+        ledger_id=txn.pk,
     )
 
 

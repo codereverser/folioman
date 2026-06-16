@@ -69,6 +69,8 @@ class Transaction(DomainModel):
     source_ref: str = Field(default="", max_length=128)
     folio_number: str = Field(default="", max_length=64)
     broker: str = Field(default="", max_length=64)
+    # Django row pk when round-tripping through the apply engine; ignored by FIFO.
+    ledger_id: int | None = None
 
     @model_validator(mode="after")
     def validate_transaction_rules(self) -> Self:
