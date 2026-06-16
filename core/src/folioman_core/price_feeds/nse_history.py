@@ -26,7 +26,6 @@ WAF page on overload) is skipped; if *no* chunk yields data the call raises
 
 from __future__ import annotations
 
-import contextlib
 import csv
 import io
 import time
@@ -36,23 +35,11 @@ from decimal import Decimal, InvalidOperation
 import httpx
 
 from folioman_core.models.nav import NAVHistory, NAVPoint
+from folioman_core.price_feeds.nse_bse_client import NSE_BASE_URL, ExchangeClient, nse_client
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
-BASE_URL = "https://www.nseindia.com"
-DEFAULT_TIMEOUT = 30.0
-# NSE rejects empty / non-browser User-Agents; mimic a real client (matches the
-# NSE quote fallback feed).
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15"
-        " (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-    ),
-    "Accept": "text/csv, application/json, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-}
-_WARMUP_PATH = "/get-quotes/equity"
 _HISTORY_PATH = "/api/historicalOR/generateSecurityWiseHistoricalData"
-_REFERER = f"{BASE_URL}/report-detail/eq_security"
+_REFERER = f"{NSE_BASE_URL}/report-detail/eq_security"
 # The CSV export returns the full requested range (unlike the ~3-month JSON cap),
 # but errors out above ~2 years per request — chunk safely under that.
 _MAX_WINDOW_DAYS = 365
@@ -60,19 +47,14 @@ _CHUNK_SPACING = 0.2  # polite gap between chunk requests for one symbol
 _SLEEP = time.sleep
 
 
-def warmed_client() -> httpx.Client:
-    """Return an httpx client with NSE session cookies primed.
+def warmed_client() -> ExchangeClient:
+    """Return an NSE client with session cookies primed (shared NSE/BSE client).
 
     A wide backfill reuses one warmed client across symbols rather than warming
     per call. A failed warmup is non-fatal — the history call still attempts, and
     any cookies it does set persist on the client.
     """
-    client = httpx.Client(
-        base_url=BASE_URL, headers=_HEADERS, timeout=DEFAULT_TIMEOUT, follow_redirects=True
-    )
-    with contextlib.suppress(httpx.HTTPError):
-        client.get(_WARMUP_PATH, params={"symbol": "RELIANCE"})
-    return client
+    return nse_client()
 
 
 def _windows(start: date, end: date):
@@ -113,7 +95,7 @@ def fetch_history(
     *,
     start: date | None = None,
     end: date | None = None,
-    client: httpx.Client | None = None,
+    client: ExchangeClient | None = None,
 ) -> NAVHistory:
     """Daily close history for an NSE ``symbol`` over ``[start, end]``, oldest-first.
 
