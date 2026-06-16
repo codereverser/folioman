@@ -48,11 +48,13 @@ watch([investorId, fy, includeUnreconciled], () => void rebuild(), { immediate: 
 
 const canDownload = computed(() => acknowledged.value && worksheetRowCount.value > 0)
 
-function download(): void {
+async function download(): Promise<void> {
   const r = report.value
   if (!r || !canDownload.value) return
-  downloadText(`capital-gains-worksheet-${r.fy}.csv`, toCsv(r.columns, r.rows))
-  ui.notify({ severity: 'success', summary: 'Worksheet downloaded for your review' })
+  const saved = await downloadText(`capital-gains-worksheet-${r.fy}.csv`, toCsv(r.columns, r.rows))
+  if (saved !== false) {
+    ui.notify({ severity: 'success', summary: 'Worksheet downloaded for your review' })
+  }
 }
 
 function back(): void {
