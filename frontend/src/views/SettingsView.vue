@@ -107,8 +107,13 @@ async function exportHoldings(): Promise<void> {
       params: { path: { investor_id: id } },
       parseAs: 'text',
     })
-    if (typeof res.data === 'string') downloadText(`holdings_${id}.csv`, res.data)
-    else
+    if (typeof res.data === 'string') {
+      // Await the download: in the desktop shell it opens a native save dialog, and
+      // `finally` must not clear the spinner until that resolves. `false` means the
+      // user cancelled the dialog, so suppress the success toast.
+      const saved = await downloadText(`holdings_${id}.csv`, res.data)
+      if (saved !== false) ui.notify({ severity: 'success', summary: 'Holdings exported' })
+    } else
       ui.notify({ severity: 'error', summary: 'Export failed', detail: 'Could not build the holdings CSV.' })
   } finally {
     exporting.value = null
@@ -124,8 +129,12 @@ async function exportTransactions(): Promise<void> {
       params: { path: { investor_id: id } },
       parseAs: 'text',
     })
-    if (typeof res.data === 'string') downloadText(`transactions_${id}.csv`, res.data)
-    else
+    if (typeof res.data === 'string') {
+      // See exportHoldings: await so the desktop save dialog completes before the
+      // spinner clears; `false` means cancelled, so don't toast success.
+      const saved = await downloadText(`transactions_${id}.csv`, res.data)
+      if (saved !== false) ui.notify({ severity: 'success', summary: 'Transactions exported' })
+    } else
       ui.notify({
         severity: 'error',
         summary: 'Export failed',
