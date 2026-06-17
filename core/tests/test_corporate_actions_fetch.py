@@ -199,6 +199,24 @@ def test_lookup_bse_scripcode():
     assert lookup_bse_scripcode("TCS", client=client) == "532540"
 
 
+def test_lookup_bse_scripcode_no_match_returns_none():
+    # A 200 with no scrip in the body is a genuine miss → None.
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>nothing here</html>")
+
+    assert lookup_bse_scripcode("NOPE", client=_wrap_bse(handler)) is None
+
+
+def test_lookup_bse_scripcode_outage_raises():
+    # A failed request (non-200) is an outage, not "no such scrip" — raise so the
+    # caller records it instead of reporting BSE as having no corporate actions.
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="not found")  # non-retryable → returned at once
+
+    with pytest.raises(CorporateActionFetchError):
+        lookup_bse_scripcode("TCS", client=_wrap_bse(handler))
+
+
 def test_cross_feed_dedupes_same_action():
     nse_row = {
         "symbol": "HDFCBANK",

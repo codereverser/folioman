@@ -69,6 +69,12 @@ class SellDisposal:
 
     @property
     def proceeds(self) -> Decimal:
+        """Net cash from the sale (gross less ``fees``/STT) — a CASHFLOW figure.
+
+        NOT the taxable proceeds: the capital-gains path computes gain from the
+        gross sale value and excludes STT from the deduction, so it never uses
+        this. Use ``proceeds`` only for cash/XIRR, never to derive realized gain.
+        """
         return self.units * self.sale_price_per_unit - self.fees
 
 

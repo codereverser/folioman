@@ -271,7 +271,11 @@ def lookup_bse_scripcode(symbol: str, *, client: ExchangeClient) -> str | None:
         headers=headers,
     )
     if response.status_code != 200:
-        return None
+        # A failed lookup (outage / throttle / garbage) is NOT "no such scrip":
+        # raise so the caller records it instead of reporting BSE as having no
+        # corporate actions. A genuine miss is a 200 with no scrip in the body.
+        msg = f"bse scripcode lookup for {symbol}: HTTP {response.status_code}"
+        raise CorporateActionFetchError(msg)
     match = _BSE_SCRIP.search(response.text)
     return match.group(1) if match else None
 
@@ -293,7 +297,12 @@ def fetch_bse_corporate_actions(
     owned = client is None
     if owned:
         client = warmed_bse_client()
-    code = scripcode or lookup_bse_scripcode(symbol, client=client)
+    try:
+        code = scripcode or lookup_bse_scripcode(symbol, client=client)
+    except CorporateActionFetchError:
+        if owned:
+            client.close()
+        raise  # a lookup outage is surfaced, not masked as "no actions"
     if not code:
         if owned:
             client.close()

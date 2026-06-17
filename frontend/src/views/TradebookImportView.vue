@@ -67,23 +67,45 @@ function onDrop(event: DragEvent): void {
   const dropped = event.dataTransfer?.files?.[0]
   if (dropped) void loadFile(dropped)
 }
+// A tradebook is small (a few thousand rows); anything past this is almost
+// certainly the wrong file, and parsing it on the main thread would freeze the UI.
+const MAX_FILE_BYTES = 15 * 1024 * 1024
+const ALLOWED_FILE_EXT = /\.(csv|xlsx|xls)$/i
+
 async function loadFile(picked: File | null): Promise<void> {
   file.value = picked
   errorMessage.value = ''
+  headers.value = []
+  fileRows.value = []
   if (!picked) return
+  // Guard before handing the file to SheetJS: `accept` is advisory and bypassed
+  // by drag-drop, so validate type + size here.
+  if (!ALLOWED_FILE_EXT.test(picked.name)) {
+    errorMessage.value = 'Unsupported file — upload a CSV or XLSX export.'
+    file.value = null
+    return
+  }
+  if (picked.size > MAX_FILE_BYTES) {
+    errorMessage.value = `That file is too large (max ${MAX_FILE_BYTES / (1024 * 1024)} MB).`
+    file.value = null
+    return
+  }
+  parsing.value = true
   try {
     const parsed = await parseTabularFile(picked)
     headers.value = parsed.headers
     fileRows.value = parsed.rows
   } catch {
     errorMessage.value = 'Could not read this file — upload a CSV or XLSX export.'
-    headers.value = []
-    fileRows.value = []
+  } finally {
+    parsing.value = false
   }
 }
 
+const parsing = ref(false)
 const canParse = computed(
-  () => investorId.value != null && file.value != null && headers.value.length > 0,
+  () =>
+    investorId.value != null && file.value != null && headers.value.length > 0 && !parsing.value,
 )
 
 function toMapping(): void {
@@ -204,8 +226,16 @@ async function loadReconciliation(): Promise<void> {
   const res = await api.GET('/api/investors/{investor_id}/integrity', {
     params: { path: { investor_id: investorId.value } },
   })
-  const folio = account.value.folioNumber
-  integrityRows.value = (res.data ?? []).filter((r) => r.folio?.number === folio)
+  // Match the folio this import targeted. For an existing demat we hold its id
+  // (exact). For a manually-entered number we compare case/space-folded strings —
+  // the server stores the number we sent, and we don't learn the new folio's id
+  // back from the import result, so a raw `===` could miss on trivial formatting.
+  const norm = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, '').toUpperCase()
+  const targetId = folioMode.value === 'existing' ? selectedFolioId.value : null
+  const targetNumber = norm(account.value.folioNumber)
+  integrityRows.value = (res.data ?? []).filter((r) =>
+    targetId != null ? r.folio?.id === targetId : norm(r.folio?.number) === targetNumber,
+  )
 }
 // Full-history securities: a clean ledger (no opposing snapshot → full_history) or
 // one that matches its eCAS holding (reconciled). Counted across all rows, so a
@@ -309,13 +339,17 @@ watch(investorId, () => {
           type="file"
           accept=".csv,.xlsx,.xls,text/csv"
           class="file-input"
+          aria-label="Choose a tradebook CSV or XLSX file"
           @change="onPickFile"
         />
         <i class="pi pi-file-excel" aria-hidden="true" />
-        <span v-if="file" class="file-name">{{ file.name }}</span>
+        <span v-if="parsing" class="dropzone-hint"
+          ><i class="pi pi-spin pi-spinner" aria-hidden="true" /> Reading {{ file?.name }}…</span
+        >
+        <span v-else-if="file" class="file-name">{{ file.name }}</span>
         <span v-else class="dropzone-hint">Drop a CSV/XLSX tradebook here, or click to browse</span>
       </label>
-      <p v-if="file && headers.length" class="muted small">
+      <p v-if="file && headers.length && !parsing" class="muted small">
         {{ headers.length }} columns, {{ fileRows.length }} rows detected.
       </p>
 
@@ -348,6 +382,7 @@ watch(investorId, () => {
             option-label="label"
             option-value="value"
             class="map-select"
+            :aria-label="`Source column for ${f.label}`"
           />
         </div>
       </div>
@@ -357,7 +392,8 @@ watch(investorId, () => {
         Which demat account is this tradebook for? Using the real account number lets it reconcile
         against your eCAS holdings.
       </p>
-      <div v-if="demat.length" class="field">
+      <fieldset v-if="demat.length" class="field demat-modes">
+        <legend class="field-label">How is this account identified?</legend>
         <label class="radio">
           <input v-model="folioMode" type="radio" value="existing" /> Pick an account I’ve imported
         </label>
@@ -368,11 +404,12 @@ watch(investorId, () => {
           option-label="label"
           option-value="value"
           placeholder="Choose a demat account"
+          aria-label="Choose a demat account"
         />
         <label class="radio">
           <input v-model="folioMode" type="radio" value="manual" /> Enter an account number
         </label>
-      </div>
+      </fieldset>
       <template v-if="folioMode === 'manual'">
         <label class="field">
           <span class="field-label">Demat account number (BO ID)</span>
@@ -461,7 +498,7 @@ watch(investorId, () => {
         <div v-if="anchorRows.length" class="panel">
           <h2 class="step-title">Reconciled against your eCAS holdings</h2>
           <ul class="recon">
-            <li v-for="r in anchorRows" :key="r.security.isin || r.security.id">
+            <li v-for="r in anchorRows" :key="`${r.security.id}-${r.folio?.id ?? r.folio?.number}`">
               <span class="sec-name">{{ r.security.name }}</span>
               <span class="recon-units muted small">
                 ledger {{ r.units_from_transactions ?? 0 }} · eCAS {{ r.units_from_holdings }}
@@ -484,7 +521,7 @@ watch(investorId, () => {
             earlier-period tradebook to complete them.
           </p>
           <ul class="incomplete">
-            <li v-for="s in result.incomplete_history" :key="s.security">
+            <li v-for="(s, i) in result.incomplete_history" :key="s.isin || `${s.security}-${i}`">
               <span class="sec-name">{{ s.security }}</span>
               <span class="muted small"
                 >{{ s.missing_prior_units }} units missing before the file</span
@@ -597,6 +634,17 @@ watch(investorId, () => {
   display: flex;
   flex-direction: column;
   gap: var(--fm-space-2);
+}
+/* The demat-mode radios are grouped in a <fieldset> for screen-reader semantics;
+   strip the browser's default fieldset chrome so it looks like a plain .field. */
+.demat-modes {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.demat-modes > legend {
+  padding: 0;
 }
 .field-label {
   font-size: 0.875rem;
