@@ -158,6 +158,29 @@ export function isValidDematNumber(value: string): boolean {
   return DEMAT_NUMBER_RE.test(value.trim().toUpperCase())
 }
 
+const NUMERIC_FIELD_KEYS = new Set([
+  'units',
+  'price',
+  'amount',
+  'fees',
+  'stamp_duty',
+  'brokerage',
+])
+
+/**
+ * Strip locale formatting from a numeric cell (thousands separators, currency
+ * glyphs) so the backend ``Decimal()`` parse accepts XLSX display strings.
+ */
+export function normalizeDecimalCell(value: string): string {
+  const s = value.trim()
+  if (!s) return ''
+  if (/^-?\d+(\.\d+)?$/.test(s)) return s
+  const neg = s.startsWith('-')
+  const body = s.replace(/[₹$€£,\s]/g, '').replace(/[^\d.]/g, '')
+  if (!body) return s
+  return neg && !body.startsWith('-') ? `-${body}` : body
+}
+
 export interface CanonicalOptions {
   /** Demat account number (BO ID) the whole import attaches to. */
   folioNumber: string
@@ -185,7 +208,11 @@ export function buildCanonicalRows(
     const row: Record<string, string> = {}
     for (const field of CANONICAL_FIELDS) {
       const header = mapping[field.key]
-      row[field.key] = header ? (fileRow[header] ?? '').trim() : ''
+      let cell = header ? (fileRow[header] ?? '').trim() : ''
+      if (cell && NUMERIC_FIELD_KEYS.has(field.key)) {
+        cell = normalizeDecimalCell(cell)
+      }
+      row[field.key] = cell
     }
     // Skip a row that mapped to nothing (blank spreadsheet tail).
     if (CANONICAL_FIELDS.every((f) => !row[f.key])) continue

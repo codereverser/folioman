@@ -2144,7 +2144,6 @@
             "title": "Dividend Yield On Cost"
           },
           "dividends": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/DividendTimelineRow"
             },

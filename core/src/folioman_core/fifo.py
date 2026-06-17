@@ -236,6 +236,11 @@ class FIFOUnits:
 
     def _refresh_average(self) -> None:
         if abs(self.balance) <= _BALANCE_EPSILON:
+            # Dust long lots (e.g. fractional entitlement after a reverse split)
+            # keep their proportional cost; only flat positions zero out.
+            if self.balance > _ZERO:
+                self.average = self.invested / self.balance
+                return
             self.average = _ZERO
             self.invested = _ZERO
             return

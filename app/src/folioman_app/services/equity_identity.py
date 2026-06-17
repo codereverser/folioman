@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 
+from django.utils import timezone
 from folioman_core.models import SecurityType
 
 from folioman_app.models import Security
@@ -55,6 +56,7 @@ def resolve_equity_identity(securities: Iterable[Security]) -> list[Security]:
         data = {}
 
     unresolved: list[Security] = []
+    to_update: list[Security] = []
     for sec in equities:
         hit = data.get(sec.isin)
         fields: list[str] = []
@@ -83,6 +85,15 @@ def resolve_equity_identity(securities: Iterable[Security]) -> list[Security]:
         sec.metadata = meta
 
         if fields:
-            # dict.fromkeys dedupes while preserving order.
-            sec.save(update_fields=[*dict.fromkeys([*fields, "updated_at"])])
+            to_update.append(sec)
+
+    if to_update:
+        now = timezone.now()
+        for sec in to_update:
+            sec.updated_at = now
+        Security.objects.bulk_update(
+            to_update,
+            ["name", "symbol", "exchange", "metadata", "updated_at"],
+            batch_size=500,
+        )
     return unresolved

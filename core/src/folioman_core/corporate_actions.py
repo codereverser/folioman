@@ -16,6 +16,20 @@ _ZERO = Decimal("0")
 # Tradebook / corp-action feeds are reliable for cost basis from this date onward.
 COST_BASIS_RELIABLE_SINCE = date(2016, 1, 1)
 
+
+def _lot_source_key(txn: Transaction) -> int | tuple:
+    """Stable open-lot identity — survives object copies when ``ledger_id`` is set."""
+    if txn.ledger_id is not None:
+        return txn.ledger_id
+    return (
+        txn.date,
+        txn.type,
+        txn.source_ref or "",
+        txn.units,
+        txn.nav_or_price,
+    )
+
+
 _EVENT_ORDER: dict[CorpActionType, int] = {
     CorpActionType.SPLIT: 0,
     CorpActionType.MERGER: 1,
@@ -243,9 +257,9 @@ def apply_demerger(
         else:
             rebuilt_parent_pre.append(txn)
 
-    open_by_source: dict[int, Decimal] = {}
+    open_by_source: dict[int | tuple, Decimal] = {}
     for lot_units, _lot_price, _acquired_on, _lot_stamp, src in lot_queue:
-        key = id(src)
+        key = _lot_source_key(src)
         open_by_source[key] = open_by_source.get(key, _ZERO) + lot_units
 
     scaled_parent_pre: list[Transaction] = []
@@ -257,7 +271,7 @@ def apply_demerger(
         ):
             scaled_parent_pre.append(txn)
             continue
-        remaining = open_by_source.get(id(txn), _ZERO)
+        remaining = open_by_source.get(_lot_source_key(txn), _ZERO)
         if remaining <= _ZERO:
             scaled_parent_pre.append(txn)
             continue

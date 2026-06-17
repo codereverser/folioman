@@ -4,6 +4,7 @@ import {
   buildCanonicalRows,
   isValidDematNumber,
   mappingErrors,
+  normalizeDecimalCell,
 } from './tradebook'
 
 describe('autoDetectMapping', () => {
@@ -77,6 +78,17 @@ describe('isValidDematNumber', () => {
   })
 })
 
+describe('normalizeDecimalCell', () => {
+  it('strips thousands separators and currency glyphs', () => {
+    expect(normalizeDecimalCell('2,800.00')).toBe('2800.00')
+    expect(normalizeDecimalCell('₹2,800')).toBe('2800')
+  })
+
+  it('leaves plain decimals unchanged', () => {
+    expect(normalizeDecimalCell('50.000000')).toBe('50.000000')
+  })
+})
+
 describe('buildCanonicalRows', () => {
   const mapping = {
     date: 'trade_date',
@@ -136,6 +148,23 @@ describe('buildCanonicalRows', () => {
     const built = buildCanonicalRows(rows, mapping, opts)
     expect(built[0].name).toBe('RELIANCE')
     expect(built[1].name).toBe('INE999')
+  })
+
+  it('normalizes formatted numeric columns from XLSX display strings', () => {
+    const rows = [
+      {
+        symbol: 'RELIANCE',
+        isin: 'INE002A01018',
+        trade_date: '2024-01-15',
+        trade_type: 'buy',
+        quantity: '2,800.00',
+        price: '₹2,800',
+        trade_id: 'T1',
+      },
+    ]
+    const [row] = buildCanonicalRows(rows, mapping, opts)
+    expect(row.units).toBe('2800.00')
+    expect(row.price).toBe('2800')
   })
 
   it('drops a fully-blank trailing row', () => {

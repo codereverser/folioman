@@ -96,6 +96,19 @@ def test_identity_change_needs_review():
     assert p.needs_review is True
 
 
+def test_reverse_split_needs_review():
+    p = parse_subject("Reverse Stock Split 1:10")
+    assert p.type is CorpActionType.SPLIT
+    assert p.needs_review is True
+    assert p.unit_multiplier is None
+
+
+def test_consolidation_needs_review():
+    p = parse_subject("Share Consolidation 10:1")
+    assert p.type is CorpActionType.SPLIT
+    assert p.needs_review is True
+
+
 def test_unknown_subject_flagged_not_dropped():
     p = parse_subject("Annual General Meeting")
     assert p.type is CorpActionType.UNKNOWN

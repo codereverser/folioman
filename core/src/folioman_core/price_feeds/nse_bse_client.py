@@ -32,6 +32,9 @@ import httpx
 NSE_BASE_URL = "https://www.nseindia.com"
 BSE_BASE_URL = "https://www.bseindia.com"
 DEFAULT_TIMEOUT = 30.0
+MAX_REDIRECTS = 5
+# Cap exchange JSON bodies before parsing — date windows are chunked, not bytes.
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 # NSE/BSE reject empty / non-browser User-Agents; mimic a real client. Kept in one
 # place so a required-header change is a single edit.
@@ -55,6 +58,16 @@ _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 _MAX_RETRIES = 3
 _BACKOFF_BASE = 0.5  # seconds; attempt n waits _BACKOFF_BASE * 2**n
 _SLEEP = time.sleep
+
+
+class ResponseTooLargeError(httpx.HTTPError):
+    """An exchange response body exceeded ``MAX_RESPONSE_BYTES``.
+
+    Subclasses ``httpx.HTTPError`` so existing callers (which already handle
+    ``raise_for_status`` / ``httpx.HTTPError``) treat an oversized body like any
+    other failed request — recorded and moved past, never retried (retrying would
+    just re-download it) and never buffered whole.
+    """
 
 
 class ExchangeClient:
@@ -85,6 +98,7 @@ class ExchangeClient:
             headers=headers or BROWSER_HEADERS,
             timeout=timeout,
             follow_redirects=True,
+            max_redirects=MAX_REDIRECTS,
         )
 
     @property
@@ -116,7 +130,7 @@ class ExchangeClient:
         last_exc: httpx.TransportError | None = None
         for attempt in range(_MAX_RETRIES + 1):
             try:
-                response = self._client.get(path, params=params, headers=headers)
+                response = self._capped_get(path, params=params, headers=headers)
             except httpx.TransportError as exc:
                 last_exc = exc
                 last_response = None
@@ -130,6 +144,50 @@ class ExchangeClient:
         if last_response is not None:
             return last_response
         raise last_exc  # transport error that never cleared
+
+    def _capped_get(
+        self,
+        path: str,
+        *,
+        params: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        """GET with a hard body-size cap, returned as a buffered response.
+
+        NSE/BSE are untrusted: a plain ``.get`` reads the whole body into memory
+        before any size check, so a hostile/compromised endpoint (or a gzip bomb)
+        can OOM the process. Stream instead and abort once the *decoded* bytes pass
+        ``MAX_RESPONSE_BYTES`` — ``Content-Length`` is only a hint (it can be absent
+        or lied about, and counts compressed bytes), so the streamed tally is the
+        real guard. The capped body is rebuilt into a normal ``httpx.Response`` so
+        callers keep using ``.json()`` / ``.content`` / ``raise_for_status``.
+        """
+        with self._client.stream("GET", path, params=params, headers=headers) as response:
+            declared = response.headers.get("content-length")
+            if declared is not None and declared.isdigit() and int(declared) > MAX_RESPONSE_BYTES:
+                msg = f"exchange response too large (declared {declared} bytes)"
+                raise ResponseTooLargeError(msg)
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in response.iter_bytes():
+                total += len(chunk)
+                if total > MAX_RESPONSE_BYTES:
+                    msg = f"exchange response exceeded {MAX_RESPONSE_BYTES} bytes"
+                    raise ResponseTooLargeError(msg)
+                chunks.append(chunk)
+        # ``iter_bytes`` already decoded the body, so the original transfer headers
+        # no longer describe it; drop them and let httpx set them from ``content``.
+        clean_headers = [
+            (k, v)
+            for k, v in response.headers.multi_items()
+            if k.lower() not in ("content-encoding", "content-length")
+        ]
+        return httpx.Response(
+            status_code=response.status_code,
+            headers=clean_headers,
+            content=b"".join(chunks),
+            request=response.request,
+        )
 
     def close(self) -> None:
         if self._owns_client:

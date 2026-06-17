@@ -52,6 +52,18 @@ class CorporateActionFetchError(Exception):
     """Raised when no chunk yielded parseable corporate-action data."""
 
 
+# Date windows are chunked; cap each response body before ``.json()`` (OOM guard).
+_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+def _bounded_json(response: httpx.Response) -> object:
+    nbytes = len(response.content)
+    if nbytes > _MAX_RESPONSE_BYTES:
+        msg = f"exchange response too large ({nbytes} bytes)"
+        raise CorporateActionFetchError(msg)
+    return response.json()
+
+
 def warmed_nse_client() -> ExchangeClient:
     """Return an NSE client with session cookies primed."""
     return nse_client()
@@ -217,7 +229,7 @@ def fetch_nse_corporate_actions(
             if "application/json" not in response.headers.get("content-type", ""):
                 last_error = CorporateActionFetchError(f"nse corp-actions {symbol}: non-JSON")
                 continue
-            payload = response.json()
+            payload = _bounded_json(response)
             if not isinstance(payload, list):
                 last_error = CorporateActionFetchError(
                     f"nse corp-actions {symbol}: unexpected shape"
@@ -312,7 +324,7 @@ def fetch_bse_corporate_actions(
             if "application/json" not in response.headers.get("content-type", ""):
                 last_error = CorporateActionFetchError(f"bse corp-actions {symbol}: non-JSON")
                 continue
-            payload = response.json()
+            payload = _bounded_json(response)
             if not isinstance(payload, list):
                 last_error = CorporateActionFetchError(
                     f"bse corp-actions {symbol}: unexpected shape"

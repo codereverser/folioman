@@ -71,12 +71,18 @@ def _decimal(text: str) -> Decimal | None:
         return None
 
 
+_MAX_SUBJECT_LEN = 512
+
+
 def parse_subject(subject: str) -> ParsedCorporateAction:
     """Classify a corporate-action ``subject`` string."""
-    raw = subject or ""
+    raw = (subject or "")[:_MAX_SUBJECT_LEN]
     s = " ".join(raw.lower().split())
     if not s:
         return ParsedCorporateAction(CorpActionType.UNKNOWN, raw, needs_review=True)
+
+    if "reverse split" in s or "reverse stock split" in s or "consolidation" in s:
+        return ParsedCorporateAction(CorpActionType.SPLIT, raw, needs_review=True)
 
     # Face-value split ("Face Value Split From Rs 10 to Rs 2"): a stock split where
     # the unit factor is old face value / new face value.

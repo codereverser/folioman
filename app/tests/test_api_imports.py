@@ -219,3 +219,19 @@ def test_at_cap_upload_is_accepted(client, patch_cas, make_parsed_cas, settings)
     patch_cas(make_parsed_cas(mf=MfCasStatement(schemes=[]), pan="ABCDE1234F"))
     upload = SimpleUploadedFile("cams.pdf", b"%PDF fake")  # 9 bytes
     assert client.post("/api/imports/cas", {"file": upload, "password": "s"}).status_code == 201
+
+
+def test_upload_without_content_length_is_capped(settings):
+    """A missing ``size`` must not bypass the byte cap (read limit+1)."""
+    from unittest.mock import MagicMock
+
+    from folioman_app.api.imports import _read_upload
+    from ninja.errors import HttpError
+
+    settings.MAX_UPLOAD_BYTES = 8
+    upload = MagicMock()
+    upload.size = None
+    upload.read.return_value = b"%PDF more than eight bytes"
+    with pytest.raises(HttpError) as exc:
+        _read_upload(upload)
+    assert exc.value.status_code == 413

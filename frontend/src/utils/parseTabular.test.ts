@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rowsFromMatrix } from './parseTabular'
+import { cellToString, rowsFromMatrix } from './parseTabular'
 
 describe('rowsFromMatrix', () => {
   it('uses the first row as headers and keys each row by them', () => {
@@ -35,5 +35,16 @@ describe('rowsFromMatrix', () => {
 
   it('returns empty for an empty matrix', () => {
     expect(rowsFromMatrix([])).toEqual({ headers: [], rows: [] })
+  })
+})
+
+describe('cellToString', () => {
+  it('formats Date cells as ISO dates', () => {
+    expect(cellToString(new Date('2024-01-15T12:00:00Z'))).toBe('2024-01-15')
+  })
+
+  it('stringifies numeric cells without locale formatting', () => {
+    expect(cellToString(2800)).toBe('2800')
+    expect(cellToString(50.5)).toBe('50.5')
   })
 })

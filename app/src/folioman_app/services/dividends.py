@@ -152,11 +152,14 @@ def build_equity_dividend_detail(
     if not schedule:
         return empty
 
-    has_ledger = investor.transactions.filter(security=security).exists()
+    ledger_orm_txns = list(
+        investor.transactions.filter(security=security).select_related("folio", "security")
+    )
+    has_ledger = bool(ledger_orm_txns)
     attributed_amounts: dict[int, Decimal] = {}
-    for txn in investor.transactions.filter(
-        security=security, transaction_type=TransactionType.DIVIDEND.value
-    ):
+    for txn in ledger_orm_txns:
+        if txn.transaction_type != TransactionType.DIVIDEND.value:
+            continue
         ref = txn.source_ref or ""
         if not ref.startswith("dividend:ca-ref:"):
             continue
@@ -169,10 +172,9 @@ def build_equity_dividend_detail(
     from folioman_core.corporate_actions import held_units_asof
 
     core_security = to_core_security(security)
-    ledger_cores = [
-        to_core_transaction(t)
-        for t in investor.transactions.filter(security=security).select_related("folio", "security")
-    ]
+    ledger_cores = [to_core_transaction(t) for t in ledger_orm_txns]
+    folio_ids = {t.folio_id for t in ledger_orm_txns if t.folio_id}
+    folios_by_id = {f.id: f for f in Folio.objects.filter(id__in=folio_ids)}
 
     rows: list[dict] = []
     for event in schedule:
@@ -187,10 +189,8 @@ def build_equity_dividend_detail(
         }
         if has_ledger and event.ex_date <= as_of:
             units = _ZERO
-            for folio_id in {
-                t.folio_id for t in investor.transactions.filter(security=security) if t.folio_id
-            }:
-                folio = Folio.objects.filter(pk=folio_id).first()
+            for folio_id in folio_ids:
+                folio = folios_by_id.get(folio_id)
                 if folio is None:
                     continue
                 held = held_units_asof(
@@ -216,12 +216,7 @@ def build_equity_dividend_detail(
         rows.append(row)
 
     received = sum(
-        (
-            txn.amount or _ZERO
-            for txn in investor.transactions.filter(
-                security=security, transaction_type=TransactionType.DIVIDEND.value
-            )
-        ),
+        (row["amount_inr"] or _ZERO for row in rows if row["kind"] in ("attributed", "computed")),
         _ZERO,
     )
     received_out = received if has_ledger and received > _ZERO else None

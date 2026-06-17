@@ -132,6 +132,41 @@ def test_transport_error_retried_then_reraised():
     assert calls["n"] == nse_bse_client._MAX_RETRIES + 1
 
 
+def test_response_size_cap_rejects_declared_oversize(monkeypatch):
+    # A body whose Content-Length already exceeds the cap is rejected before any
+    # bytes are buffered.
+    monkeypatch.setattr(nse_bse_client, "MAX_RESPONSE_BYTES", 100)
+
+    def handler(request):
+        return httpx.Response(200, content=b"x" * 500)
+
+    with pytest.raises(nse_bse_client.ResponseTooLargeError):
+        _wrap(handler).get("/data")
+
+
+def test_response_size_cap_streams_and_aborts_without_content_length(monkeypatch):
+    # An iterator body is chunked (no Content-Length), so the streamed byte tally
+    # is the only guard — mirrors a hostile endpoint that omits/lies about length.
+    monkeypatch.setattr(nse_bse_client, "MAX_RESPONSE_BYTES", 100)
+
+    def handler(request):
+        return httpx.Response(200, content=iter([b"x" * 60, b"x" * 60]))
+
+    with pytest.raises(nse_bse_client.ResponseTooLargeError):
+        _wrap(handler).get("/data")
+
+
+def test_capped_get_preserves_body_under_cap():
+    # The rebuilt buffered response still exposes JSON + content-type for callers.
+    def handler(request):
+        return httpx.Response(200, json={"ok": True}, headers={"content-type": "application/json"})
+
+    resp = _wrap(handler).get("/data")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert "application/json" in resp.headers.get("content-type", "")
+
+
 def test_factories_warm_and_target_each_exchange():
     nse_paths: list[str] = []
     bse_paths: list[str] = []

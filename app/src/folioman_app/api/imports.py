@@ -49,12 +49,17 @@ def _read_upload(file: UploadedFile) -> bytes:
     """Read an uploaded CAS within the size cap, else 413.
 
     The whole file is parsed in memory, so an unbounded read is the OOM/DoS
-    vector. Checked before ``read()`` so a hostile body is never materialised."""
+    vector. Checked before ``read()`` when ``size`` is known; always cap the
+    actual bytes read so a missing/forged ``Content-Length`` cannot bypass it."""
     limit = settings.MAX_UPLOAD_BYTES
     if file.size is not None and file.size > limit:
         mb = limit // (1024 * 1024)
         raise HttpError(413, f"File too large. The maximum statement size is {mb} MB.")
-    return file.read()
+    data = file.read(limit + 1)
+    if len(data) > limit:
+        mb = limit // (1024 * 1024)
+        raise HttpError(413, f"File too large. The maximum statement size is {mb} MB.")
+    return data
 
 
 def _parse_cas(content: bytes, password: str):

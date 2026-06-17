@@ -233,3 +233,15 @@ def test_cross_feed_dedupes_same_action():
     )
     assert len(events) == 1
     assert events[0].exchange == "NSE"
+
+
+def test_bounded_json_rejects_oversized_response():
+    from folioman_core.price_feeds.corporate_actions_fetch import (
+        _MAX_RESPONSE_BYTES,
+        _bounded_json,
+    )
+
+    body = b"x" * (_MAX_RESPONSE_BYTES + 1)
+    response = httpx.Response(200, content=body)
+    with pytest.raises(CorporateActionFetchError, match="too large"):
+        _bounded_json(response)
