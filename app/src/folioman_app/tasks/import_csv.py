@@ -27,6 +27,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import logging
 import re
 from datetime import date as date_cls
 from decimal import Decimal, InvalidOperation
@@ -47,6 +48,8 @@ from folioman_app.services.equity_identity import resolve_equity_identity
 from folioman_app.services.imports import register_processor
 from folioman_app.tasks._upsert import upsert_folio, upsert_security
 from folioman_app.tasks.reconcile import reconcile_after_import, reconcile_security_folio
+
+logger = logging.getLogger(__name__)
 
 _REQUIRED_COLUMNS = ("security_type", "name", "date", "transaction_type", "units", "price")
 _METADATA_COLUMNS = ("coin_id", "principal", "rate", "account_ref")
@@ -333,14 +336,26 @@ def process_csv(
         affected[security.id] = security
         summary["created" if created else "skipped"] += 1
 
+    # The row loop has already committed; the post-import passes below run outside
+    # those atomic blocks, so an exception here must not propagate as a 500 that
+    # leaves committed rows unresolved/unreconciled with no record. Each pass is
+    # isolated and any failure is surfaced as a warning (mirrors
+    # ``reconcile_after_import``'s per-security isolation).
+    warnings: list[dict] = []
+
     # Trust the ISIN, not the import-supplied name: resolve each equity's
     # authoritative name + trading symbol + exchange from the ISIN DB (also makes
     # it priceable). A miss keeps the provisional name and is reported, not fatal.
-    unresolved = resolve_equity_identity(affected.values())
-    if unresolved:
-        summary["unresolved_securities"] = [
-            {"name": s.name, "isin": s.isin, "symbol": s.symbol} for s in unresolved
-        ]
+    try:
+        unresolved = resolve_equity_identity(affected.values())
+    except Exception as exc:  # don't 500 after rows are committed
+        logger.exception("csv import: equity identity resolution failed (job %s)", job.id)
+        warnings.append({"stage": "identity_resolution", "error": str(exc)})
+    else:
+        if unresolved:
+            summary["unresolved_securities"] = [
+                {"name": s.name, "isin": s.isin, "symbol": s.symbol} for s in unresolved
+            ]
 
     # Mark incomplete-history ledgers (orphan sells) before reconciling, so a
     # mid-history tradebook doesn't feed FIFO-underflowing rows into cost basis,
@@ -349,9 +364,18 @@ def process_csv(
     for security in affected.values():
         if security.security_type == SecurityType.MF.value:
             continue
-        incomplete.extend(_reconcile_cost_basis_completeness(job.investor, security))
+        try:
+            incomplete.extend(_reconcile_cost_basis_completeness(job.investor, security))
+        except Exception as exc:  # isolate one security's failure from the rest
+            logger.exception(
+                "csv import: completeness check failed for %s (job %s)", security.isin, job.id
+            )
+            warnings.append({"stage": "completeness", "isin": security.isin, "error": str(exc)})
     if incomplete:
         summary["incomplete_history"] = incomplete
+
+    if warnings:
+        summary["post_import_warnings"] = warnings
 
     errors = reconcile_after_import(job.investor, affected.values())
     if errors:

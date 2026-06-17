@@ -17,9 +17,10 @@ import {
   CANONICAL_COLUMNS,
   CANONICAL_FIELDS,
   autoDetectMapping,
-  buildCanonicalRows,
   isValidDematNumber,
+  mapCanonicalRows,
   mappingErrors,
+  stampImportConstants,
   type Mapping,
 } from '@/utils/tradebook'
 import { parseTabularFile } from '@/utils/parseTabular'
@@ -155,12 +156,20 @@ const accountErrors = computed(() => {
 
 const blockingErrors = computed(() => [...mappingErrors(mapping.value), ...accountErrors.value])
 
-const canonicalRows = computed(() =>
+// Heavy pass — maps every file row; depends only on the file + column mapping, so
+// editing the demat account/broker field doesn't rebuild the whole matrix (the
+// per-import constants are stamped on at emit time instead).
+const mappedRows = computed(() =>
+  mappingErrors(mapping.value).length > 0 ? [] : mapCanonicalRows(fileRows.value, mapping.value),
+)
+// Cheap: restamp only the 20-row preview slice with the demat/broker constants.
+const previewRows = computed(() =>
   blockingErrors.value.length > 0
     ? []
-    : buildCanonicalRows(fileRows.value, mapping.value, account.value),
+    : stampImportConstants(mappedRows.value.slice(0, 20), account.value),
 )
-const previewRows = computed(() => canonicalRows.value.slice(0, 20))
+// Total importable rows, gated like the preview (hidden until blocking errors clear).
+const rowCount = computed(() => (blockingErrors.value.length > 0 ? 0 : mappedRows.value.length))
 
 // --- step 3: import + result ------------------------------------------------
 const job = ref<ImportJobOut | null>(null)
@@ -215,7 +224,7 @@ async function runImport(): Promise<void> {
   busy.value = true
   errorMessage.value = ''
   try {
-    const csv = toCsv(CANONICAL_COLUMNS, canonicalRows.value)
+    const csv = toCsv(CANONICAL_COLUMNS, stampImportConstants(mappedRows.value, account.value))
     job.value = await importTransactionsCsv(
       investorId.value,
       csv,
@@ -388,8 +397,8 @@ watch(investorId, () => {
       </Message>
 
       <!-- Live preview of the mapped canonical rows -->
-      <template v-if="canonicalRows.length">
-        <h2 class="step-title">Preview ({{ canonicalRows.length }} rows)</h2>
+      <template v-if="rowCount">
+        <h2 class="step-title">Preview ({{ rowCount }} rows)</h2>
         <DataTable :value="previewRows" size="small" class="preview">
           <Column field="date" header="Date" />
           <Column field="transaction_type" header="Type" />
@@ -397,8 +406,8 @@ watch(investorId, () => {
           <Column field="units" header="Units" />
           <Column field="price" header="Price" />
         </DataTable>
-        <p v-if="canonicalRows.length > previewRows.length" class="muted small">
-          Showing first {{ previewRows.length }} of {{ canonicalRows.length }}.
+        <p v-if="rowCount > previewRows.length" class="muted small">
+          Showing first {{ previewRows.length }} of {{ rowCount }}.
         </p>
       </template>
 

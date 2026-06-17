@@ -191,18 +191,19 @@ export interface CanonicalOptions {
 }
 
 /**
- * Project parsed file rows onto canonical rows via `mapping`, injecting the
- * per-import constants. `name` falls back to the symbol then the ISIN when the
- * file carries no name column, so the backend's name requirement is met before
- * the ISIN→name resolver (E5) lands. Rows whose mapped values are all blank are
- * dropped (trailing empty lines from spreadsheets).
+ * Project parsed file rows onto canonical rows via `mapping` — the heavy pass.
+ * `name` falls back to the symbol then the ISIN when the file carries no name
+ * column, so the backend's name requirement is met before the ISIN→name resolver
+ * (E5) lands. Rows whose mapped values are all blank are dropped (trailing empty
+ * lines from spreadsheets). The per-import constants (folio/broker) are NOT set
+ * here — see `stampImportConstants` — so this only re-runs when the file or the
+ * mapping changes, not when the demat field is edited.
  */
-export function buildCanonicalRows(
+export function mapCanonicalRows(
   fileRows: Record<string, string>[],
   mapping: Mapping,
-  options: CanonicalOptions,
+  securityType = 'equity',
 ): Record<string, string>[] {
-  const securityType = options.securityType ?? 'equity'
   const out: Record<string, string>[] = []
   for (const fileRow of fileRows) {
     const row: Record<string, string> = {}
@@ -218,9 +219,35 @@ export function buildCanonicalRows(
     if (CANONICAL_FIELDS.every((f) => !row[f.key])) continue
     if (!row.name) row.name = row.symbol || row.isin || ''
     row.security_type = securityType
-    row.folio_number = options.folioNumber
-    row.broker = options.broker
     out.push(row)
   }
   return out
+}
+
+/**
+ * Stamp the per-import constants (demat folio + broker) onto already-mapped rows.
+ * Cheap and non-mutating (returns new row objects), so it's safe to run on a
+ * preview slice every keystroke without rebuilding the whole mapped matrix.
+ */
+export function stampImportConstants(
+  rows: Record<string, string>[],
+  options: Pick<CanonicalOptions, 'folioNumber' | 'broker'>,
+): Record<string, string>[] {
+  return rows.map((row) => ({
+    ...row,
+    folio_number: options.folioNumber,
+    broker: options.broker,
+  }))
+}
+
+/** Map + stamp in one pass. Equivalent to the old single-pass builder. */
+export function buildCanonicalRows(
+  fileRows: Record<string, string>[],
+  mapping: Mapping,
+  options: CanonicalOptions,
+): Record<string, string>[] {
+  return stampImportConstants(
+    mapCanonicalRows(fileRows, mapping, options.securityType),
+    options,
+  )
 }
