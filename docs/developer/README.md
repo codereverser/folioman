@@ -11,6 +11,7 @@ Deeper dives live alongside this file:
 - [Desktop build internals](desktop-build.md) — the Nuitka spec, cross-platform notes, signing.
 - [Server internals](server.md) — gunicorn entrypoint, the Docker image, the scheduler service.
 - [Valuation scheduler](valuation-scheduler.md) — how background valuation is triggered and scaled.
+- [Tradebook import](tradebook-import.md) — canonical CSV contract and the frontend mapping layer.
 
 ## Repository layout
 

@@ -1,0 +1,2 @@
+symbol,isin,trade_date,exchange,segment,series,trade_type,auction,quantity,price,trade_id,order_id,order_execution_time
+SUZLON,INE040H01021,2018-10-03,NSE,EQ,EQ,sell,false,600.000000,5.800000,T2018100301,O2018100301,2018-10-03T09:54:01
