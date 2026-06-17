@@ -380,3 +380,56 @@ def test_net_units_from_transactions():
         ),
     ]
     assert net_units_from_transactions(txns) == Decimal("80")
+
+
+def _buy_with_cost_total(
+    units: str, nav: str, cost_total: str, *, on: date = date(2024, 1, 1)
+) -> Transaction:
+    """A buy whose exact lot cost was preserved by a corporate action."""
+    return Transaction(
+        security=_MF,
+        date=on,
+        type=TransactionType.BUY,
+        units=units,
+        nav_or_price=nav,
+        cost_total=cost_total,
+        source=TransactionSource.CORPORATE_ACTION,
+    )
+
+
+def test_cost_total_carries_exact_lot_cost():
+    # A 1:3 split rewrote a ₹100,000 lot to 300 units; the persisted 6dp per-unit
+    # (333.333333) would lose ₹0.0001, but cost_total preserves the exact total.
+    fifo = FIFOUnits()
+    fifo.add_transaction(_buy_with_cost_total("300", "333.333333", "100000"))
+    assert fifo.invested == Decimal("100000")
+
+
+def test_cost_total_preserved_through_full_disposal():
+    fifo = apply_fifo(
+        [
+            _buy_with_cost_total("300", "333.333333", "100000", on=date(2024, 1, 1)),
+            _sell("300", "500", on=date(2024, 6, 1)),
+        ]
+    )
+    # Realised = 300*500 - 100000 = 50000 exactly (no per-unit drift).
+    assert fifo.pnl == Decimal("50000")
+    assert fifo.balance == Decimal("0")
+
+
+def test_cost_total_partial_disposals_apportion_without_residue():
+    fifo = FIFOUnits()
+    fifo.add_transaction(_buy_with_cost_total("300", "333.333333", "100000"))
+    fifo.sell(Decimal("100"), Decimal("400"), security=_MF, sold_on=date(2024, 6, 1))
+    fifo.sell(Decimal("200"), Decimal("400"), security=_MF, sold_on=date(2024, 7, 1))
+    # The full lot is consumed; apportioned costs sum back to the exact total, so
+    # invested returns to exactly zero with no rounding residue left behind.
+    assert fifo.balance == Decimal("0")
+    assert fifo.invested == Decimal("0")
+
+
+def test_without_cost_total_persisted_per_unit_drifts():
+    # Contrast: the same split without a preserved total reconstructs cost from the
+    # 6dp per-unit (300 * 333.333333 = 99999.9999), drifting the realised gain.
+    fifo = apply_fifo([_buy("300", "333.333333"), _sell("300", "500")])
+    assert fifo.pnl == Decimal("50000.0001")

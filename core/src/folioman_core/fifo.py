@@ -88,7 +88,10 @@ class FIFOUnits:
         invested: Decimal = _ZERO,
         average: Decimal = _ZERO,
     ) -> None:
-        # (units, cost_per_unit, acquired_on, stamp_duty_remaining)
+        # (units, cost_total_remaining, acquired_on, stamp_duty_remaining). Cost is
+        # carried as a TOTAL, not per-unit: an indivisible split/merger ratio makes
+        # per-unit a repeating decimal, so a total apportioned by units fraction is
+        # the only exact representation. Per-unit is derived (total / units) on read.
         self._lots: deque[tuple[Decimal, Decimal, date, Decimal]] = deque()
         self.balance = balance
         self.invested = invested
@@ -112,6 +115,7 @@ class FIFOUnits:
                 amount=txn.amount,
                 stamp_duty=txn.stamp_duty,
                 brokerage=txn.brokerage,
+                cost_total=txn.cost_total,
             )
         elif txn.type in (TransactionType.SELL, TransactionType.TRANSFER_OUT):
             self.sell(
@@ -149,22 +153,25 @@ class FIFOUnits:
         amount: Decimal | None = None,
         stamp_duty: Decimal = _ZERO,
         brokerage: Decimal = _ZERO,
+        cost_total: Decimal | None = None,
     ) -> None:
         if quantity <= _ZERO:
             msg = "buy quantity must be positive"
             raise ValueError(msg)
-        # Cost basis = NAV * units + buy-side brokerage (Section 48 cost of
-        # acquisition). Brokerage is folded into the lot's effective per-unit
-        # cost so it flows consistently through ``invested``, ``average``, FIFO
-        # disposal ``cost_per_unit``, and grandfathering. For CAS-sourced MF rows
-        # brokerage is 0, so cost stays NAV * units (matches casparser).
+        # Cost basis (Section 48 cost of acquisition), carried as a lot TOTAL:
+        #  - ``cost_total`` when a corporate action preserved it exactly (an
+        #    indivisible split/merger ratio makes per-unit a repeating decimal, so
+        #    only the total is exact);
+        #  - else NAV * units + buy-side brokerage. Brokerage enters cost; for
+        #    CAS-sourced MF rows it's 0, so cost stays NAV * units (matches casparser).
         # ``amount`` is the reported gross total — informational only, never the
         # basis. ``stamp_duty`` rides with the lot as a transfer charge - NOT in cost.
-        del amount  # keep the signature for back-compat; nav + brokerage is authoritative
-        effective_nav = nav + brokerage / quantity if brokerage else nav
+        # Per-unit cost is derived (total / units) on read, so it never drifts.
+        del amount  # keep the signature for back-compat; total above is authoritative
+        lot_cost_total = cost_total if cost_total is not None else quantity * nav + brokerage
         self.balance += quantity
-        self.invested += quantity * effective_nav
-        self._lots.append((quantity, effective_nav, acquired_on, stamp_duty))
+        self.invested += lot_cost_total
+        self._lots.append((quantity, lot_cost_total, acquired_on, stamp_duty))
         self._refresh_average()
 
     def sell(
@@ -187,9 +194,16 @@ class FIFOUnits:
             if not self._lots:
                 msg = f"cannot sell {quantity} units; only {self.balance} available"
                 raise InsufficientUnitsError(msg)
-            lot_units, lot_price, acquired_on, lot_stamp_remaining = self._lots[0]
+            lot_units, lot_cost_total, acquired_on, lot_stamp_remaining = self._lots[0]
             taken = min(lot_units, pending)
-            cost_price += taken * lot_price
+            # Apportion the lot's TOTAL cost by the consumed unit fraction. A full
+            # take consumes the whole total exactly (no division); a partial take
+            # leaves ``total - consumed`` on the lot, so the lot never loses cost to
+            # rounding and the per-unit drift from an indivisible CA ratio is avoided.
+            consumed_cost = (
+                lot_cost_total if taken == lot_units else taken / lot_units * lot_cost_total
+            )
+            cost_price += consumed_cost
             # Allocate this consumed slice's share of the lot's stamp duty, rounded
             # to 2dp (mirrors casparser's per-disposal allocation).
             if lot_stamp_remaining > _ZERO and lot_units > _ZERO:
@@ -205,17 +219,19 @@ class FIFOUnits:
                 ConsumedLot(
                     acquired_on=acquired_on,
                     units=taken,
-                    cost_per_unit=lot_price,
+                    # Per-unit derived from the consumed total — equals the lot's
+                    # total/units (constant across partial takes), no drift.
+                    cost_per_unit=consumed_cost / taken,
                     stamp_allocated=stamp_share,
                 )
             )
             pending -= taken
             remaining_lot_units = lot_units - taken
             if remaining_lot_units > _ZERO:
-                # Whatever stamp_duty hasn't been allocated stays with the lot.
+                # Whatever cost / stamp_duty hasn't been allocated stays with the lot.
                 self._lots[0] = (
                     remaining_lot_units,
-                    lot_price,
+                    lot_cost_total - consumed_cost,
                     acquired_on,
                     lot_stamp_remaining - stamp_share,
                 )
@@ -315,6 +331,11 @@ def open_lots_asof(
     for txn in subset:
         fifo.add_transaction(txn)
     return tuple(
-        OpenLot(units=units, cost_per_unit=cpu, acquired_on=acquired_on, stamp_duty=stamp)
-        for units, cpu, acquired_on, stamp in fifo._lots
+        OpenLot(
+            units=units,
+            cost_per_unit=total / units if units else _ZERO,
+            acquired_on=acquired_on,
+            stamp_duty=stamp,
+        )
+        for units, total, acquired_on, stamp in fifo._lots
     )
