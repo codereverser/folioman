@@ -524,6 +524,20 @@ class FolioBalanceOut(Schema):
     value_inr: Decimal | None
 
 
+class DividendTimelineRow(Schema):
+    """One dividend event on the equity scheme-detail timeline."""
+
+    reference_id: int
+    ex_date: date
+    record_date: date | None = None
+    dividend_per_share: Decimal
+    units: Decimal | None = None
+    amount_inr: Decimal | None = None
+    # schedule = feed only; attributed = on ledger; computed = ledger-eligible but
+    # not yet written; estimate = snapshot-only forward on current units.
+    kind: str
+
+
 class SchemeDetailOut(Schema):
     """Everything one scheme page needs in a single call: identity, current
     metrics, integrity per folio, the NAV history series, and the ledger."""
@@ -554,6 +568,10 @@ class SchemeDetailOut(Schema):
     # for a single-folio holding; the UI shows it only when held across >1 folio.
     folios: list[FolioBalanceOut]
     nav_history: list[NavPoint]
+    # Equity dividend schedule; empty for mutual funds.
+    dividends: list[DividendTimelineRow] = Field(default_factory=list)
+    dividends_received_inr: Decimal | None = None
+    dividend_yield_on_cost: float | None = None
     transactions: list[TransactionOut]
 
 

@@ -6,8 +6,11 @@ from decimal import Decimal
 import pytest
 from folioman_core.corporate_actions import (
     apply_bonus,
+    apply_demerger,
     apply_merger,
+    apply_reverse_split,
     apply_split,
+    cost_basis_complete_for_acquisition,
     record_dividend,
 )
 from folioman_core.fifo import apply_fifo
@@ -430,3 +433,124 @@ def test_apply_bonus_from_multiplier_is_idempotent_on_source_ref():
     )
     assert second == first
     assert sum(1 for t in second if t.type is TransactionType.BONUS) == 1
+
+
+# --- reverse split (E10.4) ---------------------------------------------------
+
+
+def test_apply_reverse_split_floors_fractional_entitlement():
+    """1:10 reverse split on 15 shares → 1 whole share (0.5 fractional sold)."""
+    txns = apply_reverse_split(
+        [_buy("15", "100", on=date(2020, 1, 1))],
+        ratio=Decimal("0.1"),
+        effective_date=date(2024, 6, 1),
+        security=_EQUITY,
+    )
+    fifo = apply_fifo([t for t in txns if t.type is not TransactionType.SPLIT])
+    assert fifo.balance == Decimal("1")
+    assert fifo.invested == Decimal("1000")
+
+
+def test_apply_reverse_split_rejects_forward_ratio():
+    with pytest.raises(ValueError, match="less than 1"):
+        apply_reverse_split(
+            [],
+            ratio=Decimal("2"),
+            effective_date=date(2024, 6, 1),
+            security=_EQUITY,
+        )
+
+
+def test_split_event_with_ratio_below_one_uses_reverse_split():
+    from folioman_core.corporate_action_subject import CorpActionType
+    from folioman_core.corporate_actions import (
+        CorporateActionApplyEvent,
+        apply_corporate_action_events,
+    )
+
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.SPLIT,
+            ex_date=date(2024, 6, 1),
+            security=_EQUITY,
+            unit_multiplier=Decimal("0.1"),
+        )
+    ]
+    txns = apply_corporate_action_events([_buy("15", "100", on=date(2020, 1, 1))], events)
+    fifo = apply_fifo([t for t in txns if t.type is not TransactionType.SPLIT])
+    assert fifo.balance == Decimal("1")
+
+
+# --- demerger (E10.4) --------------------------------------------------------
+
+_SPINCO = Security(
+    type=SecurityType.EQUITY,
+    name="SpinCo",
+    isin="INE999B01012",
+    symbol="SPINCO",
+)
+
+
+def test_apply_demerger_splits_cost_and_issues_child():
+    """100 parent @ ₹10 → 60% parent / 40% child, 1:1 spin → child matches parent units."""
+    txns = apply_demerger(
+        [_buy("100", "10", on=date(2020, 5, 1))],
+        parent_security=_EQUITY,
+        child_security=_SPINCO,
+        child_per_parent=Decimal("1"),
+        child_cost_fraction=Decimal("0.4"),
+        effective_date=date(2024, 7, 1),
+    )
+    parent_fifo = apply_fifo([t for t in txns if _same_isin(t.security, _EQUITY)])
+    child_fifo = apply_fifo([t for t in txns if _same_isin(t.security, _SPINCO)])
+    assert parent_fifo.balance == Decimal("100")
+    assert child_fifo.balance == Decimal("100")
+    assert parent_fifo.invested == Decimal("600")
+    assert child_fifo.invested == Decimal("400")
+
+
+def _same_isin(left: Security, right: Security) -> bool:
+    return bool(left.isin and right.isin and left.isin == right.isin)
+
+
+def test_apply_demerger_preserves_child_acquisition_date():
+    txns = apply_demerger(
+        [_buy("10", "100", on=date(2018, 3, 15))],
+        parent_security=_EQUITY,
+        child_security=_SPINCO,
+        child_per_parent=Decimal("1"),
+        child_cost_fraction=Decimal("0.5"),
+        effective_date=date(2024, 7, 1),
+    )
+    child = next(t for t in txns if _same_isin(t.security, _SPINCO))
+    assert child.date == date(2018, 3, 15)
+
+
+def test_apply_demerger_leaves_pre_demerger_realised_gain_unchanged():
+    txns = apply_demerger(
+        [
+            _buy("100", "10", on=date(2020, 1, 1)),
+            _sell("40", "15", on=date(2021, 6, 1)),
+        ],
+        parent_security=_EQUITY,
+        child_security=_SPINCO,
+        child_per_parent=Decimal("1"),
+        child_cost_fraction=Decimal("0.4"),
+        effective_date=date(2024, 7, 1),
+    )
+    pre_sell = apply_fifo(
+        [
+            _buy("100", "10", on=date(2020, 1, 1)),
+            _sell("40", "15", on=date(2021, 6, 1)),
+        ]
+    )
+    post_parent = apply_fifo([t for t in txns if _same_isin(t.security, _EQUITY)])
+    post_child = apply_fifo([t for t in txns if _same_isin(t.security, _SPINCO)])
+    assert pre_sell.pnl == post_parent.pnl
+    assert post_parent.balance == Decimal("60")
+    assert post_child.balance == Decimal("60")
+
+
+def test_cost_basis_complete_for_acquisition():
+    assert cost_basis_complete_for_acquisition(date(2016, 1, 1)) is True
+    assert cost_basis_complete_for_acquisition(date(2015, 12, 31)) is False

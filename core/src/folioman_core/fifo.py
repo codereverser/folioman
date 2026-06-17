@@ -25,6 +25,16 @@ class InsufficientUnitsError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class OpenLot:
+    """One open FIFO lot as of a cut-off date (units still held)."""
+
+    units: Decimal
+    cost_per_unit: Decimal
+    acquired_on: date
+    stamp_duty: Decimal = Decimal("0")
+
+
+@dataclass(frozen=True, slots=True)
 class ConsumedLot:
     """Units consumed from one FIFO lot on a sell.
 
@@ -266,3 +276,34 @@ def net_units_from_transactions(transactions: Iterable[Transaction]) -> Decimal:
         elif txn.type in (TransactionType.SELL, TransactionType.TRANSFER_OUT):
             total -= txn.units
     return total
+
+
+def _same_security(left: Security, right: Security) -> bool:
+    """Identity match — ISIN when both sides have one."""
+    if left.isin and right.isin:
+        return left.isin == right.isin
+    return left == right
+
+
+def open_lots_asof(
+    transactions: Sequence[Transaction],
+    security: Security,
+    as_of: date,
+    *,
+    folio_number: str = "",
+) -> tuple[OpenLot, ...]:
+    """Open FIFO lots strictly before ``as_of`` for one security (and optional folio)."""
+    subset = [
+        txn
+        for txn in sorted(transactions, key=lambda row: row.date)
+        if _same_security(txn.security, security)
+        and (not folio_number or txn.folio_number == folio_number)
+        and txn.date < as_of
+    ]
+    fifo = FIFOUnits()
+    for txn in subset:
+        fifo.add_transaction(txn)
+    return tuple(
+        OpenLot(units=units, cost_per_unit=cpu, acquired_on=acquired_on, stamp_duty=stamp)
+        for units, cpu, acquired_on, stamp in fifo._lots
+    )

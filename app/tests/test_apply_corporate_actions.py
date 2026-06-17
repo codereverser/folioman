@@ -110,6 +110,40 @@ def test_apply_bonus_idempotent_on_re_run(make_investor):
     assert inv.transactions.filter(folio=folio, transaction_type="bonus").count() == 1
 
 
+def test_apply_merger_marks_pre_2016_acquisition_incomplete_on_persist(make_investor):
+    """Merger rebasing preserves units but flags pre-2016 cost basis as incomplete."""
+    inv = make_investor()
+    old_isin = "INE001A01036"
+    new_isin = "INE040A01034"
+    row = f"equity,Old Co,OLDCO,{old_isin},2014-06-01,buy,10,100,{_DEMAT},ZERODHA\n"
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_TRADEBOOK_HEADER + row).encode(), "")
+
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.MERGER,
+            ex_date=dt.date(2020, 7, 1),
+            security=CoreSecurity(
+                type=SecurityType.EQUITY, name="New Co", isin=new_isin, symbol="NEWCO"
+            ),
+            merger_old_security=CoreSecurity(
+                type=SecurityType.EQUITY, name="Old Co", isin=old_isin, symbol="OLDCO"
+            ),
+            merger_new_security=CoreSecurity(
+                type=SecurityType.EQUITY, name="New Co", isin=new_isin, symbol="NEWCO"
+            ),
+            merger_ratio=Decimal("1"),
+            source_ref="merger:pre2016",
+        )
+    ]
+    apply_corporate_actions_to_folio(inv, folio, events=events)
+    new_sec = Security.objects.get(isin=new_isin)
+    txn = inv.transactions.get(security=new_sec, folio=folio)
+    assert txn.date == dt.date(2014, 6, 1)
+    assert txn.cost_basis_complete is False
+
+
 def test_apply_merger_and_bonus_events_hdfcbank(make_investor):
     """Cross-ISIN merger + bonus via explicit events closes the HDFC golden gap."""
     inv = make_investor()

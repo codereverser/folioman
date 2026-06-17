@@ -156,6 +156,20 @@ const navStale = computed(() => {
   return !!d && num(d.units) > 0 && d.value_inr == null
 })
 
+const isEquity = computed(() => detail.value?.security.security_type === 'equity')
+const dividendRows = computed(() => detail.value?.dividends ?? [])
+
+const DIVIDEND_KIND_LABELS: Record<string, string> = {
+  schedule: 'Schedule',
+  attributed: 'Received',
+  computed: 'Expected',
+  estimate: 'Estimate (current units)',
+}
+
+function dividendKindLabel(kind: string): string {
+  return DIVIDEND_KIND_LABELS[kind] ?? kind
+}
+
 function back(): void {
   void router.push({ name: 'dashboard', params: { investorId: investorId.value } })
 }
@@ -257,6 +271,61 @@ function back(): void {
           aria-hidden="true"
         />
         <p v-else class="muted empty">No NAV history on file for this scheme yet.</p>
+      </article>
+
+      <article v-if="isEquity && dividendRows.length" class="card">
+        <h2>Dividends</h2>
+        <p v-if="detail.dividends_received_inr != null" class="dividend-summary muted">
+          Received
+          <strong>{{ formatInr(detail.dividends_received_inr) }}</strong>
+          <span v-if="detail.dividend_yield_on_cost != null">
+            · yield on cost {{ (detail.dividend_yield_on_cost * 100).toFixed(1) }}%</span
+          >
+        </p>
+        <Message
+          v-if="!detail.has_transactions"
+          severity="info"
+          :closable="false"
+          class="dividend-note"
+        >
+          Snapshot only — past payouts are shown as the exchange schedule only. Forward rows
+          labelled <strong>Estimate</strong> use your current units; we never fabricate historical
+          cash you may have received elsewhere.
+        </Message>
+        <DataTable
+          v-if="loadCharts"
+          :value="dividendRows"
+          data-key="reference_id"
+          size="small"
+          class="ledger dividend-table"
+          sort-field="ex_date"
+          :sort-order="-1"
+        >
+          <Column field="ex_date" header="Ex-date" sortable>
+            <template #body="{ data }">{{ formatDate(data.ex_date) }}</template>
+          </Column>
+          <Column header="₹ / share" class="num">
+            <template #body="{ data }">{{ formatInrPaise(data.dividend_per_share) }}</template>
+          </Column>
+          <Column header="Units" class="num">
+            <template #body="{ data }">
+              {{ data.units == null ? '—' : formatUnits(data.units) }}
+            </template>
+          </Column>
+          <Column header="Amount" class="num">
+            <template #body="{ data }">
+              {{ data.amount_inr == null ? '—' : formatInr(data.amount_inr) }}
+            </template>
+          </Column>
+          <Column header="Kind">
+            <template #body="{ data }">
+              <span class="dividend-kind" :data-kind="data.kind">{{
+                dividendKindLabel(data.kind)
+              }}</span>
+            </template>
+          </Column>
+        </DataTable>
+        <div v-else class="table-placeholder" aria-hidden="true" />
       </article>
 
       <article class="card">
@@ -481,6 +550,17 @@ function back(): void {
 }
 .folio-table .folio-num {
   font-variant-numeric: tabular-nums;
+}
+.dividend-summary {
+  margin: 0 0 var(--fm-space-3);
+  font-size: 0.875rem;
+}
+.dividend-note {
+  margin-bottom: var(--fm-space-3);
+}
+.dividend-kind[data-kind='estimate'] {
+  color: var(--fm-text-muted);
+  font-style: italic;
 }
 .folio-table small {
   color: var(--fm-text-subtle);

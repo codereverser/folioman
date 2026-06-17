@@ -999,6 +999,29 @@ export interface components {
             /** Username */
             username: string;
         };
+        /**
+         * DividendTimelineRow
+         * @description One dividend event on the equity scheme-detail timeline.
+         */
+        DividendTimelineRow: {
+            /** Amount Inr */
+            amount_inr?: string | null;
+            /** Dividend Per Share */
+            dividend_per_share: string;
+            /**
+             * Ex Date
+             * Format: date
+             */
+            ex_date: string;
+            /** Kind */
+            kind: string;
+            /** Record Date */
+            record_date?: string | null;
+            /** Reference Id */
+            reference_id: number;
+            /** Units */
+            units?: string | null;
+        };
         /** FamilyAggregateOut */
         FamilyAggregateOut: {
             /**
@@ -1690,6 +1713,15 @@ export interface components {
             day_change_inr: string | null;
             /** Day Change Pct */
             day_change_pct: number | null;
+            /** Dividend Yield On Cost */
+            dividend_yield_on_cost?: number | null;
+            /**
+             * Dividends
+             * @default []
+             */
+            dividends: components["schemas"]["DividendTimelineRow"][];
+            /** Dividends Received Inr */
+            dividends_received_inr?: string | null;
             /** Folios */
             folios: components["schemas"]["FolioBalanceOut"][];
             /** Has Transactions */

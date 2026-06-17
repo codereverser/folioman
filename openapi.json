@@ -380,6 +380,73 @@
         "title": "CreateAdminIn",
         "type": "object"
       },
+      "DividendTimelineRow": {
+        "description": "One dividend event on the equity scheme-detail timeline.",
+        "properties": {
+          "amount_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Inr"
+          },
+          "dividend_per_share": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Dividend Per Share",
+            "type": "string"
+          },
+          "ex_date": {
+            "format": "date",
+            "title": "Ex Date",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "record_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Date"
+          },
+          "reference_id": {
+            "title": "Reference Id",
+            "type": "integer"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          }
+        },
+        "required": [
+          "reference_id",
+          "ex_date",
+          "dividend_per_share",
+          "kind"
+        ],
+        "title": "DividendTimelineRow",
+        "type": "object"
+      },
       "FamilyAggregateOut": {
         "properties": {
           "as_of": {
@@ -2064,6 +2131,37 @@
               }
             ],
             "title": "Day Change Pct"
+          },
+          "dividend_yield_on_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield On Cost"
+          },
+          "dividends": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DividendTimelineRow"
+            },
+            "title": "Dividends",
+            "type": "array"
+          },
+          "dividends_received_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividends Received Inr"
           },
           "folios": {
             "items": {

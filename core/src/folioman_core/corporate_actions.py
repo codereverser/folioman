@@ -5,22 +5,25 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_FLOOR, Decimal
 
 from folioman_core.corporate_action_subject import CorpActionType
-from folioman_core.fifo import net_units_from_transactions
+from folioman_core.fifo import net_units_from_transactions, open_lots_asof
 from folioman_core.models.security import Security
 from folioman_core.models.transaction import Transaction, TransactionSource, TransactionType
 
 _ZERO = Decimal("0")
+# Tradebook / corp-action feeds are reliable for cost basis from this date onward.
+COST_BASIS_RELIABLE_SINCE = date(2016, 1, 1)
 
 _EVENT_ORDER: dict[CorpActionType, int] = {
     CorpActionType.SPLIT: 0,
     CorpActionType.MERGER: 1,
-    CorpActionType.BONUS: 2,
-    CorpActionType.DIVIDEND: 3,
-    CorpActionType.RIGHTS: 4,
-    CorpActionType.BUYBACK: 5,
+    CorpActionType.DEMERGER: 2,
+    CorpActionType.BONUS: 3,
+    CorpActionType.DIVIDEND: 4,
+    CorpActionType.RIGHTS: 5,
+    CorpActionType.BUYBACK: 6,
 }
 
 
@@ -35,6 +38,9 @@ class CorporateActionApplyEvent:
     merger_old_security: Security | None = None
     merger_new_security: Security | None = None
     merger_ratio: Decimal | None = None
+    demerger_child_security: Security | None = None
+    demerger_child_ratio: Decimal | None = None
+    demerger_child_cost_fraction: Decimal | None = None
     dividend_per_share: Decimal | None = None
     rights_units: Decimal | None = None
     rights_price: Decimal | None = None
@@ -98,6 +104,208 @@ def _copy(txn: Transaction, **updates) -> Transaction:
     if "ledger_id" not in updates and txn.ledger_id is not None:
         updates = {**updates, "ledger_id": txn.ledger_id}
     return txn.model_copy(update=updates)
+
+
+def cost_basis_complete_for_acquisition(acquired_on: date) -> bool:
+    """Whether cost basis from this acquisition date is in the reliable window."""
+    return acquired_on >= COST_BASIS_RELIABLE_SINCE
+
+
+def apply_reverse_split(
+    transactions: list[Transaction],
+    *,
+    ratio: Decimal,
+    effective_date: date,
+    security: Security,
+    source_ref: str = "",
+) -> list[Transaction]:
+    """Apply a reverse split (``ratio`` new per old, ``ratio < 1``) with integer shares.
+
+    Historical rows scale like a forward split; any fractional entitlement left on the
+    ex-date is removed via a zero-proceeds disposal so demat balances stay whole.
+    """
+    if ratio <= _ZERO or ratio >= 1:
+        msg = "reverse split ratio must be positive and less than 1"
+        raise ValueError(msg)
+
+    txns = apply_split(
+        transactions,
+        ratio=ratio,
+        effective_date=effective_date,
+        security=security,
+        source_ref=source_ref,
+    )
+    scaled_net = net_units_from_transactions(
+        [
+            txn
+            for txn in txns
+            if _same_security(txn.security, security)
+            and txn.date < effective_date
+            and txn.type
+            in (
+                TransactionType.BUY,
+                TransactionType.SELL,
+                TransactionType.BONUS,
+                TransactionType.TRANSFER_IN,
+                TransactionType.TRANSFER_OUT,
+            )
+        ]
+    )
+    integer_net = scaled_net.to_integral_value(rounding=ROUND_FLOOR)
+    fractional = scaled_net - integer_net
+    if fractional <= _ZERO:
+        return txns
+
+    fractional_sell = Transaction(
+        security=security,
+        date=effective_date,
+        type=TransactionType.SELL,
+        units=fractional,
+        nav_or_price=_ZERO,
+        source=TransactionSource.CORPORATE_ACTION,
+        source_ref=source_ref or f"reverse-split:fraction:{ratio}",
+    )
+    return _sort_transactions([*txns, fractional_sell])
+
+
+def apply_demerger(
+    transactions: list[Transaction],
+    *,
+    parent_security: Security,
+    child_security: Security,
+    child_per_parent: Decimal,
+    child_cost_fraction: Decimal,
+    effective_date: date,
+    source_ref: str = "",
+) -> list[Transaction]:
+    """Spin off ``child_security`` from ``parent_security`` at ``effective_date``.
+
+    ``child_per_parent`` is child shares issued per parent share held on the record
+    date. ``child_cost_fraction`` is the share of each open lot's cost allocated to
+    the child (balance stays on the parent). Acquisition dates on the child lots
+    match the parent lots they came from.
+
+    Parent rows with disposals before ``effective_date`` are left unchanged; only
+    open FIFO lots at the record date are cost-split and receive child ``transfer_in``
+    rows.
+    """
+    if child_per_parent <= _ZERO:
+        msg = "demerger child_per_parent must be positive"
+        raise ValueError(msg)
+    if child_cost_fraction < _ZERO or child_cost_fraction > 1:
+        msg = "demerger child_cost_fraction must be between 0 and 1"
+        raise ValueError(msg)
+    if _same_security(parent_security, child_security):
+        msg = "demerger needs distinct parent and child securities"
+        raise ValueError(msg)
+
+    parent_fraction = Decimal("1") - child_cost_fraction
+    ref = source_ref or f"demerger:{parent_security.isin or parent_security.symbol}"
+    open_lots = open_lots_asof(transactions, parent_security, effective_date)
+    if not open_lots:
+        return _sort_transactions(list(transactions))
+
+    # Replay parent history before the record date, splitting partially-consumed buys
+    # so only the still-open slice gets its per-unit cost scaled down.
+    parent_pre = [
+        txn
+        for txn in transactions
+        if _same_security(txn.security, parent_security) and txn.date < effective_date
+    ]
+    other = [
+        txn
+        for txn in transactions
+        if not _same_security(txn.security, parent_security) or txn.date >= effective_date
+    ]
+    parent_pre = sorted(
+        parent_pre,
+        key=lambda row: (row.date, _TYPE_ORDER[row.type], row.source_ref),
+    )
+
+    lot_queue: list[tuple[Decimal, Decimal, date, Decimal, Transaction]] = []
+    rebuilt_parent_pre: list[Transaction] = []
+    for txn in parent_pre:
+        if txn.type in (TransactionType.BUY, TransactionType.BONUS, TransactionType.TRANSFER_IN):
+            lot_queue.append((txn.units, txn.nav_or_price, txn.date, txn.stamp_duty, txn))
+            rebuilt_parent_pre.append(txn)
+        elif txn.type in (TransactionType.SELL, TransactionType.TRANSFER_OUT):
+            pending = txn.units
+            while pending > _ZERO and lot_queue:
+                lot_units, lot_price, acquired_on, lot_stamp, src = lot_queue[0]
+                taken = min(lot_units, pending)
+                pending -= taken
+                remaining = lot_units - taken
+                if remaining > _ZERO:
+                    lot_queue[0] = (remaining, lot_price, acquired_on, lot_stamp, src)
+                else:
+                    lot_queue.pop(0)
+            rebuilt_parent_pre.append(txn)
+        else:
+            rebuilt_parent_pre.append(txn)
+
+    open_by_source: dict[int, Decimal] = {}
+    for lot_units, _lot_price, _acquired_on, _lot_stamp, src in lot_queue:
+        key = id(src)
+        open_by_source[key] = open_by_source.get(key, _ZERO) + lot_units
+
+    scaled_parent_pre: list[Transaction] = []
+    for txn in rebuilt_parent_pre:
+        if txn.type not in (
+            TransactionType.BUY,
+            TransactionType.BONUS,
+            TransactionType.TRANSFER_IN,
+        ):
+            scaled_parent_pre.append(txn)
+            continue
+        remaining = open_by_source.get(id(txn), _ZERO)
+        if remaining <= _ZERO:
+            scaled_parent_pre.append(txn)
+            continue
+        if remaining >= txn.units:
+            scaled_parent_pre.append(_copy(txn, nav_or_price=txn.nav_or_price * parent_fraction))
+            continue
+        sold_units = txn.units - remaining
+        scaled_parent_pre.append(
+            _copy(
+                txn,
+                units=sold_units,
+            )
+        )
+        scaled_parent_pre.append(
+            _copy(
+                txn,
+                units=remaining,
+                nav_or_price=txn.nav_or_price * parent_fraction,
+                amount=remaining * txn.nav_or_price * parent_fraction
+                if txn.amount is not None
+                else None,
+            )
+        )
+
+    child_rows: list[Transaction] = []
+    for lot in open_lots:
+        child_units = lot.units * child_per_parent
+        if child_units <= _ZERO:
+            continue
+        child_cpu = (
+            lot.cost_per_unit * child_cost_fraction / child_per_parent
+            if child_per_parent
+            else _ZERO
+        )
+        child_rows.append(
+            Transaction(
+                security=child_security,
+                date=lot.acquired_on,
+                type=TransactionType.TRANSFER_IN,
+                units=child_units,
+                nav_or_price=child_cpu,
+                amount=child_units * child_cpu,
+                source=TransactionSource.CORPORATE_ACTION,
+                source_ref=ref,
+            )
+        )
+
+    return _sort_transactions([*other, *scaled_parent_pre, *child_rows])
 
 
 def apply_split(
@@ -328,13 +536,22 @@ def apply_corporate_action_events(
             if event.unit_multiplier is None:
                 msg = "split event requires unit_multiplier"
                 raise ValueError(msg)
-            txns = apply_split(
-                txns,
-                ratio=event.unit_multiplier,
-                effective_date=event.ex_date,
-                security=event.security,
-                source_ref=ref,
-            )
+            if event.unit_multiplier < 1:
+                txns = apply_reverse_split(
+                    txns,
+                    ratio=event.unit_multiplier,
+                    effective_date=event.ex_date,
+                    security=event.security,
+                    source_ref=ref,
+                )
+            else:
+                txns = apply_split(
+                    txns,
+                    ratio=event.unit_multiplier,
+                    effective_date=event.ex_date,
+                    security=event.security,
+                    source_ref=ref,
+                )
         elif event.kind is CorpActionType.MERGER:
             if (
                 event.merger_old_security is None
@@ -351,8 +568,8 @@ def apply_corporate_action_events(
                 source_ref=ref,
             )
         elif event.kind is CorpActionType.DIVIDEND:
-            # Dividend rows here are for ledger reconciliation only. E11 will
-            # attribute dividends separately — do not enable both on one folio.
+            # Dividend rows here are for ledger reconciliation only. The dividend
+            # attribution pass writes these separately — do not enable both on one folio.
             if event.dividend_per_share is None:
                 msg = "dividend event requires dividend_per_share"
                 raise ValueError(msg)
@@ -379,6 +596,26 @@ def apply_corporate_action_events(
                 price=event.rights_price,
                 effective_date=event.ex_date,
                 security=event.security,
+                source_ref=ref,
+            )
+        elif event.kind is CorpActionType.DEMERGER:
+            if (
+                event.demerger_child_security is None
+                or event.demerger_child_ratio is None
+                or event.demerger_child_cost_fraction is None
+            ):
+                msg = (
+                    "demerger event requires demerger_child_security, "
+                    "demerger_child_ratio, and demerger_child_cost_fraction"
+                )
+                raise ValueError(msg)
+            txns = apply_demerger(
+                txns,
+                parent_security=event.security,
+                child_security=event.demerger_child_security,
+                child_per_parent=event.demerger_child_ratio,
+                child_cost_fraction=event.demerger_child_cost_fraction,
+                effective_date=event.ex_date,
                 source_ref=ref,
             )
         elif event.kind is CorpActionType.BUYBACK:

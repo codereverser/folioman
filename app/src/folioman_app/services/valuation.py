@@ -36,6 +36,7 @@ from folioman_app.models import (
     ValuationStatus,
 )
 from folioman_app.models.jobs import ImportJob, ImportJobStatus
+from folioman_app.services.dividends import build_equity_dividend_detail
 from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
 
 _ZERO = Decimal("0")
@@ -763,6 +764,14 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
     else:
         xirr_status = "valid"
 
+    dividend_detail = build_equity_dividend_detail(
+        investor,
+        security,
+        as_of=as_of,
+        current_units=units,
+        invested_inr=invested,
+    )
+
     return {
         "security": {
             "id": security.id,
@@ -799,6 +808,7 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
         "nav_history": list(
             NAVHistory.objects.filter(security=security, date__lte=as_of).order_by("date")
         ),
+        **dividend_detail,
         "transactions": txns,
     }
 

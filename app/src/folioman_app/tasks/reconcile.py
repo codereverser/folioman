@@ -11,6 +11,8 @@ router builds list/acknowledge endpoints on top of this.
 
 from __future__ import annotations
 
+import logging
+
 from django.db.models import Q
 from django.utils import timezone
 from folioman_core.corporate_action_detect import (
@@ -30,6 +32,9 @@ from folioman_app.models import (
     Security,
     SecurityIntegrityStatus,
 )
+from folioman_app.services.dividends import attribute_dividends_for_security
+
+logger = logging.getLogger(__name__)
 
 
 def _incomplete_history_issue(partial: PartialBlock) -> dict:
@@ -281,6 +286,16 @@ def reconcile_security(investor: Investor, security: Security) -> list[SecurityI
         status = reconcile_security_folio(investor, security, folio)
         if status is not None:
             statuses.append(status)
+
+    if security.security_type == SecurityType.EQUITY.value:
+        try:
+            attribute_dividends_for_security(investor, security)
+        except Exception:
+            logger.exception(
+                "dividend attribution failed for security %s (investor %s)",
+                security.id,
+                investor.id,
+            )
 
     # Drop statuses for (security, folio) pairs that no longer have data.
     SecurityIntegrityStatus.objects.filter(investor=investor, security=security).exclude(

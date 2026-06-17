@@ -9,7 +9,9 @@ from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.corporate_actions import (
     CorporateActionApplyEvent,
     apply_corporate_action_events,
+    cost_basis_complete_for_acquisition,
 )
+from folioman_core.models.transaction import TransactionType
 
 from folioman_app.mappers import to_core_security, to_core_transaction
 from folioman_app.models import CorporateActionReference, Folio, Investor, Security, Transaction
@@ -40,10 +42,26 @@ def _event_from_reference(
 def _securities_for_events(events: Sequence[CorporateActionApplyEvent]) -> set[str]:
     isins: set[str] = set()
     for event in events:
-        for sec in (event.security, event.merger_old_security, event.merger_new_security):
+        for sec in (
+            event.security,
+            event.merger_old_security,
+            event.merger_new_security,
+            event.demerger_child_security,
+        ):
             if sec is not None and sec.isin:
                 isins.add(sec.isin)
     return isins
+
+
+def _cost_basis_complete_for_core(core) -> bool:
+    """Mark acquisitions before the reliable window as display-only for cost basis."""
+    if core.type in (
+        TransactionType.BUY,
+        TransactionType.BONUS,
+        TransactionType.TRANSFER_IN,
+    ):
+        return cost_basis_complete_for_acquisition(core.date)
+    return True
 
 
 def _persist_applied_ledger(
@@ -77,6 +95,10 @@ def _persist_applied_ledger(
             if orm.amount != core.amount:
                 orm.amount = core.amount
                 fields.append("amount")
+            complete = _cost_basis_complete_for_core(core)
+            if orm.cost_basis_complete != complete:
+                orm.cost_basis_complete = complete
+                fields.append("cost_basis_complete")
             if fields:
                 orm.save(update_fields=[*fields, "updated_at"])
                 updated += 1
@@ -104,7 +126,7 @@ def _persist_applied_ledger(
             brokerage=core.brokerage,
             source=core.source.value,
             source_ref=source_ref,
-            cost_basis_complete=True,
+            cost_basis_complete=_cost_basis_complete_for_core(core),
         )
         created += 1
     return updated, created
