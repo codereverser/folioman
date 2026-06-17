@@ -67,6 +67,8 @@ export const useIntegrityStore = defineStore('integrity', () => {
   const loading = ref(false)
   const acknowledging = ref(false)
   const applyingCorporateAction = ref(false)
+  const recordingOpeningLot = ref(false)
+  const applyingIdentityRemap = ref(false)
   const error = ref<string | null>(null)
 
   function rowsFor(investorId: number): IntegrityRow[] {
@@ -212,6 +214,78 @@ export const useIntegrityStore = defineStore('integrity', () => {
     }
   }
 
+  async function recordOpeningLot(
+    investorId: number,
+    securityId: number,
+    folioId: number,
+    body: {
+      classification: string
+      date: string
+      price?: string
+      cost_basis_unknown?: boolean
+    },
+  ): Promise<boolean> {
+    recordingOpeningLot.value = true
+    error.value = null
+    try {
+      const { data, error: apiError } = await api.POST(
+        '/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lot',
+        {
+          params: {
+            path: { investor_id: investorId, security_id: securityId, folio_id: folioId },
+          },
+          body: {
+            classification: body.classification,
+            date: body.date,
+            price: body.price ? Number(body.price) : undefined,
+            cost_basis_unknown: body.cost_basis_unknown ?? false,
+          },
+        },
+      )
+      if (apiError || !data?.integrity) throw new Error('record opening lot failed')
+      patchRow(investorId, data.integrity)
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'unknown error'
+      return false
+    } finally {
+      recordingOpeningLot.value = false
+    }
+  }
+
+  async function applyIdentityRemap(
+    investorId: number,
+    securityId: number,
+    folioId: number,
+    body: { to_isin: string; to_symbol?: string; to_name?: string },
+  ): Promise<boolean> {
+    applyingIdentityRemap.value = true
+    error.value = null
+    try {
+      const { data, error: apiError } = await api.POST(
+        '/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-identity-remap',
+        {
+          params: {
+            path: { investor_id: investorId, security_id: securityId, folio_id: folioId },
+          },
+          body: {
+            to_isin: body.to_isin,
+            to_symbol: body.to_symbol ?? '',
+            to_name: body.to_name ?? '',
+          },
+        },
+      )
+      if (apiError || !data?.integrity) throw new Error('identity remap failed')
+      patchRow(investorId, data.integrity)
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'unknown error'
+      return false
+    } finally {
+      applyingIdentityRemap.value = false
+    }
+  }
+
   function clear(): void {
     byInvestor.value = {}
   }
@@ -221,6 +295,8 @@ export const useIntegrityStore = defineStore('integrity', () => {
     loading,
     acknowledging,
     applyingCorporateAction,
+    recordingOpeningLot,
+    applyingIdentityRemap,
     error,
     rowsFor,
     rollupFor,
@@ -229,6 +305,8 @@ export const useIntegrityStore = defineStore('integrity', () => {
     acknowledge,
     unacknowledge,
     applyCorporateAction,
+    recordOpeningLot,
+    applyIdentityRemap,
     clear,
   }
 })

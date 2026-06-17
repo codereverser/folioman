@@ -4,6 +4,8 @@ import {
   corporateActionSuggestions,
   corporateActionSuggestionSummary,
   hasCorporateActionSuggestion,
+  openingLotIssue,
+  openingLotSummary,
   hasIncompleteHistory,
   incompleteHistoryFix,
   incompleteHistoryReason,
@@ -89,5 +91,11 @@ describe('corporate action issues', () => {
       ]),
     ).toMatch(/incomplete/)
     expect(corporateActionManualNote([])).toBeNull()
+  })
+
+  it('parses opening lot issues', () => {
+    const issue = openingLotIssue([{ type: 'opening_lot_needed', holding_units: '50' }])
+    expect(issue?.holdingUnits).toBe('50')
+    expect(openingLotSummary(issue!)).toMatch(/50 units/)
   })
 })

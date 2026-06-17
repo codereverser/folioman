@@ -6,7 +6,7 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from folioman_app.models import Folio, Security
+from folioman_app.models import Folio, Security, Transaction
 from folioman_app.tasks.import_csv import create_manual_transaction
 from folioman_app.tasks.import_ecas import persist_ecas_statement
 from folioman_core.models import SecurityType
@@ -177,3 +177,56 @@ def test_unacknowledge_unknown_status_404(client, make_investor):
     folio = Folio.objects.create(investor=inv, number="X", folio_type="demat")
     resp = client.post(f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/unacknowledge")
     assert resp.status_code == 404
+
+
+def test_record_opening_lot_api(client, make_investor):
+    inv = make_investor()
+    isin = "INE418H01026"
+    statement = EcasStatement(
+        depository=Depository.CDSL,
+        statement_date=dt.date(2025, 6, 1),
+        accounts=[
+            EcasAccountBlock(
+                folio=CoreFolio(folio_type="demat", number=_DEMAT, broker="ZERODHA"),
+                holdings=[
+                    EcasHoldingLine(
+                        security=CoreSecurity(
+                            type=SecurityType.EQUITY, name="HDB Financial Services", isin=isin
+                        ),
+                        units="50",
+                    )
+                ],
+            )
+        ],
+    )
+    persist_ecas_statement(inv, statement, source_ref="ecas")
+    sec = Security.objects.get(isin=isin)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    resp = client.post(
+        f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/record-opening-lot",
+        {
+            "classification": "ipo_allotment",
+            "date": "2024-05-01",
+            "price": "700",
+        },
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["created"] == 1
+    assert body["integrity"]["status"] == "reconciled"
+
+
+def test_apply_identity_remap_api(client, make_investor):
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="10", price="100")
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    resp = client.post(
+        f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/apply-identity-remap",
+        {"to_isin": "INE002A01099", "to_name": "Reliance Industries Ltd", "to_symbol": "RELIANCE9"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["transactions_updated"] == 1
+    assert Transaction.objects.filter(investor=inv, security__isin="INE002A01099").count() == 1

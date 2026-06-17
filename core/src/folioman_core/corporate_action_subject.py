@@ -30,6 +30,7 @@ class CorpActionType(StrEnum):
     MERGER = "merger"
     DEMERGER = "demerger"
     SCHEME = "scheme_of_arrangement"
+    IDENTITY = "identity"
     UNKNOWN = "unknown"
 
 
@@ -139,6 +140,19 @@ def parse_subject(subject: str) -> ParsedCorporateAction:
         return ParsedCorporateAction(CorpActionType.BUYBACK, raw, needs_review=True)
     if "demerger" in s:
         return ParsedCorporateAction(CorpActionType.DEMERGER, raw, needs_review=True)
+    if any(
+        phrase in s
+        for phrase in (
+            "change of name",
+            "change in name",
+            "change of symbol",
+            "change in symbol",
+            "name change",
+            "symbol change",
+            "isin change",
+        )
+    ):
+        return ParsedCorporateAction(CorpActionType.IDENTITY, raw, needs_review=True)
     if "scheme of arrangement" in s:
         return ParsedCorporateAction(CorpActionType.SCHEME, raw, needs_review=True)
     if "merger" in s or "amalgamation" in s:

@@ -116,3 +116,7 @@ def detect_corporate_action_issues(
 def strip_corporate_action_issues(issues: list[dict]) -> list[dict]:
     """Remove prior corporate-action issues before re-detection."""
     return [i for i in issues if not str(i.get("type", "")).startswith("corporate_action_")]
+
+
+def strip_opening_lot_issues(issues: list[dict]) -> list[dict]:
+    return [i for i in issues if i.get("type") != "opening_lot_needed"]

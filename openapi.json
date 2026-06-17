@@ -823,6 +823,62 @@
         "title": "HoldingValueRow",
         "type": "object"
       },
+      "IdentityRemapIn": {
+        "description": "Re-point ledger rows from the current security to another ISIN.",
+        "properties": {
+          "to_isin": {
+            "title": "To Isin",
+            "type": "string"
+          },
+          "to_name": {
+            "default": "",
+            "title": "To Name",
+            "type": "string"
+          },
+          "to_symbol": {
+            "default": "",
+            "title": "To Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_isin"
+        ],
+        "title": "IdentityRemapIn",
+        "type": "object"
+      },
+      "IdentityRemapOut": {
+        "properties": {
+          "holdings_updated": {
+            "title": "Holdings Updated",
+            "type": "integer"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/IntegrityStatusOut"
+          },
+          "target_isin": {
+            "title": "Target Isin",
+            "type": "string"
+          },
+          "target_security_id": {
+            "title": "Target Security Id",
+            "type": "integer"
+          },
+          "transactions_updated": {
+            "title": "Transactions Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "transactions_updated",
+          "holdings_updated",
+          "target_security_id",
+          "target_isin",
+          "integrity"
+        ],
+        "title": "IdentityRemapOut",
+        "type": "object"
+      },
       "ImportJobOut": {
         "properties": {
           "created_at": {
@@ -1737,6 +1793,93 @@
           "status"
         ],
         "title": "NavSecurityFreshnessOut",
+        "type": "object"
+      },
+      "RecordOpeningLotIn": {
+        "description": "Classified opening lot for an eCAS-only equity holding.",
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "cost_basis_unknown": {
+            "default": false,
+            "title": "Cost Basis Unknown",
+            "type": "boolean"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          }
+        },
+        "required": [
+          "classification",
+          "date"
+        ],
+        "title": "RecordOpeningLotIn",
+        "type": "object"
+      },
+      "RecordOpeningLotOut": {
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "cost_basis_complete": {
+            "title": "Cost Basis Complete",
+            "type": "boolean"
+          },
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/IntegrityStatusOut"
+          },
+          "units": {
+            "title": "Units",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created",
+          "classification",
+          "units",
+          "cost_basis_complete",
+          "integrity"
+        ],
+        "title": "RecordOpeningLotOut",
         "type": "object"
       },
       "RosterAggregateOut": {
@@ -4121,6 +4264,128 @@
           }
         },
         "summary": "Apply Corporate Action",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-identity-remap": {
+      "post": {
+        "description": "Re-point folio ledger rows to a new ISIN without changing units or cost.",
+        "operationId": "folioman_app_api_integrity_apply_identity_remap_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityRemapIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityRemapOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Apply Identity Remap Entry",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lot": {
+      "post": {
+        "description": "Record a classified opening lot for an eCAS-only equity and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_record_opening_lot_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordOpeningLotIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordOpeningLotOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Record Opening Lot Entry",
         "tags": [
           "integrity"
         ]

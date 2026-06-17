@@ -8,6 +8,7 @@ stays out of the tax export).
 from __future__ import annotations
 
 from django.shortcuts import get_object_or_404
+from folioman_core.opening_lot import OpeningLotKind
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -15,10 +16,16 @@ from folioman_app.api.auth import get_owned_investor
 from folioman_app.api.schemas import (
     ApplyCorporateActionIn,
     ApplyCorporateActionOut,
+    IdentityRemapIn,
+    IdentityRemapOut,
     IntegrityStatusOut,
+    RecordOpeningLotIn,
+    RecordOpeningLotOut,
 )
 from folioman_app.models import Folio, Investor, Security, SecurityIntegrityStatus
 from folioman_app.services.corporate_actions import apply_suggested_corporate_action
+from folioman_app.services.identity_remap import apply_identity_remap
+from folioman_app.services.opening_lots import record_opening_lot
 from folioman_app.tasks.reconcile import recompute_investor, reconcile_security_folio
 
 router = Router(tags=["integrity"])
@@ -96,3 +103,74 @@ def apply_corporate_action(
         **summary,
         "integrity": status,
     }
+
+
+@router.post(
+    "/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lot",
+    response=RecordOpeningLotOut,
+)
+def record_opening_lot_entry(
+    request,
+    investor_id: int,
+    security_id: int,
+    folio_id: int,
+    payload: RecordOpeningLotIn,
+):
+    """Record a classified opening lot for an eCAS-only equity and re-reconcile."""
+    investor = get_owned_investor(request, investor_id)
+    security, folio = _owned_status(investor, security_id, folio_id)
+    try:
+        kind = OpeningLotKind(payload.classification)
+    except ValueError as exc:
+        raise HttpError(400, f"unknown classification: {payload.classification!r}") from exc
+    try:
+        summary = record_opening_lot(
+            investor,
+            folio,
+            security,
+            kind=kind,
+            lot_date=payload.date,
+            units=payload.units,
+            price=payload.price,
+            cost_basis_unknown=payload.cost_basis_unknown,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    status = SecurityIntegrityStatus.objects.get(investor=investor, security=security, folio=folio)
+    return {**summary, "integrity": status}
+
+
+@router.post(
+    "/{investor_id}/integrity/{security_id}/{folio_id}/apply-identity-remap",
+    response=IdentityRemapOut,
+)
+def apply_identity_remap_entry(
+    request,
+    investor_id: int,
+    security_id: int,
+    folio_id: int,
+    payload: IdentityRemapIn,
+):
+    """Re-point folio ledger rows to a new ISIN without changing units or cost."""
+    investor = get_owned_investor(request, investor_id)
+    security, folio = _owned_status(investor, security_id, folio_id)
+    try:
+        summary = apply_identity_remap(
+            investor,
+            folio,
+            security,
+            to_isin=payload.to_isin,
+            to_symbol=payload.to_symbol,
+            to_name=payload.to_name,
+        )
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    target = Security.objects.get(pk=summary["target_security_id"])
+    status = SecurityIntegrityStatus.objects.filter(
+        investor=investor, security=target, folio=folio
+    ).first()
+    if status is None:
+        status = SecurityIntegrityStatus.objects.get(
+            investor=investor, security=security, folio=folio
+        )
+    return {**summary, "integrity": status}

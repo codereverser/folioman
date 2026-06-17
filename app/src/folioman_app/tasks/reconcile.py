@@ -98,6 +98,49 @@ def _annotate_corporate_actions(
     return result.model_copy(update={"issues": issues})
 
 
+def _annotate_opening_lot(
+    result: ReconciliationResult,
+    *,
+    investor: Investor,
+    security: Security,
+    folio: Folio,
+) -> ReconciliationResult:
+    """Flag eCAS-only equities that need a classified opening lot."""
+    from folioman_core.corporate_action_detect import strip_opening_lot_issues
+
+    if security.security_type != SecurityType.EQUITY.value:
+        return result
+    if result.status is not IntegrityStatus.SNAPSHOT_ONLY:
+        return result
+    if result.units_from_holdings is None or result.units_from_holdings <= 0:
+        return result
+    if investor.transactions.filter(
+        folio=folio,
+        security=security,
+        source_ref=f"opening-lot:{folio.id}:{security.id}",
+    ).exists():
+        return result
+
+    issues = strip_opening_lot_issues(result.issues)
+    issues = [
+        i
+        for i in issues
+        if not (i.get("type") == "corporate_action_manual" and i.get("reason") == "snapshot_only")
+    ]
+    issues.append(
+        {
+            "type": "opening_lot_needed",
+            "holding_units": str(result.units_from_holdings),
+            "classifications": [
+                "ipo_allotment",
+                "transfer_in",
+                "demerger_result",
+            ],
+        }
+    )
+    return result.model_copy(update={"issues": issues})
+
+
 def reconcile_security_folio(
     investor: Investor,
     security: Security,
@@ -187,6 +230,12 @@ def reconcile_security_folio(
             result,
             security=security,
             incomplete_history=incomplete_history,
+        )
+        result = _annotate_opening_lot(
+            result,
+            investor=investor,
+            security=security,
+            folio=folio,
         )
 
     if result is None:

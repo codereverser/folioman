@@ -559,6 +559,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-identity-remap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Identity Remap Entry
+         * @description Re-point folio ledger rows to a new ISIN without changing units or cost.
+         */
+        post: operations["folioman_app_api_integrity_apply_identity_remap_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Opening Lot Entry
+         * @description Record a classified opening lot for an eCAS-only equity and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_record_opening_lot_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/unacknowledge": {
         parameters: {
             query?: never;
@@ -1134,6 +1174,36 @@ export interface components {
             /** Xirr */
             xirr?: number | null;
         };
+        /**
+         * IdentityRemapIn
+         * @description Re-point ledger rows from the current security to another ISIN.
+         */
+        IdentityRemapIn: {
+            /** To Isin */
+            to_isin: string;
+            /**
+             * To Name
+             * @default
+             */
+            to_name: string;
+            /**
+             * To Symbol
+             * @default
+             */
+            to_symbol: string;
+        };
+        /** IdentityRemapOut */
+        IdentityRemapOut: {
+            /** Holdings Updated */
+            holdings_updated: number;
+            integrity: components["schemas"]["IntegrityStatusOut"];
+            /** Target Isin */
+            target_isin: string;
+            /** Target Security Id */
+            target_security_id: number;
+            /** Transactions Updated */
+            transactions_updated: number;
+        };
         /** ImportJobOut */
         ImportJobOut: {
             /**
@@ -1492,6 +1562,40 @@ export interface components {
             security_type: string;
             /** Status */
             status: string;
+        };
+        /**
+         * RecordOpeningLotIn
+         * @description Classified opening lot for an eCAS-only equity holding.
+         */
+        RecordOpeningLotIn: {
+            /** Classification */
+            classification: string;
+            /**
+             * Cost Basis Unknown
+             * @default false
+             */
+            cost_basis_unknown: boolean;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Price */
+            price?: number | string | null;
+            /** Units */
+            units?: number | string | null;
+        };
+        /** RecordOpeningLotOut */
+        RecordOpeningLotOut: {
+            /** Classification */
+            classification: string;
+            /** Cost Basis Complete */
+            cost_basis_complete: boolean;
+            /** Created */
+            created: number;
+            integrity: components["schemas"]["IntegrityStatusOut"];
+            /** Units */
+            units: string;
         };
         /**
          * RosterAggregateOut
@@ -2743,6 +2847,62 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApplyCorporateActionOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_apply_identity_remap_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityRemapIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityRemapOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_record_opening_lot_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordOpeningLotIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordOpeningLotOut"];
                 };
             };
         };

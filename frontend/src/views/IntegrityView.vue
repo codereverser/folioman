@@ -2,7 +2,11 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
+import Checkbox from 'primevue/checkbox'
+import Dialog from 'primevue/dialog'
+import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
+import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import { useConfirm } from 'primevue/useconfirm'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
@@ -12,6 +16,10 @@ import {
   corporateActionSuggestionSummary,
   corporateActionSuggestions,
   hasCorporateActionSuggestion,
+  needsIdentityRemap,
+  openingLotIssue,
+  openingLotSummary,
+  OPENING_LOT_CLASSIFICATIONS,
   hasIncompleteHistory,
   incompleteHistoryFix,
   incompleteHistoryReason,
@@ -127,6 +135,8 @@ function reasonFor(row: IntegrityRow): string {
 }
 function fixFor(row: IntegrityRow): string | null {
   if (hasIncompleteHistory(row.issues)) return incompleteHistoryFix()
+  const lot = openingLotIssue(row.issues)
+  if (lot) return openingLotSummary(lot)
   const caManual = corporateActionManualNote(row.issues)
   if (caManual) return caManual
   const suggestion = corporateActionSuggestions(row.issues)[0]
@@ -169,6 +179,79 @@ function askApplyCorporateAction(row: IntegrityRow): void {
       )
     },
   })
+}
+
+const openingLotVisible = ref(false)
+const openingLotRow = ref<IntegrityRow | null>(null)
+const openingLotForm = ref({
+  classification: 'transfer_in',
+  date: '',
+  price: '',
+  costBasisUnknown: false,
+})
+
+function openOpeningLotDialog(row: IntegrityRow): void {
+  openingLotRow.value = row
+  openingLotForm.value = {
+    classification: 'transfer_in',
+    date: row.snapshotAsOf ?? '',
+    price: '',
+    costBasisUnknown: false,
+  }
+  openingLotVisible.value = true
+}
+
+async function submitOpeningLot(): Promise<void> {
+  const row = openingLotRow.value
+  if (!row || !openingLotForm.value.date) return
+  const ok = await integrity.recordOpeningLot(investorId.value, row.securityId, row.folioId, {
+    classification: openingLotForm.value.classification,
+    date: openingLotForm.value.date,
+    price: openingLotForm.value.price || undefined,
+    cost_basis_unknown: openingLotForm.value.costBasisUnknown,
+  })
+  if (ok) {
+    openingLotVisible.value = false
+    openingLotRow.value = null
+    ui.notify({ severity: 'success', summary: 'Opening lot recorded' })
+  } else {
+    ui.notify({
+      severity: 'error',
+      summary: 'Could not record opening lot',
+      detail: integrity.error ?? '',
+    })
+  }
+}
+
+const identityRemapVisible = ref(false)
+const identityRemapRow = ref<IntegrityRow | null>(null)
+const identityRemapIsin = ref('')
+
+function openIdentityRemapDialog(row: IntegrityRow): void {
+  identityRemapRow.value = row
+  identityRemapIsin.value = ''
+  identityRemapVisible.value = true
+}
+
+async function submitIdentityRemap(): Promise<void> {
+  const row = identityRemapRow.value
+  const toIsin = identityRemapIsin.value.trim().toUpperCase()
+  if (!row || !toIsin) return
+  const ok = await integrity.applyIdentityRemap(investorId.value, row.securityId, row.folioId, {
+    to_isin: toIsin,
+  })
+  if (ok) {
+    identityRemapVisible.value = false
+    identityRemapRow.value = null
+    await integrity.load(investorId.value, { force: true })
+    ui.notify({ severity: 'success', summary: 'Identity remapped' })
+  } else {
+    ui.notify({
+      severity: 'error',
+      summary: 'Could not remap identity',
+      detail: integrity.error ?? '',
+    })
+  }
 }
 
 const lastChecked = computed(() => {
@@ -343,6 +426,24 @@ function back(): void {
                   @click="askApplyCorporateAction(row)"
                 />
                 <Button
+                  v-else-if="openingLotIssue(row.issues)"
+                  label="Opening lot"
+                  icon="pi pi-plus-circle"
+                  size="small"
+                  text
+                  :disabled="readOnly"
+                  @click="openOpeningLotDialog(row)"
+                />
+                <Button
+                  v-else-if="needsIdentityRemap(row.issues)"
+                  label="Remap ISIN"
+                  icon="pi pi-arrow-right-arrow-left"
+                  size="small"
+                  text
+                  :disabled="readOnly"
+                  @click="openIdentityRemapDialog(row)"
+                />
+                <Button
                   v-else-if="row.status === 'mismatch'"
                   label="Acknowledge"
                   icon="pi pi-minus-circle"
@@ -373,6 +474,79 @@ function back(): void {
         </ul>
       </section>
     </div>
+
+    <Dialog
+      v-model:visible="openingLotVisible"
+      header="Record opening lot"
+      modal
+      :style="{ width: '28rem' }"
+      @hide="openingLotRow = null"
+    >
+      <p v-if="openingLotRow && openingLotIssue(openingLotRow.issues)" class="dialog-copy">
+        {{ openingLotSummary(openingLotIssue(openingLotRow.issues)!) }}
+      </p>
+      <div class="dialog-form">
+        <label>
+          Classification
+          <Select
+            v-model="openingLotForm.classification"
+            :options="[...OPENING_LOT_CLASSIFICATIONS]"
+            option-label="label"
+            option-value="value"
+          />
+        </label>
+        <label>
+          Acquisition date
+          <InputText v-model="openingLotForm.date" type="date" />
+        </label>
+        <label>
+          Cost per unit (optional)
+          <InputText
+            v-model="openingLotForm.price"
+            inputmode="decimal"
+            :disabled="openingLotForm.costBasisUnknown"
+          />
+        </label>
+        <label class="check-row">
+          <Checkbox v-model="openingLotForm.costBasisUnknown" :binary="true" />
+          Cost basis unknown
+        </label>
+      </div>
+      <template #footer>
+        <Button label="Cancel" text @click="openingLotVisible = false" />
+        <Button
+          label="Save"
+          :loading="integrity.recordingOpeningLot"
+          :disabled="!openingLotForm.date"
+          @click="submitOpeningLot"
+        />
+      </template>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="identityRemapVisible"
+      header="Remap to new ISIN"
+      modal
+      :style="{ width: '24rem' }"
+      @hide="identityRemapRow = null"
+    >
+      <p class="dialog-copy">
+        Re-point ledger rows to the current ISIN. Units and amounts stay unchanged.
+      </p>
+      <label>
+        New ISIN
+        <InputText v-model="identityRemapIsin" placeholder="INE…" />
+      </label>
+      <template #footer>
+        <Button label="Cancel" text @click="identityRemapVisible = false" />
+        <Button
+          label="Remap"
+          :loading="integrity.applyingIdentityRemap"
+          :disabled="!identityRemapIsin.trim()"
+          @click="submitIdentityRemap"
+        />
+      </template>
+    </Dialog>
   </section>
 </template>
 
@@ -578,5 +752,32 @@ function back(): void {
 .skel-detail {
   height: 0.75rem;
   width: 85%;
+}
+
+.dialog-copy {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: var(--fm-text-muted);
+  line-height: 1.45;
+}
+
+.dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dialog-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+
+.check-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.5rem !important;
 }
 </style>

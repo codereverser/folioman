@@ -90,6 +90,12 @@ def test_merger_and_amalgamation():
     assert parse_subject("Amalgamation").type is CorpActionType.MERGER
 
 
+def test_identity_change_needs_review():
+    p = parse_subject("Change of Name from ABC Ltd to XYZ Ltd")
+    assert p.type is CorpActionType.IDENTITY
+    assert p.needs_review is True
+
+
 def test_unknown_subject_flagged_not_dropped():
     p = parse_subject("Annual General Meeting")
     assert p.type is CorpActionType.UNKNOWN

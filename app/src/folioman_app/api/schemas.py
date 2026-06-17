@@ -462,6 +462,40 @@ class ApplyCorporateActionOut(Schema):
     integrity: IntegrityStatusOut
 
 
+class RecordOpeningLotIn(Schema):
+    """Classified opening lot for an eCAS-only equity holding."""
+
+    classification: str  # ipo_allotment | transfer_in | demerger_result
+    date: date
+    units: Decimal | None = None
+    price: Decimal | None = None
+    cost_basis_unknown: bool = False
+
+
+class RecordOpeningLotOut(Schema):
+    created: int
+    classification: str
+    units: str
+    cost_basis_complete: bool
+    integrity: IntegrityStatusOut
+
+
+class IdentityRemapIn(Schema):
+    """Re-point ledger rows from the current security to another ISIN."""
+
+    to_isin: str
+    to_symbol: str = ""
+    to_name: str = ""
+
+
+class IdentityRemapOut(Schema):
+    transactions_updated: int
+    holdings_updated: int
+    target_security_id: int
+    target_isin: str
+    integrity: IntegrityStatusOut
+
+
 class SchemeRef(Schema):
     """Security identity for the scheme-detail header band."""
 

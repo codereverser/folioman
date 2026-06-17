@@ -192,6 +192,35 @@ export function corporateActionApplyConfirmMessage(
   )
 }
 
+export interface OpeningLotIssue {
+  holdingUnits: string
+}
+
+export function openingLotIssue(issues: Record<string, unknown>[]): OpeningLotIssue | null {
+  const raw = issues.find((i) => i.type === 'opening_lot_needed')
+  if (!raw) return null
+  return { holdingUnits: String(raw.holding_units ?? '') }
+}
+
+export function openingLotSummary(issue: OpeningLotIssue): string {
+  return (
+    `eCAS shows ${issue.holdingUnits} units with no tradebook history — ` +
+    'record how they were acquired (IPO, transfer-in, or demerger receipt).'
+  )
+}
+
+export const OPENING_LOT_CLASSIFICATIONS = [
+  { value: 'ipo_allotment', label: 'IPO allotment' },
+  { value: 'transfer_in', label: 'Transfer in' },
+  { value: 'demerger_result', label: 'Demerger receipt' },
+] as const
+
+export function needsIdentityRemap(issues: Record<string, unknown>[]): boolean {
+  return issues.some(
+    (i) => i.type === 'corporate_action_manual' && i.reason === 'ledger_position_not_in_holdings',
+  )
+}
+
 // One canonical remediation for an incomplete mutual-fund ledger — the same advice
 // the Import screen gives, so guidance never contradicts itself.
 const REIMPORT_FIX = 'Re-import a since-inception (Detailed) CAS that includes zero-balance folios.'
