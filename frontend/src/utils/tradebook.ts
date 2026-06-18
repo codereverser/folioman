@@ -158,14 +158,7 @@ export function isValidDematNumber(value: string): boolean {
   return DEMAT_NUMBER_RE.test(value.trim().toUpperCase())
 }
 
-const NUMERIC_FIELD_KEYS = new Set([
-  'units',
-  'price',
-  'amount',
-  'fees',
-  'stamp_duty',
-  'brokerage',
-])
+const NUMERIC_FIELD_KEYS = new Set(['units', 'price', 'amount', 'fees', 'stamp_duty', 'brokerage'])
 
 /**
  * Strip locale formatting from a numeric cell (thousands separators, currency
@@ -246,8 +239,5 @@ export function buildCanonicalRows(
   mapping: Mapping,
   options: CanonicalOptions,
 ): Record<string, string>[] {
-  return stampImportConstants(
-    mapCanonicalRows(fileRows, mapping, options.securityType),
-    options,
-  )
+  return stampImportConstants(mapCanonicalRows(fileRows, mapping, options.securityType), options)
 }

@@ -579,6 +579,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-manual-corporate-action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Manual Corporate Action Entry
+         * @description Author a corporate action by hand (bonus/split/merger/demerger/rights/buyback)
+         *     for the flagged (security, folio), apply it, and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_apply_manual_corporate_action_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lot": {
         parameters: {
             query?: never;
@@ -1525,6 +1546,52 @@ export interface components {
             valuations: components["schemas"]["ValuationDiagnosticsOut"][];
         };
         /**
+         * ManualCorporateActionIn
+         * @description Author one corporate action by hand to resolve a flagged unit mismatch.
+         *
+         *     The path's security is the affected stock; ``kind`` selects which params apply:
+         *       - ``bonus`` / ``split`` → ``unit_multiplier`` (split < 1 = reverse split)
+         *       - ``merger`` → ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)
+         *       - ``demerger`` → ``counterparty_*`` (child) + ``child_ratio`` + ``child_cost_fraction``
+         *       - ``rights`` / ``buyback`` → ``units`` + ``price``
+         */
+        ManualCorporateActionIn: {
+            /** Child Cost Fraction */
+            child_cost_fraction?: number | string | null;
+            /** Child Ratio */
+            child_ratio?: number | string | null;
+            /**
+             * Counterparty Isin
+             * @default
+             */
+            counterparty_isin: string;
+            /**
+             * Counterparty Name
+             * @default
+             */
+            counterparty_name: string;
+            /**
+             * Counterparty Symbol
+             * @default
+             */
+            counterparty_symbol: string;
+            /**
+             * Ex Date
+             * Format: date
+             */
+            ex_date: string;
+            /** Kind */
+            kind: string;
+            /** Merger Ratio */
+            merger_ratio?: number | string | null;
+            /** Price */
+            price?: number | string | null;
+            /** Unit Multiplier */
+            unit_multiplier?: number | string | null;
+            /** Units */
+            units?: number | string | null;
+        };
+        /**
          * NavFreshnessOut
          * @description Settings 'NAV freshness' panel: per-security currency + refresh schedule.
          *
@@ -1715,11 +1782,8 @@ export interface components {
             day_change_pct: number | null;
             /** Dividend Yield On Cost */
             dividend_yield_on_cost?: number | null;
-            /**
-             * Dividends
-             * @default []
-             */
-            dividends: components["schemas"]["DividendTimelineRow"][];
+            /** Dividends */
+            dividends?: components["schemas"]["DividendTimelineRow"][];
             /** Dividends Received Inr */
             dividends_received_inr?: string | null;
             /** Folios */
@@ -2907,6 +2971,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IdentityRemapOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_apply_manual_corporate_action_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualCorporateActionIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyCorporateActionOut"];
                 };
             };
         };

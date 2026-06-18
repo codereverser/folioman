@@ -8,6 +8,8 @@ import {
   type IntegrityStatus,
 } from '@/integrity/status'
 
+export type ManualCorporateActionBody = Schemas['ManualCorporateActionIn']
+
 export interface IntegrityRow {
   securityId: number
   folioId: number
@@ -67,6 +69,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
   const loading = ref(false)
   const acknowledging = ref(false)
   const applyingCorporateAction = ref(false)
+  const applyingManualCorporateAction = ref(false)
   const recordingOpeningLot = ref(false)
   const applyingIdentityRemap = ref(false)
   const error = ref<string | null>(null)
@@ -286,6 +289,35 @@ export const useIntegrityStore = defineStore('integrity', () => {
     }
   }
 
+  async function applyManualCorporateAction(
+    investorId: number,
+    securityId: number,
+    folioId: number,
+    body: ManualCorporateActionBody,
+  ): Promise<boolean> {
+    applyingManualCorporateAction.value = true
+    error.value = null
+    try {
+      const { data, error: apiError } = await api.POST(
+        '/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-manual-corporate-action',
+        {
+          params: {
+            path: { investor_id: investorId, security_id: securityId, folio_id: folioId },
+          },
+          body,
+        },
+      )
+      if (apiError || !data?.integrity) throw new Error('could not apply the corporate action')
+      patchRow(investorId, data.integrity)
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'unknown error'
+      return false
+    } finally {
+      applyingManualCorporateAction.value = false
+    }
+  }
+
   function clear(): void {
     byInvestor.value = {}
   }
@@ -295,6 +327,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
     loading,
     acknowledging,
     applyingCorporateAction,
+    applyingManualCorporateAction,
     recordingOpeningLot,
     applyingIdentityRemap,
     error,
@@ -305,6 +338,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
     acknowledge,
     unacknowledge,
     applyCorporateAction,
+    applyManualCorporateAction,
     recordOpeningLot,
     applyIdentityRemap,
     clear,

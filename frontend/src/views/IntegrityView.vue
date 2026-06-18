@@ -10,6 +10,7 @@ import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import { useConfirm } from 'primevue/useconfirm'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
+import CorporateActionForm from '@/components/CorporateActionForm.vue'
 import {
   corporateActionManualNote,
   corporateActionApplyConfirmMessage,
@@ -26,7 +27,11 @@ import {
   remediation,
   type CorporateActionSuggestion,
 } from '@/integrity/status'
-import { useIntegrityStore, type IntegrityRow } from '@/stores/integrity'
+import {
+  useIntegrityStore,
+  type IntegrityRow,
+  type ManualCorporateActionBody,
+} from '@/stores/integrity'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { useWriteLock } from '@/composables/useWriteLock'
@@ -254,6 +259,37 @@ async function submitIdentityRemap(): Promise<void> {
   }
 }
 
+const manualCaVisible = ref(false)
+const manualCaRow = ref<IntegrityRow | null>(null)
+
+function openManualCaDialog(row: IntegrityRow): void {
+  manualCaRow.value = row
+  manualCaVisible.value = true
+}
+
+async function submitManualCa(body: ManualCorporateActionBody): Promise<void> {
+  const row = manualCaRow.value
+  if (!row) return
+  const ok = await integrity.applyManualCorporateAction(
+    investorId.value,
+    row.securityId,
+    row.folioId,
+    body,
+  )
+  if (ok) {
+    manualCaVisible.value = false
+    manualCaRow.value = null
+    await integrity.load(investorId.value, { force: true })
+    ui.notify({ severity: 'success', summary: 'Corporate action applied' })
+  } else {
+    ui.notify({
+      severity: 'error',
+      summary: 'Could not apply the corporate action',
+      detail: integrity.error ?? '',
+    })
+  }
+}
+
 const lastChecked = computed(() => {
   const stamps = rows.value.map((r) => r.lastReconciledAt).filter(Boolean) as string[]
   if (!stamps.length) return null
@@ -344,9 +380,10 @@ function back(): void {
       class="guidance"
     >
       <strong>How to resolve:</strong> a holding ties out once it has full transaction history.
-      Re-import a <em>since-inception (Detailed) CAS</em> to close a gap or mismatch. You can also
-      <em>acknowledge</em> a mismatch to mark it as known — it stays out of the worksheet either
-      way.
+      Re-import a <em>since-inception (Detailed) CAS</em> to close a gap, or <em>Resolve</em> a
+      mismatch by recording the corporate action (bonus, split, merger…) that explains it. You can
+      also <em>acknowledge</em> a mismatch to mark it as known — it stays out of the worksheet
+      either way.
     </Message>
 
     <div class="toolbar">
@@ -443,16 +480,25 @@ function back(): void {
                   :disabled="readOnly"
                   @click="openIdentityRemapDialog(row)"
                 />
-                <Button
-                  v-else-if="row.status === 'mismatch'"
-                  label="Acknowledge"
-                  icon="pi pi-minus-circle"
-                  size="small"
-                  text
-                  :loading="integrity.acknowledging"
-                  :disabled="readOnly"
-                  @click="askAcknowledge(row)"
-                />
+                <template v-else-if="row.status === 'mismatch'">
+                  <Button
+                    label="Resolve"
+                    icon="pi pi-wrench"
+                    size="small"
+                    text
+                    :disabled="readOnly"
+                    @click="openManualCaDialog(row)"
+                  />
+                  <Button
+                    label="Acknowledge"
+                    icon="pi pi-minus-circle"
+                    size="small"
+                    text
+                    :loading="integrity.acknowledging"
+                    :disabled="readOnly"
+                    @click="askAcknowledge(row)"
+                  />
+                </template>
                 <Button
                   v-else-if="row.status === 'user_acknowledged'"
                   label="Un-acknowledge"
@@ -547,6 +593,13 @@ function back(): void {
         />
       </template>
     </Dialog>
+
+    <CorporateActionForm
+      v-model:visible="manualCaVisible"
+      :row="manualCaRow"
+      :loading="integrity.applyingManualCorporateAction"
+      @submit="submitManualCa"
+    />
   </section>
 </template>
 
