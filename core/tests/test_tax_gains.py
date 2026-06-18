@@ -151,3 +151,54 @@ def test_grandfathering_unavailable_flagged_without_fmv():
     ]
     line = compute_gain_lines(txns, get_policy("IN"))[0]  # no fmv_lookup
     assert line.metadata.get("grandfathering_unavailable") is True
+
+
+_NEWCO = Security(type=SecurityType.EQUITY, name="NewCo", isin="INE040A01034", symbol="NEWCO")
+
+
+def _merged_indivisible_ledger(*, acquired: date):
+    """30 sh @ ₹1000 rebased 1-old-to-3-new → 90 sh, cost_total ₹30,000 exact."""
+    from folioman_core.corporate_actions import apply_merger
+
+    base = [_buy("30", "1000", on=acquired)]
+    return apply_merger(base, old_security=_EQUITY, new_security=_NEWCO, ratio=Decimal("3"))
+
+
+def _sell_newco(units: str, nav: str, *, on: date) -> Transaction:
+    return Transaction(
+        security=_NEWCO,
+        date=on,
+        type=TransactionType.SELL,
+        units=units,
+        nav_or_price=nav,
+        source=TransactionSource.MANUAL,
+    )
+
+
+def test_indivisible_merger_adjusted_cost_exact_through_tax():
+    # Post-2018 acquisition (no grandfathering): the per-unit is 1000/3 (repeating),
+    # but the preserved total keeps adjusted_cost exact to the paisa.
+    txns = [
+        *_merged_indivisible_ledger(acquired=date(2020, 1, 1)),
+        _sell_newco("90", "500", on=date(2022, 6, 1)),
+    ]
+    lines = compute_gain_lines(txns, get_policy("IN"))
+    assert sum(line.adjusted_cost for line in lines) == Decimal("30000.00")
+    assert sum(line.gain for line in lines) == Decimal("15000.00")
+    assert all(line.term is Term.LONG for line in lines)
+
+
+def test_indivisible_merger_grandfathering_actual_cost_wins_exact():
+    # Pre-2018 acquisition with FMV below the actual per-unit cost → actual cost
+    # wins the max(actual, min(FMV, sale)) per unit; adjusted_cost stays exact.
+    txns = [
+        *_merged_indivisible_ledger(acquired=date(2017, 1, 1)),
+        _sell_newco("90", "500", on=date(2024, 6, 1)),
+    ]
+
+    def fmv_lookup(_isin: str, _on: date) -> Decimal:
+        return Decimal("200")  # below 1000/3 ≈ 333.33, so actual cost is used
+
+    lines = compute_gain_lines(txns, get_policy("IN"), fmv_lookup=fmv_lookup)
+    assert sum(line.adjusted_cost for line in lines) == Decimal("30000.00")
+    assert sum(line.gain for line in lines) == Decimal("15000.00")
