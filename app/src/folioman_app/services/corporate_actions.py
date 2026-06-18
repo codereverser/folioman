@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import timedelta
+from decimal import Decimal
 
 from django.db import transaction as db_transaction
 from folioman_core.corporate_action_subject import CorpActionType
@@ -11,12 +13,19 @@ from folioman_core.corporate_actions import (
     apply_corporate_action_events,
     cost_basis_complete_for_acquisition,
 )
-from folioman_core.models.transaction import TransactionType
+from folioman_core.fifo import net_units_from_transactions, open_lots_asof
+from folioman_core.models import HoldingSource, SecurityType
+from folioman_core.models.transaction import TransactionSource, TransactionType
 
 from folioman_app.mappers import to_core_security, to_core_transaction
 from folioman_app.models import CorporateActionReference, Folio, Investor, Security, Transaction
 from folioman_app.tasks._upsert import upsert_security
 from folioman_app.tasks.reconcile import reconcile_security
+
+# Sub-share remainders below this are dust, not a fractional entitlement (matches
+# reconciliation TOLERANCE).
+_FRACTION_EPSILON = Decimal("0.0001")
+_ONE = Decimal("1")
 
 
 def _event_from_reference(
@@ -161,6 +170,75 @@ def _filter_unapplied_events(
     return out
 
 
+def _settle_fractional_entitlement(investor: Investor, folio: Folio, security: Security) -> bool:
+    """Book a cost-priced cash disposal for a sub-share corporate-action remainder.
+
+    An Indian demat holds whole shares; a merger / odd-bonus ratio can leave the
+    ledger net a fraction above the whole eCAS holding (the registrar sells the
+    fraction for cash). When the eCAS anchor is a whole number and the ledger is over
+    it by **< 1 share**, book that fraction as a SELL at the oldest open lot's cost —
+    zero realised gain — so the ledger reconciles to whole shares. A larger gap is
+    genuine missing history and is left to surface as a MISMATCH.
+
+    The row is tagged (``source=CORPORATE_ACTION`` + a stable ``source_ref``) and the
+    pass is idempotent, so it never double-books and a future manual override can
+    find or replace it. Returns True if a settlement row was booked.
+
+    Self-scoping to whole-share markets: only equity in INR is considered, and a
+    foreign (fractional-share) holding has no eCAS anchor to settle against anyway.
+    """
+    if security.security_type != SecurityType.EQUITY.value or (security.currency or "INR") != "INR":
+        return False
+
+    holding = (
+        investor.holdings.filter(security=security, folio=folio, source=HoldingSource.ECAS.value)
+        .order_by("-as_of_date")
+        .first()
+    )
+    if holding is None or holding.units != holding.units.to_integral_value():
+        return False  # no anchor, or the anchor itself isn't a whole share count
+
+    core_txns = [
+        to_core_transaction(t)
+        for t in investor.transactions.cost_basis()
+        .filter(security=security, folio=folio)
+        .select_related("security", "folio")
+    ]
+    if not core_txns:
+        return False
+    excess = net_units_from_transactions(core_txns) - holding.units
+    if excess <= _FRACTION_EPSILON or excess >= _ONE:
+        return False  # dust, exact, or a real (>= 1 share) gap
+
+    source_ref = f"fractional-entitlement:{security.isin or security.symbol}"
+    if investor.transactions.filter(folio=folio, security=security, source_ref=source_ref).exists():
+        return False  # already settled (or a prior manual override stands)
+
+    # Sell the fraction at the oldest open lot's cost so the realised gain is zero.
+    sell_date = max(t.date for t in core_txns)
+    lots = open_lots_asof(
+        core_txns,
+        to_core_security(security),
+        sell_date + timedelta(days=1),
+        folio_number=folio.number,
+    )
+    if not lots:
+        return False
+    Transaction.objects.create(
+        investor=investor,
+        security=security,
+        folio=folio,
+        date=sell_date,
+        transaction_type=TransactionType.SELL.value,
+        units=excess,
+        nav_or_price=lots[0].cost_per_unit,
+        source=TransactionSource.CORPORATE_ACTION.value,
+        source_ref=source_ref,
+        cost_basis_complete=True,
+    )
+    return True
+
+
 @db_transaction.atomic
 def apply_corporate_actions_to_folio(
     investor: Investor,
@@ -207,6 +285,9 @@ def apply_corporate_actions_to_folio(
     for isin in isins:
         sec = Security.objects.filter(isin=isin).first()
         if sec is not None:
+            # Whole the ledger against the eCAS anchor before reconciling, so a CA
+            # fractional remainder doesn't read as a mismatch.
+            _settle_fractional_entitlement(investor, folio, sec)
             reconcile_security(investor, sec)
             affected_ids.add(sec.id)
 

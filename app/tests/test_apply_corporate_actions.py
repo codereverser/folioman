@@ -275,3 +275,72 @@ def test_apply_merger_and_bonus_events_hdfcbank(make_investor):
     # Original HDFC row should now point at HDFCBANK.
     assert not inv.transactions.filter(security=hdfc_sec, folio=folio).exists()
     assert inv.transactions.filter(security=hdfcbank_sec, folio=folio).count() >= 2
+
+
+def test_fractional_entitlement_settled_against_ecas_whole_holding(make_investor):
+    """A merger fraction over the whole eCAS holding is booked as a zero-gain SELL.
+
+    11 sh rebased at 3:2 (ratio 1.5) -> 16.5; the demat holds 16 whole shares (the
+    registrar paid cash for the 0.5). The 0.5 is settled at cost so the ledger
+    reconciles to 16, the row is tagged + idempotent.
+    """
+    inv = make_investor()
+    old_isin = "INE001A01036"
+    new_isin = "INE040A01034"
+    row = f"equity,Old Co,OLDCO,{old_isin},2020-06-01,buy,11,100,{_DEMAT},ZERODHA\n"
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_TRADEBOOK_HEADER + row).encode(), "")
+
+    newco = CoreSecurity(type=SecurityType.EQUITY, name="New Co", isin=new_isin, symbol="NEWCO")
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2025, 6, 1),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=_DEMAT, broker="ZERODHA"),
+                    holdings=[EcasHoldingLine(security=newco, units="16", value_observed="32000")],
+                )
+            ],
+        ),
+        source_ref="ecas-newco",
+    )
+
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.MERGER,
+            ex_date=dt.date(2021, 7, 1),
+            security=newco,
+            merger_old_security=CoreSecurity(
+                type=SecurityType.EQUITY, name="Old Co", isin=old_isin, symbol="OLDCO"
+            ),
+            merger_new_security=newco,
+            merger_ratio=Decimal("1.5"),
+            source_ref="merger:frac",
+        )
+    ]
+    apply_corporate_actions_to_folio(inv, folio, events=events)
+
+    new_sec = Security.objects.get(isin=new_isin)
+    frac = inv.transactions.get(
+        folio=folio, security=new_sec, source_ref=f"fractional-entitlement:{new_isin}"
+    )
+    assert frac.transaction_type == "sell"
+    assert frac.units == Decimal("0.5")
+    assert frac.source == "corporate-action"  # tagged for a future manual override
+
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=new_sec, folio=folio)
+    assert status.status == "reconciled"
+    assert status.units_from_transactions == Decimal("16")
+    assert status.units_from_holdings == Decimal("16")
+
+    # Idempotent: re-applying books no second settlement row.
+    apply_corporate_actions_to_folio(inv, folio, events=events)
+    assert (
+        inv.transactions.filter(
+            folio=folio, security=new_sec, source_ref=f"fractional-entitlement:{new_isin}"
+        ).count()
+        == 1
+    )
