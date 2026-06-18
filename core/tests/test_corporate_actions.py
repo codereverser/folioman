@@ -554,3 +554,73 @@ def test_apply_demerger_leaves_pre_demerger_realised_gain_unchanged():
 def test_cost_basis_complete_for_acquisition():
     assert cost_basis_complete_for_acquisition(date(2016, 1, 1)) is True
     assert cost_basis_complete_for_acquisition(date(2015, 12, 31)) is False
+
+
+def _sell_on(security: Security, units: str, nav: str, *, on: date) -> Transaction:
+    return Transaction(
+        security=security,
+        date=on,
+        type=TransactionType.SELL,
+        units=units,
+        nav_or_price=nav,
+        source=TransactionSource.MANUAL,
+    )
+
+
+def test_merger_indivisible_ratio_preserves_exact_cost_via_total():
+    # 30 sh @ ₹1000 = ₹30,000; merge 1 old -> 3 new. New per-unit is 333.333…
+    # (repeating), so only the carried total keeps the cost exact.
+    txns = apply_merger(
+        [_buy("30", "1000", on=date(2020, 1, 1))],
+        old_security=_EQUITY,
+        new_security=_NEWCO,
+        ratio=Decimal("3"),
+    )
+    buy = next(t for t in txns if t.type is TransactionType.BUY)
+    assert buy.units == Decimal("90")
+    assert buy.cost_total == Decimal("30000")
+
+    # Simulate the ledger's 6dp persistence of the repeating per-unit; cost_total
+    # (carried as a total) is unaffected, so the realised gain stays exact.
+    persisted = buy.model_copy(
+        update={"nav_or_price": buy.nav_or_price.quantize(Decimal("0.000001"))}
+    )
+    sell = _sell_on(_NEWCO, "90", "500", on=date(2021, 6, 1))
+    fifo = apply_fifo([persisted, sell])
+    assert fifo.pnl == Decimal("15000")  # 90*500 - 30000, no drift
+
+    # Contrast: drop the preserved total and the 6dp per-unit drifts the gain.
+    drifted = persisted.model_copy(update={"cost_total": None})
+    assert apply_fifo([drifted, sell]).pnl != Decimal("15000")
+
+
+def test_split_indivisible_ratio_carries_total():
+    txns = apply_split(
+        [_buy("10", "100", on=date(2020, 1, 1))],
+        ratio=Decimal("3"),
+        effective_date=date(2020, 6, 1),
+        security=_EQUITY,
+    )
+    buy = next(t for t in txns if t.type is TransactionType.BUY)
+    assert buy.units == Decimal("30")
+    assert buy.cost_total == Decimal("1000")  # 10 * 100, preserved exactly
+
+
+def test_demerger_splits_total_cost_across_parent_and_child():
+    # 100 sh @ ₹300 = ₹30,000; spin off a child taking 40% of cost, 1 child/parent.
+    txns = apply_demerger(
+        [_buy("100", "300", on=date(2019, 1, 1))],
+        parent_security=_EQUITY,
+        child_security=_NEWCO,
+        child_per_parent=Decimal("1"),
+        child_cost_fraction=Decimal("0.4"),
+        effective_date=date(2020, 1, 1),
+    )
+    parent_buy = next(
+        t for t in txns if t.type is TransactionType.BUY and t.security.isin == _EQUITY.isin
+    )
+    child = next(t for t in txns if t.security.isin == _NEWCO.isin)
+    assert parent_buy.cost_total == Decimal("18000")  # 60% of 30,000
+    assert child.cost_total == Decimal("12000")  # 40% of 30,000
+    # Parent + child totals reconstruct the original lot cost exactly.
+    assert parent_buy.cost_total + child.cost_total == Decimal("30000")

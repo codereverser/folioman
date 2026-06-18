@@ -30,6 +30,19 @@ def _lot_source_key(txn: Transaction) -> int | tuple:
     )
 
 
+def _preserved_cost_total(txn: Transaction) -> Decimal:
+    """The lot's exact cost of acquisition to carry through a unit-scaling rewrite.
+
+    A split/merger rewrites ``units`` and per-unit ``nav_or_price``; for an
+    indivisible ratio the per-unit is a repeating decimal, so the lot's TOTAL cost
+    is the only exact carrier. Reuse an already-preserved total when a prior CA set
+    one (chained events), else the buy's ``units * nav_or_price + brokerage``.
+    """
+    if txn.cost_total is not None:
+        return txn.cost_total
+    return txn.units * txn.nav_or_price + txn.brokerage
+
+
 _EVENT_ORDER: dict[CorpActionType, int] = {
     CorpActionType.SPLIT: 0,
     CorpActionType.MERGER: 1,
@@ -275,14 +288,26 @@ def apply_demerger(
         if remaining <= _ZERO:
             scaled_parent_pre.append(txn)
             continue
+        lot_total = _preserved_cost_total(txn)
         if remaining >= txn.units:
-            scaled_parent_pre.append(_copy(txn, nav_or_price=txn.nav_or_price * parent_fraction))
+            # Whole lot still open: parent keeps its share of the exact total.
+            scaled_parent_pre.append(
+                _copy(
+                    txn,
+                    nav_or_price=txn.nav_or_price * parent_fraction,
+                    cost_total=parent_fraction * lot_total,
+                )
+            )
             continue
         sold_units = txn.units - remaining
+        # Already-consumed slice keeps its full (unscaled) cost; the still-open slice
+        # keeps the parent's fraction. Costs are apportioned from the lot's exact
+        # total by units share so an indivisible fraction can't drift.
         scaled_parent_pre.append(
             _copy(
                 txn,
                 units=sold_units,
+                cost_total=sold_units / txn.units * lot_total,
             )
         )
         scaled_parent_pre.append(
@@ -290,6 +315,7 @@ def apply_demerger(
                 txn,
                 units=remaining,
                 nav_or_price=txn.nav_or_price * parent_fraction,
+                cost_total=parent_fraction * (remaining / txn.units) * lot_total,
                 amount=remaining * txn.nav_or_price * parent_fraction
                 if txn.amount is not None
                 else None,
@@ -301,11 +327,11 @@ def apply_demerger(
         child_units = lot.units * child_per_parent
         if child_units <= _ZERO:
             continue
-        child_cpu = (
-            lot.cost_per_unit * child_cost_fraction / child_per_parent
-            if child_per_parent
-            else _ZERO
-        )
+        # Child inherits ``child_cost_fraction`` of the lot's total cost, spread over
+        # the issued child units. Carry the exact total so the (typically repeating)
+        # per-unit doesn't drift on persistence.
+        child_total = child_cost_fraction * lot.units * lot.cost_per_unit
+        child_cpu = child_total / child_units if child_units else _ZERO
         child_rows.append(
             Transaction(
                 security=child_security,
@@ -313,7 +339,8 @@ def apply_demerger(
                 type=TransactionType.TRANSFER_IN,
                 units=child_units,
                 nav_or_price=child_cpu,
-                amount=child_units * child_cpu,
+                cost_total=child_total,
+                amount=child_total,
                 source=TransactionSource.CORPORATE_ACTION,
                 source_ref=ref,
             )
@@ -340,13 +367,22 @@ def apply_split(
         if txn.date >= effective_date or not _same_security(txn.security, security):
             adjusted.append(txn)
             continue
-        if txn.type in (
-            TransactionType.BUY,
+        if txn.type in (TransactionType.BUY, TransactionType.TRANSFER_IN):
+            # Cost-bearing lot: preserve the exact total; per-unit is now display-only.
+            adjusted.append(
+                _copy(
+                    txn,
+                    units=txn.units * ratio,
+                    nav_or_price=txn.nav_or_price / ratio,
+                    cost_total=_preserved_cost_total(txn),
+                )
+            )
+        elif txn.type in (
             TransactionType.SELL,
             TransactionType.BONUS,
-            TransactionType.TRANSFER_IN,
             TransactionType.TRANSFER_OUT,
         ):
+            # No cost basis to preserve (sells consume lots; bonus units are zero-cost).
             adjusted.append(
                 _copy(
                     txn,
@@ -462,12 +498,21 @@ def apply_merger(
         if not _same_security(txn.security, old_security):
             converted.append(txn)
             continue
+        # Cost-bearing rows carry their exact total onto the new scrip (an
+        # indivisible swap ratio makes the new per-unit a repeating decimal);
+        # sells/zero-cost rows just re-base units + per-unit.
+        cost_total = (
+            _preserved_cost_total(txn)
+            if txn.type in (TransactionType.BUY, TransactionType.TRANSFER_IN)
+            else None
+        )
         converted.append(
             _copy(
                 txn,
                 security=new_security,
                 units=txn.units * ratio,
                 nav_or_price=txn.nav_or_price / ratio,
+                cost_total=cost_total,
                 # Keep the original date/type so FIFO inherits the holding
                 # period; tag provenance only where the row had none.
                 source_ref=txn.source_ref or ref,
