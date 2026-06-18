@@ -21,6 +21,8 @@ export interface IntegrityRow {
   broker: string
   status: IntegrityStatus
   taxSafe: boolean
+  /** When this equity's corporate actions were last fetched (null = never). */
+  caSyncedAt: string | null
   unitsFromHoldings: string | null
   unitsFromTransactions: string | null
   issues: Record<string, unknown>[]
@@ -41,6 +43,7 @@ function toRow(r: Schemas['IntegrityStatusOut']): IntegrityRow {
     broker: r.folio.broker,
     status: toIntegrityStatus(r.status),
     taxSafe: r.tax_safe,
+    caSyncedAt: r.security.corporate_actions_synced_at ?? null,
     unitsFromHoldings: r.units_from_holdings,
     unitsFromTransactions: r.units_from_transactions,
     issues: r.issues ?? [],
@@ -70,6 +73,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
   const acknowledging = ref(false)
   const applyingCorporateAction = ref(false)
   const applyingManualCorporateAction = ref(false)
+  const refreshingCorporateActions = ref(false)
   const recordingOpeningLot = ref(false)
   const applyingIdentityRemap = ref(false)
   const error = ref<string | null>(null)
@@ -96,6 +100,27 @@ export const useIntegrityStore = defineStore('integrity', () => {
       error.value = e instanceof Error ? e.message : 'unknown error'
     } finally {
       loading.value = false
+    }
+  }
+
+  /** Fetch NSE/BSE corporate actions for this investor's mismatched equities now,
+   * then replace the cached rows with the re-reconciled result (suggestions appear). */
+  async function refreshCorporateActions(investorId: number): Promise<boolean> {
+    refreshingCorporateActions.value = true
+    error.value = null
+    try {
+      const { data, error: apiError } = await api.POST(
+        '/api/investors/{investor_id}/integrity/refresh-corporate-actions',
+        { params: { path: { investor_id: investorId } } },
+      )
+      if (apiError || !data) throw new Error('could not fetch corporate actions')
+      byInvestor.value[investorId] = data.map(toRow)
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'unknown error'
+      return false
+    } finally {
+      refreshingCorporateActions.value = false
     }
   }
 
@@ -328,12 +353,14 @@ export const useIntegrityStore = defineStore('integrity', () => {
     acknowledging,
     applyingCorporateAction,
     applyingManualCorporateAction,
+    refreshingCorporateActions,
     recordingOpeningLot,
     applyingIdentityRemap,
     error,
     rowsFor,
     rollupFor,
     load,
+    refreshCorporateActions,
     recompute,
     acknowledge,
     unacknowledge,

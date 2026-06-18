@@ -522,6 +522,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/integrity/refresh-corporate-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Corporate Actions Now
+         * @description Fetch NSE/BSE corporate actions for this investor's mismatched equities now,
+         *     re-reconcile, and return the updated statuses. The user-triggered counterpart to
+         *     the daily scheduler tick — so suggestions are ready right after an import without
+         *     waiting. Bounded to the actionable (mismatch) set.
+         */
+        post: operations["folioman_app_api_integrity_refresh_corporate_actions_now"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/acknowledge": {
         parameters: {
             query?: never;
@@ -1845,6 +1868,8 @@ export interface components {
         };
         /** SecurityRef */
         SecurityRef: {
+            /** Corporate Actions Synced At */
+            corporate_actions_synced_at?: string | null;
             /** Id */
             id: number;
             /** Isin */
@@ -2874,6 +2899,28 @@ export interface operations {
         };
     };
     folioman_app_api_integrity_recompute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrityStatusOut"][];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_refresh_corporate_actions_now: {
         parameters: {
             query?: never;
             header?: never;

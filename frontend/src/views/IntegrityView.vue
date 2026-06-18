@@ -307,6 +307,27 @@ async function recheck(): Promise<void> {
   }
 }
 
+// A mismatch whose corporate actions haven't been fetched yet: don't let the user
+// hand-author one (they'd guess a single coarse action for what may be several
+// separate events). Wait for the feed first.
+function caPending(row: IntegrityRow): boolean {
+  return row.status === 'mismatch' && !row.caSyncedAt && !suggestionFor(row)
+}
+const hasPendingCa = computed(() => rows.value.some(caPending))
+
+async function fetchCorporateActions(): Promise<void> {
+  const ok = await integrity.refreshCorporateActions(investorId.value)
+  ui.notify(
+    ok
+      ? { severity: 'success', summary: 'Corporate actions fetched' }
+      : {
+          severity: 'error',
+          summary: 'Could not fetch corporate actions',
+          detail: integrity.error ?? '',
+        },
+  )
+}
+
 function askAcknowledge(row: IntegrityRow): void {
   confirm.require({
     header: 'Acknowledge this gap?',
@@ -358,6 +379,15 @@ function back(): void {
       <div class="title-row">
         <h1>Data integrity</h1>
         <Button
+          v-if="hasPendingCa"
+          label="Fetch corporate actions"
+          icon="pi pi-cloud-download"
+          size="small"
+          :loading="integrity.refreshingCorporateActions"
+          :disabled="readOnly"
+          @click="fetchCorporateActions"
+        />
+        <Button
           label="Re-check"
           icon="pi pi-refresh"
           size="small"
@@ -379,11 +409,12 @@ function back(): void {
       :closable="false"
       class="guidance"
     >
-      <strong>How to resolve:</strong> a holding ties out once it has full transaction history.
-      Re-import a <em>since-inception (Detailed) CAS</em> to close a gap, or <em>Resolve</em> a
-      mismatch by recording the corporate action (bonus, split, merger…) that explains it. You can
-      also <em>acknowledge</em> a mismatch to mark it as known — it stays out of the worksheet
-      either way.
+      <strong>How to resolve:</strong> a holding ties out once it has full transaction history. We
+      fetch your stocks’ corporate actions in the background; if a mismatch is still open,
+      <em>Fetch corporate actions</em> first, then apply the suggested split/bonus — or
+      <em>Resolve</em> by recording the action yourself once the history is in. You can also
+      <em>acknowledge</em> a mismatch to mark it as known — it stays out of the worksheet either
+      way.
     </Message>
 
     <div class="toolbar">
@@ -481,7 +512,20 @@ function back(): void {
                   @click="openIdentityRemapDialog(row)"
                 />
                 <template v-else-if="row.status === 'mismatch'">
+                  <!-- CAs not fetched yet: nudge to fetch, withhold manual authoring
+                       so the user doesn't guess one coarse action for several. -->
                   <Button
+                    v-if="caPending(row)"
+                    label="Fetch corporate actions"
+                    icon="pi pi-cloud-download"
+                    size="small"
+                    text
+                    :loading="integrity.refreshingCorporateActions"
+                    :disabled="readOnly"
+                    @click="fetchCorporateActions"
+                  />
+                  <Button
+                    v-else
                     label="Resolve"
                     icon="pi pi-wrench"
                     size="small"
