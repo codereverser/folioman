@@ -43,6 +43,7 @@ def to_core_transaction(txn: Transaction) -> CoreTransaction:
         fees=txn.fees,
         stamp_duty=txn.stamp_duty,
         brokerage=txn.brokerage,
+        cost_total=txn.cost_total,
         source=TransactionSource(txn.source),
         source_ref=txn.source_ref,
         folio_number=txn.folio.number if txn.folio else "",

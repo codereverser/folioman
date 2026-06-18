@@ -225,6 +225,14 @@ class Transaction(TimeStampedModel):
     # folded into FIFO cost basis. Distinct from fees (sell-side STT) and
     # stamp_duty (transfer expense), neither of which enter cost basis.
     brokerage = models.DecimalField(max_digits=20, decimal_places=2, default=Decimal("0"))
+    # Exact lot cost of acquisition preserved through a corporate action. A
+    # split/merger rewrites units + per-unit nav_or_price, but for an indivisible
+    # ratio the per-unit is a repeating decimal that would lose cost at this column's
+    # precision. When set, FIFO uses this total (apportioned by units fraction) as
+    # the lot cost instead of units*nav_or_price; null on ordinary rows (FIFO falls
+    # back to the per-unit computation, unchanged). 4dp headroom — the preserved
+    # total is a rupee amount, 2dp-clean for whole-share equity.
+    cost_total = models.DecimalField(max_digits=22, decimal_places=4, null=True, blank=True)
     source = models.CharField(max_length=20, choices=TRANSACTION_SOURCE_CHOICES)
     source_ref = models.CharField(max_length=128, blank=True, default="")
     # Verbatim transaction narration from the source statement, kept for an audit

@@ -92,6 +92,10 @@ def _persist_applied_ledger(
             if orm.nav_or_price != core.nav_or_price:
                 orm.nav_or_price = core.nav_or_price
                 fields.append("nav_or_price")
+            if orm.cost_total != core.cost_total:
+                # Exact lot cost preserved by the CA; per-unit above is display-only.
+                orm.cost_total = core.cost_total
+                fields.append("cost_total")
             if orm.amount != core.amount:
                 orm.amount = core.amount
                 fields.append("amount")
@@ -124,6 +128,7 @@ def _persist_applied_ledger(
             fees=core.fees,
             stamp_duty=core.stamp_duty,
             brokerage=core.brokerage,
+            cost_total=core.cost_total,
             source=core.source.value,
             source_ref=source_ref,
             cost_basis_complete=_cost_basis_complete_for_core(core),

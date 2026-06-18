@@ -6,6 +6,7 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
+from folioman_app.mappers import to_core_transaction
 from folioman_app.models import (
     CorporateActionReference,
     Folio,
@@ -19,7 +20,9 @@ from folioman_app.tasks.import_csv import process_csv
 from folioman_app.tasks.import_ecas import persist_ecas_statement
 from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.corporate_actions import CorporateActionApplyEvent
-from folioman_core.models import SecurityType
+from folioman_core.fifo import apply_fifo
+from folioman_core.models import SecurityType, TransactionType
+from folioman_core.models import Transaction as CoreTransaction
 from folioman_core.models.cas import Depository, EcasAccountBlock, EcasHoldingLine, EcasStatement
 from folioman_core.models.investor import Folio as CoreFolio
 from folioman_core.models.security import Security as CoreSecurity
@@ -142,6 +145,58 @@ def test_apply_merger_marks_pre_2016_acquisition_incomplete_on_persist(make_inve
     txn = inv.transactions.get(security=new_sec, folio=folio)
     assert txn.date == dt.date(2014, 6, 1)
     assert txn.cost_basis_complete is False
+
+
+def test_merger_persists_exact_cost_total_for_indivisible_ratio(make_investor):
+    """An indivisible merger ratio's exact lot cost survives the DB round-trip.
+
+    1 old -> 3 new makes the new per-unit 1000/3 (repeating), which rounds to the
+    column's 6dp on save. The preserved cost_total keeps the realised gain exact
+    when valuation/tax replay the persisted rows.
+    """
+    inv = make_investor()
+    old_isin = "INE001A01036"
+    new_isin = "INE040A01034"
+    row = f"equity,Old Co,OLDCO,{old_isin},2020-06-01,buy,30,1000,{_DEMAT},ZERODHA\n"
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_TRADEBOOK_HEADER + row).encode(), "")
+
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    new_sec_core = CoreSecurity(
+        type=SecurityType.EQUITY, name="New Co", isin=new_isin, symbol="NEWCO"
+    )
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.MERGER,
+            ex_date=dt.date(2021, 7, 1),
+            security=new_sec_core,
+            merger_old_security=CoreSecurity(
+                type=SecurityType.EQUITY, name="Old Co", isin=old_isin, symbol="OLDCO"
+            ),
+            merger_new_security=new_sec_core,
+            merger_ratio=Decimal("3"),
+            source_ref="merger:indivisible",
+        )
+    ]
+    apply_corporate_actions_to_folio(inv, folio, events=events)
+
+    new_sec = Security.objects.get(isin=new_isin)
+    txn = inv.transactions.get(security=new_sec, folio=folio)
+    assert txn.units == Decimal("90")
+    assert txn.cost_total == Decimal("30000")  # exact total persisted
+
+    # Replay the persisted row as valuation/tax do, then sell the whole position:
+    # the gain is exact (45000 - 30000), with no 6dp per-unit drift.
+    core = to_core_transaction(txn)
+    sell = CoreTransaction(
+        security=core.security,
+        date=dt.date(2022, 1, 1),
+        type=TransactionType.SELL,
+        units=Decimal("90"),
+        nav_or_price=Decimal("500"),
+        source=core.source,
+    )
+    assert apply_fifo([core, sell]).pnl == Decimal("15000")
 
 
 def test_apply_merger_and_bonus_events_hdfcbank(make_investor):
