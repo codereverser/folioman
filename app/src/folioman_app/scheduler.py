@@ -33,6 +33,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
 from django.conf import settings
 
+from folioman_app.tasks.corporate_action_ticks import (
+    run_corporate_action_catch_up_tick,
+    run_corporate_action_refresh_tick,
+)
 from folioman_app.tasks.isin_ticks import run_isin_catch_up_tick, run_isin_update_tick
 from folioman_app.tasks.valuation_ticks import (
     REVALUE_HOURS,
@@ -98,6 +102,16 @@ _JOBS: tuple[_Job, ...] = (
         trigger_args={"hour": 2, "minute": 30},
         misfire_grace_time=_DAILY_MISFIRE_GRACE_SECONDS,
     ),
+    # Refresh NSE/BSE corporate actions daily for equities in a unit mismatch, so
+    # the integrity page has real event-by-event suggestions to offer. Offset from
+    # the other daily runs to spread the load.
+    _Job(
+        id="refresh_corporate_actions",
+        func=run_corporate_action_refresh_tick,
+        trigger="cron",
+        trigger_args={"hour": 3, "minute": 15},
+        misfire_grace_time=_DAILY_MISFIRE_GRACE_SECONDS,
+    ),
 )
 
 
@@ -141,6 +155,16 @@ def _add_catch_up_job(scheduler) -> None:
     scheduler.add_job(
         run_isin_catch_up_tick,
         id="isin_catch_up_on_launch",
+        max_instances=1,
+        coalesce=True,
+        replace_existing=True,
+        misfire_grace_time=None,
+    )
+    # Corporate-action launch catch-up: fetch actionable equities' CAs on start, so
+    # a fresh import is resolvable without waiting for the daily run (or a CLI).
+    scheduler.add_job(
+        run_corporate_action_catch_up_tick,
+        id="corporate_action_catch_up_on_launch",
         max_instances=1,
         coalesce=True,
         replace_existing=True,

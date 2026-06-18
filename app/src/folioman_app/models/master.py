@@ -62,6 +62,12 @@ class Security(TimeStampedModel):
     # gap, so valuation degrades it (stale, never an error) instead of retrying the feed
     # forever. Reversible: a later backfill that finds data clears it (self-healing).
     nav_feed_closed = models.BooleanField(default=False)
+    # When this equity's NSE/BSE corporate actions were last fetched into the cache
+    # (set even when the feed returned none). Null = never fetched, which the
+    # integrity UI uses to tell "we haven't checked yet, wait" apart from "checked,
+    # genuinely no corporate action" — so the user doesn't hand-author a guessed
+    # action before the real per-event history is available.
+    corporate_actions_synced_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name_plural = "securities"

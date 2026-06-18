@@ -2504,6 +2504,18 @@
       },
       "SecurityRef": {
         "properties": {
+          "corporate_actions_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corporate Actions Synced At"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -4375,6 +4387,43 @@
           }
         },
         "summary": "Recompute",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/refresh-corporate-actions": {
+      "post": {
+        "description": "Fetch NSE/BSE corporate actions for this investor's mismatched equities now,\nre-reconcile, and return the updated statuses. The user-triggered counterpart to\nthe daily scheduler tick \u2014 so suggestions are ready right after an import without\nwaiting. Bounded to the actionable (mismatch) set.",
+        "operationId": "folioman_app_api_integrity_refresh_corporate_actions_now",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrityStatusOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Refresh Corporate Actions Now",
         "tags": [
           "integrity"
         ]

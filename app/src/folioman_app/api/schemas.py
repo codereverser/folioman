@@ -427,6 +427,10 @@ class SecurityRef(Schema):
     isin: str
     symbol: str
     security_type: str
+    # When this equity's corporate actions were last fetched (null = never). The
+    # integrity UI uses it to gate manual authoring behind "the feed has been
+    # checked", so the user doesn't guess an action before the real history lands.
+    corporate_actions_synced_at: datetime | None = None
 
 
 class FolioRef(Schema):

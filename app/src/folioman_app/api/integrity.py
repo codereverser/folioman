@@ -8,7 +8,9 @@ stays out of the tax export).
 from __future__ import annotations
 
 from django.shortcuts import get_object_or_404
+from folioman_core.models import SecurityType
 from folioman_core.opening_lot import OpeningLotKind
+from folioman_core.reconciliation import IntegrityStatus
 from ninja import Router
 from ninja.errors import HttpError
 
@@ -30,7 +32,12 @@ from folioman_app.services.corporate_actions import (
 )
 from folioman_app.services.identity_remap import apply_identity_remap
 from folioman_app.services.opening_lots import record_opening_lot
-from folioman_app.tasks.reconcile import recompute_investor, reconcile_security_folio
+from folioman_app.tasks.reconcile import (
+    recompute_investor,
+    reconcile_security,
+    reconcile_security_folio,
+)
+from folioman_app.tasks.refresh_corporate_actions import refresh_corporate_actions
 
 router = Router(tags=["integrity"])
 
@@ -42,6 +49,32 @@ def _statuses(investor: Investor):
 @router.get("/{investor_id}/integrity", response=list[IntegrityStatusOut])
 def list_integrity(request, investor_id: int):
     return _statuses(get_owned_investor(request, investor_id))
+
+
+@router.post(
+    "/{investor_id}/integrity/refresh-corporate-actions", response=list[IntegrityStatusOut]
+)
+def refresh_corporate_actions_now(request, investor_id: int):
+    """Fetch NSE/BSE corporate actions for this investor's mismatched equities now,
+    re-reconcile, and return the updated statuses. The user-triggered counterpart to
+    the daily scheduler tick — so suggestions are ready right after an import without
+    waiting. Bounded to the actionable (mismatch) set."""
+    investor = get_owned_investor(request, investor_id)
+    sec_ids = (
+        SecurityIntegrityStatus.objects.filter(
+            investor=investor,
+            status=IntegrityStatus.MISMATCH.value,
+            security__security_type=SecurityType.EQUITY.value,
+        )
+        .values_list("security_id", flat=True)
+        .distinct()
+    )
+    securities = list(Security.objects.filter(id__in=sec_ids).exclude(symbol=""))
+    if securities:
+        refresh_corporate_actions(securities=securities)
+        for sec in securities:
+            reconcile_security(investor, sec)
+    return _statuses(investor)
 
 
 @router.post("/{investor_id}/integrity/recompute", response=list[IntegrityStatusOut])

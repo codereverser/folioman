@@ -128,3 +128,38 @@ def test_refresh_batch_counts_securities(monkeypatch, hdfc_security):
     summary = refresh_corporate_actions()
     assert summary["securities"] == 1
     assert summary["events"] == 1
+
+
+@pytest.mark.django_db
+def test_sync_stamps_synced_at(monkeypatch, hdfc_security):
+    """A successful fetch (even zero events) records when CAs were last checked."""
+    from folioman_core.price_feeds import corporate_actions_fetch
+
+    monkeypatch.setattr(corporate_actions_fetch, "fetch_corporate_actions", lambda *a, **kw: [])
+
+    class _Clients:
+        nse = bse = None
+
+        def close(self):
+            pass
+
+    assert hdfc_security.corporate_actions_synced_at is None
+    sync_corporate_actions_for_security(hdfc_security, clients=_Clients())
+    hdfc_security.refresh_from_db()
+    assert hdfc_security.corporate_actions_synced_at is not None
+
+
+@pytest.mark.django_db
+def test_sync_failure_leaves_synced_at_null(monkeypatch, hdfc_security):
+    """A failed fetch must NOT stamp synced_at — the feed wasn't actually checked."""
+    from folioman_core.price_feeds import corporate_actions_fetch
+    from folioman_core.price_feeds.corporate_actions_fetch import CorporateActionFetchError
+
+    monkeypatch.setattr(
+        corporate_actions_fetch,
+        "fetch_corporate_actions",
+        lambda *a, **kw: (_ for _ in ()).throw(CorporateActionFetchError("down")),
+    )
+    sync_corporate_actions_for_security(hdfc_security)
+    hdfc_security.refresh_from_db()
+    assert hdfc_security.corporate_actions_synced_at is None

@@ -152,6 +152,9 @@ def sync_corporate_actions_for_security(
             return 0
         for event in events:
             _upsert_event(security, event)
+        # Stamp the fetch (even on zero events) so the UI knows this equity's
+        # corporate actions have been checked, not merely never looked up.
+        Security.objects.filter(pk=security.pk).update(corporate_actions_synced_at=timezone.now())
         return len(events)
     finally:
         if owned:
@@ -204,3 +207,38 @@ def refresh_corporate_actions(
     finally:
         clients.close()
     return summary
+
+
+def equities_needing_corporate_actions() -> list[Security]:
+    """Equities worth fetching: those currently in a unit mismatch (a corporate
+    action is the likely explanation), plus any never-synced equity that has a
+    ledger position. Bounds the network to the actionable set."""
+    from folioman_core.reconciliation import IntegrityStatus
+
+    from folioman_app.models import SecurityIntegrityStatus
+
+    mismatch_ids = set(
+        SecurityIntegrityStatus.objects.filter(
+            status=IntegrityStatus.MISMATCH.value,
+            security__security_type=SecurityType.EQUITY.value,
+        ).values_list("security_id", flat=True)
+    )
+    never_synced_ids = set(
+        Security.objects.filter(
+            security_type=SecurityType.EQUITY.value,
+            corporate_actions_synced_at__isnull=True,
+            transactions__isnull=False,
+        )
+        .exclude(symbol="")
+        .values_list("id", flat=True)
+    )
+    ids = mismatch_ids | never_synced_ids
+    return list(Security.objects.filter(id__in=ids).exclude(symbol=""))
+
+
+def refresh_corporate_actions_for_mismatches() -> dict:
+    """Scheduler/launch entrypoint: refresh CAs for the actionable equity set."""
+    securities = equities_needing_corporate_actions()
+    if not securities:
+        return {"securities": 0, "events": 0, "errors": 0, "skipped": 0}
+    return refresh_corporate_actions(securities=securities)

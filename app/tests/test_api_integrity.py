@@ -285,3 +285,25 @@ def test_apply_manual_corporate_action_is_investor_scoped(client, make_investor)
         {"kind": "bonus", "ex_date": "2021-01-01", "unit_multiplier": "2"},
     )
     assert resp.status_code == 404
+
+
+def test_refresh_corporate_actions_endpoint_scopes_to_mismatches(
+    client, make_investor, monkeypatch
+):
+    import folioman_app.api.integrity as integ
+
+    calls = {}
+
+    def fake_refresh(*, securities):
+        calls["isins"] = sorted(s.isin for s in securities)
+        return {"events": 0}
+
+    monkeypatch.setattr(integ, "refresh_corporate_actions", fake_refresh)
+
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="100", price="100")  # ledger 100
+    _ecas_holding(inv, isin=_ISIN, units="90")  # demat 90 -> mismatch
+    resp = client.post(f"/api/investors/{inv.id}/integrity/refresh-corporate-actions")
+    assert resp.status_code == 200
+    # the mismatched equity was the one handed to the fetch
+    assert calls["isins"] == [_ISIN]
