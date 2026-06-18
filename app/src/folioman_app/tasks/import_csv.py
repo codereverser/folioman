@@ -37,7 +37,7 @@ from folioman_core._dates import parse_loose_date
 from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
 from folioman_core.models import SecurityType, TransactionSource, TransactionType
 from folioman_core.models.investor import Folio as CoreFolio
-from folioman_core.models.investor import FolioType
+from folioman_core.models.investor import FolioType, normalize_folio_number
 from folioman_core.models.security import Security as CoreSecurity
 from pydantic import ValidationError
 
@@ -144,6 +144,18 @@ def _resolve_folio(investor, row: dict, security: Security) -> Folio | None:
         if not number:
             msg = "equity import requires a demat account number (folio_number)"
             raise ValueError(msg)
+        # An existing demat folio is authoritative for its own number: a CDSL eCAS
+        # renders the BO ID shorter than 16 digits (e.g. an 8-digit client id), so a
+        # tradebook attaching to that already-imported folio must match it as-is
+        # rather than be rejected by the strict-format gate. Only validate the format
+        # when minting a brand-new folio from a user-typed number.
+        existing = Folio.objects.filter(
+            investor=investor,
+            folio_type=FolioType.DEMAT.value,
+            number=normalize_folio_number(number),
+        ).first()
+        if existing is not None:
+            return existing
         if not _DEMAT_NUMBER_RE.match(number):
             msg = (
                 f"invalid demat account number {number!r}: expected a 16-digit CDSL "

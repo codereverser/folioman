@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
-from folioman_app.models import PartialBlock, Security, SecurityIntegrityStatus, Transaction
+from folioman_app.models import Folio, PartialBlock, Security, SecurityIntegrityStatus, Transaction
 from folioman_app.models.jobs import ImportJob, ImportKind
 from folioman_app.tasks.import_csv import process_csv
 
@@ -454,3 +454,28 @@ def test_manual_transaction_accepts_brokerage(client, make_investor):
     assert resp.status_code == 201
     assert Decimal(str(resp.json()["brokerage"])) == Decimal("95")
     assert Transaction.objects.get(investor=inv).brokerage == Decimal("95")
+
+
+def test_csv_equity_attaches_to_existing_short_demat_folio(make_investor):
+    """A CDSL eCAS renders the demat number shorter than a 16-digit BO ID; a
+    tradebook must still attach to that already-imported folio, not be rejected by
+    the strict-format gate."""
+    from folioman_core.models.investor import FolioType
+
+    inv = make_investor()
+    folio = Folio.objects.create(
+        investor=inv, folio_type=FolioType.DEMAT.value, number="14771491", broker="ZERODHA"
+    )
+    result = _run_csv(inv, _eq_header() + _eq_row("2024-01-15", "buy", 5, 100, folio="14771491"))
+    assert result["created"] == 1
+    assert result["errors"] == []
+    assert Transaction.objects.get(investor=inv).folio_id == folio.id
+
+
+def test_csv_equity_rejects_new_short_demat_number(make_investor):
+    """A brand-new (not eCAS-known) short number is still rejected by the format gate."""
+    inv = make_investor()
+    result = _run_csv(inv, _eq_header() + _eq_row("2024-01-15", "buy", 5, 100, folio="14771491"))
+    assert result["created"] == 0
+    assert result["skipped"] == 1
+    assert "demat account number" in result["errors"][0]["error"]
