@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.db import transaction as db_transaction
@@ -15,6 +15,7 @@ from folioman_core.corporate_actions import (
 )
 from folioman_core.fifo import net_units_from_transactions, open_lots_asof
 from folioman_core.models import HoldingSource, SecurityType
+from folioman_core.models.security import Security as CoreSecurity
 from folioman_core.models.transaction import TransactionSource, TransactionType
 
 from folioman_app.mappers import to_core_security, to_core_transaction
@@ -297,6 +298,112 @@ def apply_corporate_actions_to_folio(
         "events_applied": len(all_events),
         "security_ids": sorted(affected_ids),
     }
+
+
+def _counterparty_security(isin: str, symbol: str, name: str) -> CoreSecurity:
+    """The other security in a merger (acquirer) / demerger (child), typed by hand.
+
+    A real ISIN is required so it persists as a distinct security and reconciles;
+    name falls back to symbol/ISIN until the resolver fills it.
+    """
+    isin = (isin or "").strip().upper()
+    if not isin:
+        msg = "merger/demerger requires the counterparty security's ISIN"
+        raise ValueError(msg)
+    return CoreSecurity(
+        type=SecurityType.EQUITY,
+        isin=isin,
+        symbol=(symbol or "").strip().upper(),
+        name=(name or symbol or isin).strip(),
+    )
+
+
+def build_manual_event(
+    security: Security,
+    *,
+    kind: str,
+    ex_date: date,
+    unit_multiplier: Decimal | None = None,
+    merger_ratio: Decimal | None = None,
+    child_ratio: Decimal | None = None,
+    child_cost_fraction: Decimal | None = None,
+    units: Decimal | None = None,
+    price: Decimal | None = None,
+    counterparty_isin: str = "",
+    counterparty_symbol: str = "",
+    counterparty_name: str = "",
+) -> CorporateActionApplyEvent:
+    """Build a user-authored corporate-action event for the affected ``security``.
+
+    The path's security is the affected stock; ``kind`` selects the transform and
+    the matching params. Cross-security kinds (merger/demerger) take a typed
+    counterparty ISIN. Per-kind required fields are validated again by the apply
+    engine, but raise here with a clear message first.
+    """
+    try:
+        action = CorpActionType(kind)
+    except ValueError as exc:
+        msg = f"unknown corporate action kind: {kind!r}"
+        raise ValueError(msg) from exc
+
+    core = to_core_security(security)
+    ref = f"manual:{action.value}:{ex_date.isoformat()}:{security.isin or security.symbol}"
+
+    if action in (CorpActionType.BONUS, CorpActionType.SPLIT):
+        if unit_multiplier is None:
+            msg = "bonus/split requires unit_multiplier"
+            raise ValueError(msg)
+        return CorporateActionApplyEvent(
+            kind=action,
+            ex_date=ex_date,
+            security=core,
+            unit_multiplier=unit_multiplier,
+            source_ref=ref,
+        )
+    if action is CorpActionType.MERGER:
+        acquirer = _counterparty_security(counterparty_isin, counterparty_symbol, counterparty_name)
+        return CorporateActionApplyEvent(
+            kind=action,
+            ex_date=ex_date,
+            security=acquirer,
+            merger_old_security=core,
+            merger_new_security=acquirer,
+            merger_ratio=merger_ratio,
+            source_ref=ref,
+        )
+    if action is CorpActionType.DEMERGER:
+        child = _counterparty_security(counterparty_isin, counterparty_symbol, counterparty_name)
+        return CorporateActionApplyEvent(
+            kind=action,
+            ex_date=ex_date,
+            security=core,
+            demerger_child_security=child,
+            demerger_child_ratio=child_ratio,
+            demerger_child_cost_fraction=child_cost_fraction,
+            source_ref=ref,
+        )
+    if action in (CorpActionType.RIGHTS, CorpActionType.BUYBACK):
+        return CorporateActionApplyEvent(
+            kind=action,
+            ex_date=ex_date,
+            security=core,
+            rights_units=units,
+            rights_price=price,
+            source_ref=ref,
+        )
+    msg = f"corporate action {action.value} is not supported for manual authoring"
+    raise ValueError(msg)
+
+
+def apply_manual_corporate_action(
+    investor: Investor,
+    folio: Folio,
+    security: Security,
+    **fields,
+) -> dict:
+    """Author and apply one corporate action by hand, then re-reconcile."""
+    event = build_manual_event(security, **fields)
+    return apply_corporate_actions_to_folio(investor, folio, events=[event])
 
 
 def apply_suggested_corporate_action(

@@ -462,6 +462,29 @@ class ApplyCorporateActionOut(Schema):
     integrity: IntegrityStatusOut
 
 
+class ManualCorporateActionIn(Schema):
+    """Author one corporate action by hand to resolve a flagged unit mismatch.
+
+    The path's security is the affected stock; ``kind`` selects which params apply:
+      - ``bonus`` / ``split`` → ``unit_multiplier`` (split < 1 = reverse split)
+      - ``merger`` → ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)
+      - ``demerger`` → ``counterparty_*`` (child) + ``child_ratio`` + ``child_cost_fraction``
+      - ``rights`` / ``buyback`` → ``units`` + ``price``
+    """
+
+    kind: str
+    ex_date: date
+    unit_multiplier: Decimal | None = None
+    merger_ratio: Decimal | None = None
+    child_ratio: Decimal | None = None
+    child_cost_fraction: Decimal | None = None
+    units: Decimal | None = None
+    price: Decimal | None = None
+    counterparty_isin: str = ""
+    counterparty_symbol: str = ""
+    counterparty_name: str = ""
+
+
 class RecordOpeningLotIn(Schema):
     """Classified opening lot for an eCAS-only equity holding."""
 

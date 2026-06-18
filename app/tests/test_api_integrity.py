@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 from decimal import Decimal
 
 import pytest
-from folioman_app.models import Folio, Security, Transaction
+from folioman_app.models import Folio, Security, SecurityIntegrityStatus, Transaction
 from folioman_app.tasks.import_csv import create_manual_transaction
 from folioman_app.tasks.import_ecas import persist_ecas_statement
 from folioman_core.models import SecurityType
@@ -230,3 +231,57 @@ def test_apply_identity_remap_api(client, make_investor):
     assert resp.status_code == 200
     assert resp.json()["transactions_updated"] == 1
     assert Transaction.objects.filter(investor=inv, security__isin="INE002A01099").count() == 1
+
+
+def _post_json(client, url, payload):
+    return client.post(url, data=json.dumps(payload), content_type="application/json")
+
+
+def test_apply_manual_bonus_resolves_mismatch(client, make_investor):
+    # Ledger net 50; eCAS shows 100 after a 1:1 bonus the auto-detect can't see
+    # (no cached feed). The user authors it by hand -> reconciles to 100.
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="50", price="100")
+    _ecas_holding(inv, isin=_ISIN, units="100")
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    assert client.get(f"/api/investors/{inv.id}/integrity").json()[0]["status"] == "mismatch"
+
+    resp = _post_json(
+        client,
+        f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/apply-manual-corporate-action",
+        {"kind": "bonus", "ex_date": "2021-01-01", "unit_multiplier": "2"},
+    )
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["integrity"]["status"] == "reconciled"
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio=folio)
+    assert status.units_from_transactions == Decimal("100")
+
+
+def test_apply_manual_merger_requires_counterparty_isin(client, make_investor):
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="10", price="100")
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    resp = _post_json(
+        client,
+        f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/apply-manual-corporate-action",
+        {"kind": "merger", "ex_date": "2021-01-01", "merger_ratio": "1"},
+    )
+    assert resp.status_code == 400
+    assert "counterparty" in resp.json()["detail"].lower()
+
+
+def test_apply_manual_corporate_action_is_investor_scoped(client, make_investor):
+    a = make_investor()
+    b = make_investor()
+    _equity_txn(a, txn_type="buy", units="10", price="100")
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=a, number=_DEMAT)
+    # b cannot touch a's (security, folio).
+    resp = _post_json(
+        client,
+        f"/api/investors/{b.id}/integrity/{sec.id}/{folio.id}/apply-manual-corporate-action",
+        {"kind": "bonus", "ex_date": "2021-01-01", "unit_multiplier": "2"},
+    )
+    assert resp.status_code == 404

@@ -1722,6 +1722,131 @@
         "title": "JobsOverviewOut",
         "type": "object"
       },
+      "ManualCorporateActionIn": {
+        "description": "Author one corporate action by hand to resolve a flagged unit mismatch.\n\nThe path's security is the affected stock; ``kind`` selects which params apply:\n  - ``bonus`` / ``split`` \u2192 ``unit_multiplier`` (split < 1 = reverse split)\n  - ``merger`` \u2192 ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)\n  - ``demerger`` \u2192 ``counterparty_*`` (child) + ``child_ratio`` + ``child_cost_fraction``\n  - ``rights`` / ``buyback`` \u2192 ``units`` + ``price``",
+        "properties": {
+          "child_cost_fraction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Child Cost Fraction"
+          },
+          "child_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Child Ratio"
+          },
+          "counterparty_isin": {
+            "default": "",
+            "title": "Counterparty Isin",
+            "type": "string"
+          },
+          "counterparty_name": {
+            "default": "",
+            "title": "Counterparty Name",
+            "type": "string"
+          },
+          "counterparty_symbol": {
+            "default": "",
+            "title": "Counterparty Symbol",
+            "type": "string"
+          },
+          "ex_date": {
+            "format": "date",
+            "title": "Ex Date",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "merger_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merger Ratio"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "unit_multiplier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Multiplier"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          }
+        },
+        "required": [
+          "kind",
+          "ex_date"
+        ],
+        "title": "ManualCorporateActionIn",
+        "type": "object"
+      },
       "NavFreshnessOut": {
         "description": "Settings 'NAV freshness' panel: per-security currency + refresh schedule.\n\nRead-only \u2014 refreshes run on the scheduler (or ``manage.py refresh_navs``);\nthe panel shows when prices were last written and when the next pass runs.",
         "properties": {
@@ -4422,6 +4547,67 @@
           }
         },
         "summary": "Apply Identity Remap Entry",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-manual-corporate-action": {
+      "post": {
+        "description": "Author a corporate action by hand (bonus/split/merger/demerger/rights/buyback)\nfor the flagged (security, folio), apply it, and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_apply_manual_corporate_action_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualCorporateActionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyCorporateActionOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Apply Manual Corporate Action Entry",
         "tags": [
           "integrity"
         ]

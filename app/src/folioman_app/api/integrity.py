@@ -19,11 +19,15 @@ from folioman_app.api.schemas import (
     IdentityRemapIn,
     IdentityRemapOut,
     IntegrityStatusOut,
+    ManualCorporateActionIn,
     RecordOpeningLotIn,
     RecordOpeningLotOut,
 )
 from folioman_app.models import Folio, Investor, Security, SecurityIntegrityStatus
-from folioman_app.services.corporate_actions import apply_suggested_corporate_action
+from folioman_app.services.corporate_actions import (
+    apply_manual_corporate_action,
+    apply_suggested_corporate_action,
+)
 from folioman_app.services.identity_remap import apply_identity_remap
 from folioman_app.services.opening_lots import record_opening_lot
 from folioman_app.tasks.reconcile import recompute_investor, reconcile_security_folio
@@ -103,6 +107,29 @@ def apply_corporate_action(
         **summary,
         "integrity": status,
     }
+
+
+@router.post(
+    "/{investor_id}/integrity/{security_id}/{folio_id}/apply-manual-corporate-action",
+    response=ApplyCorporateActionOut,
+)
+def apply_manual_corporate_action_entry(
+    request,
+    investor_id: int,
+    security_id: int,
+    folio_id: int,
+    payload: ManualCorporateActionIn,
+):
+    """Author a corporate action by hand (bonus/split/merger/demerger/rights/buyback)
+    for the flagged (security, folio), apply it, and re-reconcile."""
+    investor = get_owned_investor(request, investor_id)
+    security, folio = _owned_status(investor, security_id, folio_id)
+    try:
+        summary = apply_manual_corporate_action(investor, folio, security, **payload.dict())
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    status = SecurityIntegrityStatus.objects.get(investor=investor, security=security, folio=folio)
+    return {**summary, "integrity": status}
 
 
 @router.post(
