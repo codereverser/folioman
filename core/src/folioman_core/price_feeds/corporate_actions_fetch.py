@@ -17,6 +17,7 @@ undocumented per-response cap.
 
 from __future__ import annotations
 
+import random
 import re
 import time
 from datetime import date, datetime, timedelta
@@ -41,7 +42,6 @@ _BSE_REFERER = "https://www.bseindia.com/corporates/corporate_act.aspx"
 
 DEFAULT_EARLIEST = date(2016, 1, 1)
 _MAX_WINDOW_DAYS = 365
-_CHUNK_SPACING = 0.2
 _SLEEP = time.sleep
 
 _BSE_SCRIP = re.compile(r"liclick\('(\d+)'", re.IGNORECASE)
@@ -56,6 +56,27 @@ _BSE_RS_AMOUNT = re.compile(r"(?:rs\.?|inr|₹)\s*(\d+(?:\.\d+)?)", re.IGNORECAS
 
 class CorporateActionFetchError(Exception):
     """Raised when no chunk yielded parseable corporate-action data."""
+
+
+class CorporateActionThrottled(CorporateActionFetchError):
+    """The exchange returned a rate-limit / bot-block status (401/403/429).
+
+    Distinct from a plain fetch error: the caller should *stop* the whole refresh
+    rather than move on and hammer the next symbol into a longer block.
+    """
+
+
+# Exchanges (NSE especially) are bot-hostile, so pace requests politely: a low,
+# jittered rate well under 1 req/s, not a fixed cadence. Tests patch ``_SLEEP``.
+_BASE_SPACING = 1.0
+_SPACING_JITTER = 0.5
+# Statuses that mean "you're being blocked", not "transient glitch" — stop, don't retry.
+_THROTTLE_STATUSES = frozenset({401, 403, 429})
+
+
+def _pace() -> None:
+    """Sleep a jittered interval between exchange requests."""
+    _SLEEP(_BASE_SPACING + random.uniform(0.0, _SPACING_JITTER))
 
 
 # Date windows are chunked; cap each response body before ``.json()`` (OOM guard).
@@ -219,7 +240,7 @@ def fetch_nse_corporate_actions(
     try:
         for i, (w_start, w_end) in enumerate(_windows(start, end)):
             if i:
-                _SLEEP(_CHUNK_SPACING)
+                _pace()
             params = {
                 "index": "equities",
                 "symbol": symbol.upper(),
@@ -228,6 +249,9 @@ def fetch_nse_corporate_actions(
             }
             try:
                 response = client.get(_NSE_PATH, params=params, headers=headers)
+                if response.status_code in _THROTTLE_STATUSES:
+                    msg = f"nse corp-actions {symbol}: throttled (HTTP {response.status_code})"
+                    raise CorporateActionThrottled(msg)
                 response.raise_for_status()
             except httpx.HTTPError as exc:
                 last_error = exc
@@ -285,10 +309,13 @@ def lookup_bse_scripcode(
         params={"Type": "SS", "text": symbol.upper()},
         headers=headers,
     )
+    if response.status_code in _THROTTLE_STATUSES:
+        msg = f"bse scripcode lookup for {symbol}: throttled (HTTP {response.status_code})"
+        raise CorporateActionThrottled(msg)
     if response.status_code != 200:
-        # A failed lookup (outage / throttle / garbage) is NOT "no such scrip":
-        # raise so the caller records it instead of reporting BSE as having no
-        # corporate actions. A genuine miss is a 200 with no scrip in the body.
+        # A failed lookup (outage / garbage) is NOT "no such scrip": raise so the
+        # caller records it instead of reporting BSE as having no corporate actions.
+        # A genuine miss is a 200 with no scrip in the body.
         msg = f"bse scripcode lookup for {symbol}: HTTP {response.status_code}"
         raise CorporateActionFetchError(msg)
     if expected_isin:
@@ -339,7 +366,7 @@ def fetch_bse_corporate_actions(
     try:
         for i, (w_start, w_end) in enumerate(_windows(start, end)):
             if i:
-                _SLEEP(_CHUNK_SPACING)
+                _pace()
             params = {
                 "ddlcategorys": "E",
                 "ddlindustrys": "",
@@ -351,6 +378,9 @@ def fetch_bse_corporate_actions(
             }
             try:
                 response = client.get(_BSE_ACTIONS_PATH, params=params, headers=headers)
+                if response.status_code in _THROTTLE_STATUSES:
+                    msg = f"bse corp-actions {symbol}: throttled (HTTP {response.status_code})"
+                    raise CorporateActionThrottled(msg)
                 response.raise_for_status()
             except httpx.HTTPError as exc:
                 last_error = exc

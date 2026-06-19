@@ -131,6 +131,34 @@ def test_refresh_batch_counts_securities(monkeypatch, hdfc_security):
 
 
 @pytest.mark.django_db
+def test_refresh_stops_on_throttle(monkeypatch, hdfc_security):
+    """A rate-limit block aborts the run rather than hammering the next symbol."""
+    from folioman_core.price_feeds import corporate_actions_fetch
+    from folioman_core.price_feeds.corporate_actions_fetch import CorporateActionThrottled
+
+    Security.objects.create(
+        security_type=SecurityType.EQUITY.value,
+        name="Reliance",
+        isin="INE002A01018",
+        symbol="RELIANCE",
+        exchange="NSE",
+    )
+    calls = {"n": 0}
+
+    def _raise_throttle(*_a, **_kw):
+        calls["n"] += 1
+        raise CorporateActionThrottled("blocked")
+
+    monkeypatch.setattr(corporate_actions_fetch, "fetch_corporate_actions", _raise_throttle)
+    monkeypatch.setattr(corporate_actions_fetch, "warmed_nse_client", lambda: None)
+    monkeypatch.setattr(corporate_actions_fetch, "warmed_bse_client", lambda: None)
+
+    summary = refresh_corporate_actions()
+    assert summary["throttled"] is True
+    assert calls["n"] == 1  # stopped after the first block, did not hit the second symbol
+
+
+@pytest.mark.django_db
 def test_sync_stamps_synced_at(monkeypatch, hdfc_security):
     """A successful fetch (even zero events) records when CAs were last checked."""
     from folioman_core.price_feeds import corporate_actions_fetch

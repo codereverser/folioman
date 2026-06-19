@@ -8,6 +8,7 @@ Run on demand (`manage.py refresh_corporate_actions`) or from the scheduler.
 from __future__ import annotations
 
 import logging
+import random
 import time
 from collections.abc import Iterable
 from datetime import date
@@ -19,6 +20,7 @@ from folioman_core.models import SecurityType
 from folioman_core.price_feeds import corporate_actions_fetch
 from folioman_core.price_feeds.corporate_actions_fetch import (
     CorporateActionFetchError,
+    CorporateActionThrottled,
     _normalize_subject,
 )
 from folioman_core.price_feeds.nse_bse_client import ExchangeClient
@@ -30,8 +32,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_REQUEST_SPACING = 0.2
+# Polite, jittered spacing between symbols — NSE/BSE are bot-hostile; a fixed,
+# fast cadence is what trips a block. Kept well under 1 req/s.
+_REQUEST_SPACING = 1.0
+_REQUEST_JITTER = 0.5
 _SLEEP = time.sleep
+
+
+def _pace_symbols() -> None:
+    _SLEEP(_REQUEST_SPACING + random.uniform(0.0, _REQUEST_JITTER))
 
 
 class _FeedClients:
@@ -143,6 +152,10 @@ def sync_corporate_actions_for_security(
                 nse=clients.nse,
                 bse=clients.bse,
             )
+        except CorporateActionThrottled:
+            # A rate-limit block must abort the whole refresh, not be swallowed as
+            # "no actions" — let it propagate to the batch loop.
+            raise
         except CorporateActionFetchError as exc:
             logger.warning(
                 "corporate-action fetch failed for security %s (%s): %s",
@@ -187,10 +200,16 @@ def refresh_corporate_actions(
                 summary["skipped"] += 1
                 continue
             if fetched:
-                _SLEEP(_REQUEST_SPACING)
+                _pace_symbols()
             fetched = True
             try:
                 count = sync_corporate_actions_for_security(security, since=since, clients=clients)
+            except CorporateActionThrottled as exc:
+                # Blocked by the exchange — stop the run rather than hammer the rest
+                # into a longer block. The unsynced securities retry next pass.
+                logger.warning("corporate-action refresh throttled, stopping early: %s", exc)
+                summary["throttled"] = True
+                break
             except CorporateActionFetchError as exc:
                 logger.warning(
                     "corporate-action refresh failed for %s (%s): %s",
