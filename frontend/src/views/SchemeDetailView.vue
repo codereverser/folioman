@@ -167,7 +167,51 @@ const navStale = computed(() => {
 })
 
 const isEquity = computed(() => detail.value?.security.security_type === 'equity')
-const dividendRows = computed(() => detail.value?.dividends ?? [])
+
+// The Transactions table shows only rows that move the balance — the trades you
+// made. Dividends (zero-unit payouts) live in their own section, and corporate
+// actions (the zero-unit split marker; bonus rows are kept here because they DO
+// change the balance) are summarised separately below.
+const tradeRows = computed(() =>
+  ledgerRows.value.filter(
+    (t) => t.transaction_type !== 'dividend' && t.transaction_type !== 'split',
+  ),
+)
+
+// Issuer events applied to the holding (bonus, split, demerger, rights, buyback) —
+// everything the corporate-action engine wrote, except dividends (the attribution
+// pass also tags those 'corporate-action', but they belong to the Dividends
+// section). A reference view of "what happened to the stock".
+const corporateActionRows = computed(() =>
+  ledgerRows.value.filter(
+    (t) => t.source === 'corporate-action' && t.transaction_type !== 'dividend',
+  ),
+)
+
+// A dividend row for the payouts section. Equity uses the attributed timeline the
+// backend builds; mutual funds have no such timeline, so synthesise rows from the
+// zero-unit dividend transactions (which would otherwise vanish with the cleanup).
+type DividendRow = {
+  reference_id: number
+  ex_date: string
+  dividend_per_share: string | null
+  units: string | null
+  amount_inr: string | null
+  kind: string
+}
+const dividendRows = computed<DividendRow[]>(() => {
+  if (isEquity.value) return (detail.value?.dividends ?? []) as DividendRow[]
+  return (detail.value?.transactions ?? [])
+    .filter((t) => t.transaction_type === 'dividend')
+    .map((t) => ({
+      reference_id: t.id,
+      ex_date: t.date,
+      dividend_per_share: null,
+      units: null,
+      amount_inr: t.amount ?? null,
+      kind: 'attributed',
+    }))
+})
 
 const DIVIDEND_KIND_LABELS: Record<string, string> = {
   schedule: 'Schedule',
@@ -283,7 +327,7 @@ function back(): void {
         <p v-else class="muted empty">No NAV history on file for this scheme yet.</p>
       </article>
 
-      <article v-if="isEquity && dividendRows.length" class="card">
+      <article v-if="dividendRows.length" class="card">
         <h2>Dividends</h2>
         <p v-if="detail.dividends_received_inr != null" class="dividend-summary muted">
           Received
@@ -293,7 +337,7 @@ function back(): void {
           >
         </p>
         <Message
-          v-if="!detail.has_transactions"
+          v-if="isEquity && !detail.has_transactions"
           severity="info"
           :closable="false"
           class="dividend-note"
@@ -315,7 +359,9 @@ function back(): void {
             <template #body="{ data }">{{ formatDate(data.ex_date) }}</template>
           </Column>
           <Column header="₹ / share" class="num">
-            <template #body="{ data }">{{ formatInrPaise(data.dividend_per_share) }}</template>
+            <template #body="{ data }">
+              {{ data.dividend_per_share == null ? '—' : formatInrPaise(data.dividend_per_share) }}
+            </template>
           </Column>
           <Column header="Units" class="num">
             <template #body="{ data }">
@@ -332,6 +378,37 @@ function back(): void {
               <span class="dividend-kind" :data-kind="data.kind">{{
                 dividendKindLabel(data.kind)
               }}</span>
+            </template>
+          </Column>
+        </DataTable>
+        <div v-else class="table-placeholder" aria-hidden="true" />
+      </article>
+
+      <article v-if="corporateActionRows.length" class="card">
+        <h2>Corporate actions</h2>
+        <DataTable
+          v-if="loadCharts"
+          :value="corporateActionRows"
+          data-key="id"
+          size="small"
+          class="ledger"
+          sort-field="_sortKey"
+          :sort-order="-1"
+        >
+          <Column field="date" sort-field="_sortKey" header="Date" sortable>
+            <template #body="{ data }">{{ formatDate(data.date) }}</template>
+          </Column>
+          <Column field="transaction_type" header="Action">
+            <template #body="{ data }">{{ txnLabel(data.transaction_type) }}</template>
+          </Column>
+          <Column header="Units added" class="num">
+            <template #body="{ data }">
+              {{ num(data.units) > 0 ? formatUnits(data.units) : '—' }}
+            </template>
+          </Column>
+          <Column header="Balance" class="num">
+            <template #body="{ data }">
+              {{ data.cost_basis_complete ? formatUnits(balanceById[data.id]) : '—' }}
             </template>
           </Column>
         </DataTable>
@@ -360,7 +437,7 @@ function back(): void {
           </Message>
           <DataTable
             v-if="loadCharts"
-            :value="ledgerRows"
+            :value="tradeRows"
             data-key="id"
             size="small"
             class="ledger"
