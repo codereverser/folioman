@@ -125,8 +125,16 @@ const headerOptions = computed(() => [
 const demat = ref<Schemas['FolioOut'][]>([])
 const folioMode = ref<'existing' | 'manual'>('manual')
 const selectedFolioId = ref<number | null>(null)
-const typedNumber = ref('')
+// Demat identity is captured as DP ID + Client ID (the two values every statement
+// shows), not the opaque combined id — terminology varies ("BO ID" means the
+// combined on CDSL but the client part on a Zerodha console). We join them into the
+// canonical id the eCAS folio also uses, so they match.
+const typedDpId = ref('')
+const typedClientId = ref('')
 const typedBroker = ref('')
+const manualDemat = computed(() =>
+  (typedDpId.value.trim() + typedClientId.value.trim()).toUpperCase(),
+)
 
 async function loadFolios(): Promise<void> {
   if (investorId.value == null) return
@@ -153,7 +161,7 @@ const account = computed<{ folioNumber: string; broker: string }>(() => {
     const f = demat.value.find((d) => d.id === selectedFolioId.value)
     return { folioNumber: f?.number ?? '', broker: f?.broker ?? '' }
   }
-  return { folioNumber: typedNumber.value.trim().toUpperCase(), broker: typedBroker.value.trim() }
+  return { folioNumber: manualDemat.value, broker: typedBroker.value.trim() }
 })
 
 // A typed number gets a soft format warning; an existing folio is always valid.
@@ -368,6 +376,76 @@ watch(investorId, () => {
 
     <!-- Step 2: map columns + demat account -->
     <div v-else-if="step === 'map'" class="card">
+      <!-- Demat account first: which account this tradebook belongs to drives the
+           reconcile, so it's decided up front — pick an imported one (no typing) or
+           enter DP ID + Client ID. -->
+      <h2 class="step-title">Demat account</h2>
+      <p class="muted small">
+        Which demat account is this tradebook for? Matching the real account lets it reconcile
+        against your eCAS holdings.
+      </p>
+
+      <!-- Nudge: importing the eCAS first gives the demat to pick (no typing) and is
+           what anchors net worth + reconciliation. Shown when none is on file yet. -->
+      <Message v-if="!demat.length" severity="info" :closable="false">
+        Tip: import your latest <strong>eCAS</strong> (NSDL/CDSL) first — then pick the demat here
+        instead of typing it, and we can reliably track net worth and reconcile your holdings.
+      </Message>
+
+      <fieldset v-if="demat.length" class="field demat-modes">
+        <legend class="field-label">How is this account identified?</legend>
+        <label class="radio">
+          <input v-model="folioMode" type="radio" value="existing" /> Pick an account I’ve imported
+        </label>
+        <Select
+          v-if="folioMode === 'existing'"
+          v-model="selectedFolioId"
+          :options="folioOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Choose a demat account"
+          aria-label="Choose a demat account"
+        />
+        <label class="radio">
+          <input v-model="folioMode" type="radio" value="manual" /> Enter the DP ID + Client ID
+        </label>
+      </fieldset>
+      <template v-if="folioMode === 'manual'">
+        <div class="demat-id-row">
+          <label class="field">
+            <span class="field-label">DP ID</span>
+            <input
+              v-model="typedDpId"
+              type="text"
+              class="text-input"
+              inputmode="text"
+              placeholder="e.g. 12081600 (or IN303…)"
+            />
+          </label>
+          <label class="field">
+            <span class="field-label">Client ID</span>
+            <input
+              v-model="typedClientId"
+              type="text"
+              class="text-input"
+              inputmode="numeric"
+              placeholder="e.g. 14771491"
+            />
+          </label>
+        </div>
+        <p class="muted small">
+          On a Zerodha/CDSL console the Client ID is shown as “BO ID”; on NSDL it’s the Client ID.
+          <template v-if="manualDemat"
+            >Demat ID: <code>{{ manualDemat }}</code></template
+          >
+        </p>
+        <label class="field">
+          <span class="field-label">Broker</span>
+          <input v-model="typedBroker" type="text" class="text-input" placeholder="e.g. Zerodha" />
+        </label>
+        <Message v-if="dematWarning" severity="warn" :closable="false">{{ dematWarning }}</Message>
+      </template>
+
       <h2 class="step-title">Map your columns</h2>
       <p class="muted small">
         We matched what we could — fix anything that’s off. Required fields are marked
@@ -387,55 +465,21 @@ watch(investorId, () => {
         </div>
       </div>
 
-      <h2 class="step-title">Demat account</h2>
-      <p class="muted small">
-        Which demat account is this tradebook for? Using the real account number lets it reconcile
-        against your eCAS holdings.
-      </p>
-      <fieldset v-if="demat.length" class="field demat-modes">
-        <legend class="field-label">How is this account identified?</legend>
-        <label class="radio">
-          <input v-model="folioMode" type="radio" value="existing" /> Pick an account I’ve imported
-        </label>
-        <Select
-          v-if="folioMode === 'existing'"
-          v-model="selectedFolioId"
-          :options="folioOptions"
-          option-label="label"
-          option-value="value"
-          placeholder="Choose a demat account"
-          aria-label="Choose a demat account"
-        />
-        <label class="radio">
-          <input v-model="folioMode" type="radio" value="manual" /> Enter an account number
-        </label>
-      </fieldset>
-      <template v-if="folioMode === 'manual'">
-        <label class="field">
-          <span class="field-label">Demat account number (BO ID)</span>
-          <input
-            v-model="typedNumber"
-            type="text"
-            class="text-input"
-            placeholder="e.g. 1208160000000001 or IN30021412345678"
-          />
-        </label>
-        <label class="field">
-          <span class="field-label">Broker</span>
-          <input v-model="typedBroker" type="text" class="text-input" placeholder="e.g. Zerodha" />
-        </label>
-        <Message v-if="dematWarning" severity="warn" :closable="false">{{ dematWarning }}</Message>
-      </template>
-
       <Message v-if="blockingErrors.length" severity="warn" :closable="false">
         <ul class="err-list">
           <li v-for="e in blockingErrors" :key="e">{{ e }}</li>
         </ul>
       </Message>
 
-      <!-- Live preview of the mapped canonical rows -->
+      <!-- Preview: the target account + a sample of the mapped rows. -->
       <template v-if="rowCount">
-        <h2 class="step-title">Preview ({{ rowCount }} rows)</h2>
+        <h2 class="step-title">Preview</h2>
+        <p v-if="account.folioNumber" class="muted small">
+          Importing <strong>{{ rowCount }}</strong> rows into demat
+          <code>{{ account.folioNumber }}</code
+          ><template v-if="account.broker"> · {{ account.broker }}</template
+          >.
+        </p>
         <DataTable :value="previewRows" size="small" class="preview">
           <Column field="date" header="Date" />
           <Column field="transaction_type" header="Type" />
@@ -641,6 +685,16 @@ watch(investorId, () => {
   margin: 0;
   padding: 0;
   border: 0;
+  min-width: 0;
+}
+/* DP ID + Client ID side by side; stack on a narrow viewport. */
+.demat-id-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--fm-space-3);
+}
+.demat-id-row .field {
+  flex: 1 1 10rem;
   min-width: 0;
 }
 .demat-modes > legend {

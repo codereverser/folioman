@@ -107,14 +107,16 @@ def _map_bond_holding(bond: object) -> EcasHoldingLine:
 
 
 def _map_account(account: object) -> EcasAccountBlock:
-    # eCAS accounts occasionally arrive with no client_id/dp_id (and rarely no
-    # name). Folio requires non-empty number + broker for DEMAT — fall back to
-    # a synthetic "UNKNOWN" rather than dropping the holdings on the floor.
+    # Folio identity is the full demat id = DP ID + Client ID (CDSL: 8+8 = the
+    # 16-digit BO ID; NSDL: "IN"+6 dp + 8 client). Concatenating both is the unique
+    # account key — and it's what the tradebook wizard reconstructs from the same two
+    # values, so the eCAS folio and the tradebook folio match. Client-id-only is not
+    # unique across DPs. Fall back through the parts to a synthetic "UNKNOWN" rather
+    # than dropping holdings when an account arrives with neither id nor name.
+    dp_id = str(account.dp_id or "").strip()
+    client_id = str(account.client_id or "").strip()
     number = (
-        str(account.client_id or "").strip()
-        or str(account.dp_id or "").strip()
-        or str(account.name or "").strip()
-        or "UNKNOWN"
+        f"{dp_id}{client_id}" or client_id or dp_id or str(account.name or "").strip() or "UNKNOWN"
     )
     broker = str(account.name or "").strip() or "UNKNOWN"
     folio = Folio(folio_type=FolioType.DEMAT, number=number[:64], broker=broker[:64])

@@ -68,6 +68,7 @@ def _account(
     broker: str,
     client_id: str,
     *,
+    dp_id: str = "",
     equities: list[Equity] | None = None,
     mfs: list[MutualFund] | None = None,
     bonds: list[Bond] | None = None,
@@ -76,7 +77,7 @@ def _account(
     return DematAccount(
         name=broker,
         type="PRIMARY",
-        dp_id="IN300000",
+        dp_id=dp_id,
         client_id=client_id,
         folios=0,  # casparser: folio *count*, not a list
         balance=Decimal("0"),
@@ -285,3 +286,10 @@ def test_equity_holding_without_symbol_maps_empty():
     line = ecas_parser._map_equity_holding(eq)
     assert line.security.symbol == ""
     assert line.security.exchange == ""
+
+
+def test_demat_folio_number_is_dp_id_plus_client_id():
+    """The folio identity is DP ID + Client ID (the full CDSL BO ID / NSDL id),
+    so it's unique across DPs and matches what the tradebook wizard reconstructs."""
+    stmt = ecas_parser.map_ecas_data(_ecas([_account("ZERODHA", "14771491", dp_id="12081600")]))
+    assert stmt.accounts[0].folio.number == "1208160014771491"
