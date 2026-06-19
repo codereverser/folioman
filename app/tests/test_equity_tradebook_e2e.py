@@ -120,6 +120,36 @@ def test_zerodha_2024_reimport_is_idempotent(make_investor):
 # --- orphan / incomplete history ---------------------------------------------
 
 
+def test_zero_unit_ecas_holding_creates_no_integrity_row(make_investor):
+    """A transient eCAS line reported as 0 units (e.g. a lapsed rights entitlement)
+    is nothing to reconcile — no snapshot-only row, no (0-unit) opening-lot prompt."""
+    inv = make_investor()
+    re_isin = "INE0NN720012"
+    re_sec = CoreSecurity(
+        type=SecurityType.EQUITY,
+        name="ALLCARGO TERMINALS LIMITED#RIGHTS ENTITLEMENTS FOR EQUITY",
+        isin=re_isin,
+    )
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2026, 3, 31),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=_DEFAULT_DEMAT, broker="ZERODHA"),
+                    holdings=[EcasHoldingLine(security=re_sec, units="0", value_observed="0")],
+                )
+            ],
+        ),
+        source_ref="ecas-re",
+    )
+    sec = Security.objects.get(isin=re_isin)
+    folio = inv.holdings.filter(security=sec).first().folio
+    assert reconcile_security_folio(inv, sec, folio) is None
+    assert not SecurityIntegrityStatus.objects.filter(investor=inv, security=sec).exists()
+
+
 def test_zerodha_orphan_suzlon_records_partial_block(make_investor):
     """Mid-history sell with no prior buy → partial block, no cost basis."""
     result = _run_fixture(make_investor, "tradebook-zerodha-orphan-suzlon.csv")

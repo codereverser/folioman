@@ -289,12 +289,15 @@ def reconcile_security_folio(
         .filter(security=security, folio=folio)
         .select_related("security", "folio")
     ]
-    holdings = [
-        to_core_holding(h)
-        for h in investor.holdings.filter(security=security, folio=folio).select_related(
-            "security", "folio"
-        )
-    ]
+    holdings_qs = investor.holdings.filter(security=security, folio=folio)
+    # A pure eCAS-only zero holding carries no position — e.g. a rights entitlement (a
+    # transient line) that lapsed or was exercised, now reported as 0. Drop it so it
+    # doesn't surface as a snapshot-only row begging a (0-unit) opening lot. A zero
+    # holding alongside transactions is kept (a fully-exited ledger still reconciles
+    # net 0 against it).
+    if not investor.transactions.filter(security=security, folio=folio).exists():
+        holdings_qs = holdings_qs.filter(units__gt=0)
+    holdings = [to_core_holding(h) for h in holdings_qs.select_related("security", "folio")]
     # A cas-pdf snapshot is the closing balance of a CAS scheme. Relative to a
     # ledger it's either stale or a fresh check, decided by date:
     #  - a snapshot at/before the ledger's latest transaction is a superseded
