@@ -7,11 +7,14 @@ import type { ManualCorporateActionBody } from '@/stores/integrity'
 
 export type ManualCaKind = 'bonus' | 'split' | 'merger' | 'demerger' | 'rights' | 'buyback'
 
+// Demerger is intentionally absent: its lot-splitting persistence (a partially
+// consumed parent lot becomes two derived rows, and multiple open lots become
+// multiple child receipts) isn't safely represented yet, so it stays out of the
+// manual picker until that lands. The form/validation/payload still understand it.
 export const MANUAL_CA_KINDS: { label: string; value: ManualCaKind }[] = [
   { label: 'Bonus', value: 'bonus' },
   { label: 'Split', value: 'split' },
   { label: 'Merger', value: 'merger' },
-  { label: 'Demerger', value: 'demerger' },
   { label: 'Rights issue', value: 'rights' },
   { label: 'Buyback', value: 'buyback' },
 ]

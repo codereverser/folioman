@@ -374,3 +374,48 @@ def test_fractional_entitlement_settled_against_ecas_whole_holding(make_investor
         ).count()
         == 1
     )
+
+
+def test_dividend_reference_is_not_auto_applicable(make_investor):
+    """Only bonus/split apply from a cached feed reference. A dividend reference must
+    be rejected — applying it here would double-write against dividend attribution."""
+    inv = make_investor()
+    _import_allcargo(inv)
+    sec = Security.objects.get(isin=_ALLCARGO)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    ref = CorporateActionReference.objects.create(
+        security=sec,
+        isin=_ALLCARGO,
+        symbol="ALLCARGO",
+        exchange="NSE",
+        ex_date=dt.date(2024, 1, 2),
+        subject="Dividend - Rs 5 Per Share",
+        parsed_type=CorpActionType.DIVIDEND.value,
+        amount=Decimal("5"),
+        needs_review=False,
+        source="NSE",
+    )
+    with pytest.raises(ValueError, match="not auto-applicable"):
+        apply_corporate_actions_to_folio(inv, folio, reference_ids=[ref.id])
+
+
+def test_manual_demerger_authoring_is_rejected(make_investor):
+    """Demerger authoring is disabled at the boundary until its lot-splitting
+    persistence is safe — not merely hidden in the UI."""
+    from folioman_app.services.corporate_actions import apply_manual_corporate_action
+
+    inv = make_investor()
+    _import_allcargo(inv)
+    sec = Security.objects.get(isin=_ALLCARGO)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    with pytest.raises(ValueError, match="demerger authoring is not enabled"):
+        apply_manual_corporate_action(
+            inv,
+            folio,
+            sec,
+            kind="demerger",
+            ex_date=dt.date(2024, 1, 2),
+            child_ratio=Decimal("1"),
+            child_cost_fraction=Decimal("0.4"),
+            counterparty_isin="INE999X01010",
+        )

@@ -46,10 +46,15 @@ def _parsed_ratio(ref: CorporateActionReference) -> tuple[int, int] | None:
 def _event_from_reference(
     ref: CorporateActionReference, security: Security
 ) -> CorporateActionApplyEvent:
-    if ref.needs_review or ref.parsed_type in {
-        CorpActionType.MERGER.value,
-        CorpActionType.DEMERGER.value,
-        CorpActionType.UNKNOWN.value,
+    # Only bonus/split are auto-applicable from a cached feed reference: they replay
+    # as deterministic unit transforms. Everything else is rejected here —
+    # merger/demerger need a counterparty and lot semantics the reference can't carry;
+    # a DIVIDEND reference would double-write against the dividend-attribution pass
+    # (see apply_corporate_action_events); rights/buyback need units/price a feed row
+    # doesn't supply. These reach the ledger only through explicit manual authoring.
+    if ref.needs_review or ref.parsed_type not in {
+        CorpActionType.BONUS.value,
+        CorpActionType.SPLIT.value,
     }:
         msg = f"reference {ref.id} ({ref.subject!r}) is not auto-applicable"
         raise ValueError(msg)
@@ -387,16 +392,13 @@ def build_manual_event(
             source_ref=ref,
         )
     if action is CorpActionType.DEMERGER:
-        child = _counterparty_security(counterparty_isin, counterparty_symbol, counterparty_name)
-        return CorporateActionApplyEvent(
-            kind=action,
-            ex_date=ex_date,
-            security=core,
-            demerger_child_security=child,
-            demerger_child_ratio=child_ratio,
-            demerger_child_cost_fraction=child_cost_fraction,
-            source_ref=ref,
-        )
+        # Disabled at the authoring boundary, not just hidden in the UI: a demerger
+        # that splits a partially consumed parent lot, or issues several child lots,
+        # isn't safely persisted yet (the writer keys updates by ledger_id and dedupes
+        # created rows by source_ref, so derived rows collide). Re-enable once the
+        # persistence layer can represent one-source-to-many-rows.
+        msg = "demerger authoring is not enabled yet"
+        raise ValueError(msg)
     if action in (CorpActionType.RIGHTS, CorpActionType.BUYBACK):
         return CorporateActionApplyEvent(
             kind=action,
