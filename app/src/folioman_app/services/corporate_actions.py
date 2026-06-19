@@ -441,7 +441,15 @@ def apply_suggested_corporate_actions(
         if ref is None:
             msg = f"unknown corporate-action reference {ref_id}"
             raise ValueError(msg)
-        if ref.isin and ref.isin != security.isin:
+        # Trust the security FK when present: an event can be cached under a prior ISIN
+        # (a face-value split changes the ISIN, so the pre-split row carries the old
+        # one) yet still be linked to this security. Only fall back to the ISIN check
+        # when there's no FK to rely on.
+        if ref.security_id is not None:
+            if ref.security_id != security.id:
+                msg = "reference does not match this security"
+                raise ValueError(msg)
+        elif ref.isin and ref.isin != security.isin:
             msg = "reference does not match this security"
             raise ValueError(msg)
     return apply_corporate_actions_to_folio(investor, folio, reference_ids=list(reference_ids))

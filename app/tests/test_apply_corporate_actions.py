@@ -15,7 +15,10 @@ from folioman_app.models import (
     SecurityIntegrityStatus,
 )
 from folioman_app.models.jobs import ImportKind
-from folioman_app.services.corporate_actions import apply_corporate_actions_to_folio
+from folioman_app.services.corporate_actions import (
+    apply_corporate_actions_to_folio,
+    apply_suggested_corporate_actions,
+)
 from folioman_app.tasks.import_csv import process_csv
 from folioman_app.tasks.import_ecas import persist_ecas_statement
 from folioman_core.corporate_action_subject import CorpActionType
@@ -87,6 +90,33 @@ def test_apply_bonus_reference_reconciles_allcargo(make_investor):
     assert status.units_from_transactions == Decimal("960")
     assert status.units_from_holdings == Decimal("960")
     assert not any(i["type"].startswith("corporate_action_") for i in status.issues)
+
+
+def test_apply_suggested_accepts_fk_linked_ref_under_a_prior_isin(make_investor):
+    """A face-value split is cached under the pre-split ISIN but FK-linked to the
+    current security. Applying via the suggestion path must trust the FK, not reject
+    on the drifted ISIN ('reference does not match this security')."""
+    inv = make_investor()
+    _import_allcargo(inv)
+    persist_ecas_statement(inv, _ecas_allcargo("960"), source_ref="ecas1")
+    sec = Security.objects.get(isin=_ALLCARGO)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    ref = CorporateActionReference.objects.create(
+        security=sec,
+        isin="INE418H01018",  # a prior ISIN, differs from sec.isin
+        symbol="ALLCARGO",
+        exchange="NSE",
+        ex_date=dt.date(2024, 1, 2),
+        subject="Bonus 3:1",
+        parsed_type=CorpActionType.BONUS.value,
+        unit_multiplier=Decimal("4"),
+        needs_review=False,
+        source="NSE",
+    )
+    summary = apply_suggested_corporate_actions(inv, folio, sec, [ref.id])
+    assert summary["events_applied"] == 1
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio=folio)
+    assert status.status == "reconciled"
 
 
 def test_apply_bonus_idempotent_on_re_run(make_investor):
