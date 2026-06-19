@@ -191,3 +191,40 @@ def test_sync_failure_leaves_synced_at_null(monkeypatch, hdfc_security):
     sync_corporate_actions_for_security(hdfc_security)
     hdfc_security.refresh_from_db()
     assert hdfc_security.corporate_actions_synced_at is None
+
+
+def test_command_passes_options_and_reports_summary(monkeypatch):
+    """`manage.py refresh_corporate_actions` forwards --symbol/--since to the task
+    and prints the run summary."""
+    from io import StringIO
+
+    from django.core.management import call_command
+    from folioman_app.management.commands import refresh_corporate_actions as cmd
+
+    captured = {}
+
+    def _fake(*, symbol=None, since=None):
+        captured["symbol"] = symbol
+        captured["since"] = since
+        return {"securities": 3, "events": 5, "skipped": 1, "errors": 0}
+
+    monkeypatch.setattr(cmd, "refresh_corporate_actions", _fake)
+    out = StringIO()
+    call_command(
+        "refresh_corporate_actions", "--symbol", "HDFCBANK", "--since", "2020-01-01", stdout=out
+    )
+
+    assert captured["symbol"] == "HDFCBANK"
+    assert captured["since"] == date(2020, 1, 1)
+    assert "3 securities" in out.getvalue()
+    assert "5 events" in out.getvalue()
+
+
+def test_command_rejects_a_malformed_since_date(monkeypatch):
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+    from folioman_app.management.commands import refresh_corporate_actions as cmd
+
+    monkeypatch.setattr(cmd, "refresh_corporate_actions", lambda **_: pytest.fail("should not run"))
+    with pytest.raises(CommandError, match="invalid --since date"):
+        call_command("refresh_corporate_actions", "--since", "not-a-date")
