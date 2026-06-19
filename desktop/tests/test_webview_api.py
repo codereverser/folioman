@@ -73,3 +73,25 @@ def test_pick_single_selection_only(tmp_path):
     import webview
 
     assert window.calls[0]["dialog_type"] == webview.FileDialog.OPEN
+
+
+def test_pick_tradebook_files_returns_all_and_allows_multiple(tmp_path):
+    a = tmp_path / "tradebook-2022.csv"
+    a.write_bytes(b"symbol,qty\nINFY,5\n")
+    b = tmp_path / "tradebook-2023.csv"
+    b.write_bytes(b"symbol,qty\nTCS,3\n")
+    api = WebviewApi()
+    window = _FakeWindow((str(a), str(b)))
+    api.bind_window(window)
+
+    result = api.pick_tradebook_files()
+
+    assert [r["name"] for r in result] == ["tradebook-2022.csv", "tradebook-2023.csv"]
+    assert base64.b64decode(result[1]["data"]) == b"symbol,qty\nTCS,3\n"
+    assert window.calls[0]["allow_multiple"] is True
+
+
+def test_pick_tradebook_files_empty_on_cancel():
+    api = WebviewApi()
+    api.bind_window(_FakeWindow(None))
+    assert api.pick_tradebook_files() == []

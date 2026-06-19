@@ -9,6 +9,7 @@
 interface PyWebviewApi {
   pick_cas_file: () => Promise<{ name: string; data: string } | null>
   pick_tradebook_file?: () => Promise<{ name: string; data: string } | null>
+  pick_tradebook_files?: () => Promise<{ name: string; data: string }[] | null>
 }
 
 interface PyWebview {
@@ -59,4 +60,17 @@ export async function pickTradebookFile(): Promise<File | null> {
   const picked = await api.pick_tradebook_file()
   if (!picked) return null
   return base64ToFile(picked.name, picked.data)
+}
+
+/** Open the native dialog allowing several broker tradebooks at once (Zerodha
+ * exports one per year). Returns the chosen files (empty if cancelled / not
+ * desktop). Falls back to the single picker on an older bridge. */
+export async function pickTradebookFiles(): Promise<File[]> {
+  const api = bridge()?.api
+  if (api?.pick_tradebook_files) {
+    const picked = (await api.pick_tradebook_files()) ?? []
+    return picked.map((p) => base64ToFile(p.name, p.data))
+  }
+  const one = await pickTradebookFile()
+  return one ? [one] : []
 }

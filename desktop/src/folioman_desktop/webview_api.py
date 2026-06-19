@@ -53,9 +53,19 @@ class WebviewApi:
         import path; the in-page picker is flaky in the webview on some platforms."""
         return self._pick_file(_TRADEBOOK_FILE_TYPES)
 
-    def _pick_file(self, file_types: tuple[str, ...]) -> dict[str, str] | None:
-        """Open a single-file native open-dialog filtered to ``file_types`` and
-        return ``{name, base64 bytes}``, or ``None`` if cancelled/unreadable."""
+    def pick_tradebook_files(self) -> list[dict[str, str]]:
+        """Like ``pick_tradebook_file`` but allows selecting several at once — a
+        broker (e.g. Zerodha) exports one tradebook per financial year, so a user
+        commonly has many. Returns a list of ``{name, base64 bytes}`` (empty on
+        cancel); the SPA merges them into one import."""
+        return self._pick_files(_TRADEBOOK_FILE_TYPES, allow_multiple=True)
+
+    def _pick_files(
+        self, file_types: tuple[str, ...], *, allow_multiple: bool
+    ) -> list[dict[str, str]]:
+        """Open a native open-dialog filtered to ``file_types`` and return each
+        picked file as ``{name, base64 bytes}``; empty list if cancelled. Unreadable
+        files are skipped (logged), not fatal to the rest of the selection."""
         import webview
 
         # pywebview 5.x moved the dialog kind to the `FileDialog` enum; the old
@@ -67,15 +77,23 @@ class WebviewApi:
         window = self._window or webview.active_window()
         selection = window.create_file_dialog(
             open_dialog,
-            allow_multiple=False,
+            allow_multiple=allow_multiple,
             file_types=file_types,
         )
         if not selection:  # cancelled → empty tuple / None
-            return None
-        path = Path(selection[0])
-        try:
-            data = path.read_bytes()
-        except OSError:
-            logger.exception("desktop: could not read picked file %s", path)
-            return None
-        return {"name": path.name, "data": base64.b64encode(data).decode("ascii")}
+            return []
+        picked: list[dict[str, str]] = []
+        for raw in selection:
+            path = Path(raw)
+            try:
+                data = path.read_bytes()
+            except OSError:
+                logger.exception("desktop: could not read picked file %s", path)
+                continue
+            picked.append({"name": path.name, "data": base64.b64encode(data).decode("ascii")})
+        return picked
+
+    def _pick_file(self, file_types: tuple[str, ...]) -> dict[str, str] | None:
+        """Single-file convenience over :meth:`_pick_files`."""
+        files = self._pick_files(file_types, allow_multiple=False)
+        return files[0] if files else None

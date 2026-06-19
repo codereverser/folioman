@@ -12,7 +12,7 @@ import { useRosterStore } from '@/stores/roster'
 import { useIntegrityStore } from '@/stores/integrity'
 import { useWriteLock } from '@/composables/useWriteLock'
 import { toCsv } from '@/utils/csv'
-import { isDesktopShell, pickTradebookFile } from '@/utils/desktop'
+import { isDesktopShell, pickTradebookFiles } from '@/utils/desktop'
 import {
   CANONICAL_COLUMNS,
   CANONICAL_FIELDS,
@@ -40,72 +40,93 @@ const step = ref<Step>('pick')
 const busy = ref(false)
 const errorMessage = ref('')
 
-// --- step 1: investor + file ------------------------------------------------
+// --- step 1: investor + files -----------------------------------------------
 const investorId = ref<number | null>(ui.selectedInvestorId)
 const investorOptions = computed(() =>
   roster.investors.map((i) => ({ label: i.name, value: i.id })),
 )
-const file = ref<File | null>(null)
 const dragging = ref(false)
+const parsing = ref(false)
+
+// A broker exports one tradebook per financial year, so several files are the norm.
+// Accumulate them (each pick/drop adds; a file can be removed) and merge their rows
+// for a single import — they must share the same columns (same export format).
+interface LoadedFile {
+  name: string
+  rows: Record<string, string>[]
+}
+const loadedFiles = ref<LoadedFile[]>([])
 const headers = ref<string[]>([])
-const fileRows = ref<Record<string, string>[]>([])
+const fileRows = computed(() => loadedFiles.value.flatMap((f) => f.rows))
+
+// A tradebook is small (a few thousand rows); anything past this is almost
+// certainly the wrong file, and parsing it on the main thread would freeze the UI.
+const MAX_FILE_BYTES = 15 * 1024 * 1024
+const ALLOWED_FILE_EXT = /\.(csv|xlsx|xls)$/i
+const headerKey = (h: string[]): string => h.map((x) => x.trim().toLowerCase()).join('|')
+
+async function addFiles(picked: File[]): Promise<void> {
+  errorMessage.value = ''
+  parsing.value = true
+  try {
+    for (const f of picked) {
+      if (!ALLOWED_FILE_EXT.test(f.name)) {
+        errorMessage.value = `${f.name}: not a CSV or XLSX export.`
+        continue
+      }
+      if (f.size > MAX_FILE_BYTES) {
+        errorMessage.value = `${f.name}: too large (max ${MAX_FILE_BYTES / (1024 * 1024)} MB).`
+        continue
+      }
+      if (loadedFiles.value.some((x) => x.name === f.name)) continue // already added
+      let parsed
+      try {
+        parsed = await parseTabularFile(f)
+      } catch {
+        errorMessage.value = `${f.name}: couldn’t read it — CSV or XLSX only.`
+        continue
+      }
+      if (loadedFiles.value.length === 0) {
+        headers.value = parsed.headers
+      } else if (headerKey(parsed.headers) !== headerKey(headers.value)) {
+        errorMessage.value = `${f.name}: its columns don’t match the other files — add tradebooks from the same broker export.`
+        continue
+      }
+      loadedFiles.value.push({ name: f.name, rows: parsed.rows })
+    }
+  } finally {
+    parsing.value = false
+  }
+}
+
+function removeFile(index: number): void {
+  loadedFiles.value.splice(index, 1)
+  if (loadedFiles.value.length === 0) {
+    headers.value = []
+    errorMessage.value = ''
+  }
+}
 
 function onPickFile(event: Event): void {
-  const picked = (event.target as HTMLInputElement).files?.[0] ?? null
-  void loadFile(picked)
+  const input = event.target as HTMLInputElement
+  if (input.files?.length) void addFiles([...input.files])
+  input.value = '' // let the same file be re-picked after a remove
 }
 // In the desktop shell the in-page picker is flaky, so open the native dialog via
 // the PyWebView bridge; in a browser this is inert and the <input> handles it.
 async function onBrowse(event: Event): Promise<void> {
   if (!isDesktopShell()) return
   event.preventDefault()
-  const picked = await pickTradebookFile()
-  if (picked) void loadFile(picked)
+  await addFiles(await pickTradebookFiles())
 }
 function onDrop(event: DragEvent): void {
   dragging.value = false
-  const dropped = event.dataTransfer?.files?.[0]
-  if (dropped) void loadFile(dropped)
-}
-// A tradebook is small (a few thousand rows); anything past this is almost
-// certainly the wrong file, and parsing it on the main thread would freeze the UI.
-const MAX_FILE_BYTES = 15 * 1024 * 1024
-const ALLOWED_FILE_EXT = /\.(csv|xlsx|xls)$/i
-
-async function loadFile(picked: File | null): Promise<void> {
-  file.value = picked
-  errorMessage.value = ''
-  headers.value = []
-  fileRows.value = []
-  if (!picked) return
-  // Guard before handing the file to SheetJS: `accept` is advisory and bypassed
-  // by drag-drop, so validate type + size here.
-  if (!ALLOWED_FILE_EXT.test(picked.name)) {
-    errorMessage.value = 'Unsupported file — upload a CSV or XLSX export.'
-    file.value = null
-    return
-  }
-  if (picked.size > MAX_FILE_BYTES) {
-    errorMessage.value = `That file is too large (max ${MAX_FILE_BYTES / (1024 * 1024)} MB).`
-    file.value = null
-    return
-  }
-  parsing.value = true
-  try {
-    const parsed = await parseTabularFile(picked)
-    headers.value = parsed.headers
-    fileRows.value = parsed.rows
-  } catch {
-    errorMessage.value = 'Could not read this file — upload a CSV or XLSX export.'
-  } finally {
-    parsing.value = false
-  }
+  const dropped = event.dataTransfer?.files
+  if (dropped?.length) void addFiles([...dropped])
 }
 
-const parsing = ref(false)
 const canParse = computed(
-  () =>
-    investorId.value != null && file.value != null && headers.value.length > 0 && !parsing.value,
+  () => investorId.value != null && loadedFiles.value.length > 0 && !parsing.value,
 )
 
 function toMapping(): void {
@@ -263,14 +284,14 @@ async function runImport(): Promise<void> {
   errorMessage.value = ''
   try {
     const csv = toCsv(CANONICAL_COLUMNS, stampImportConstants(mappedRows.value, account.value))
-    job.value = await importTransactionsCsv(
-      investorId.value,
-      csv,
-      file.value?.name ?? 'tradebook.csv',
-    )
+    const label =
+      loadedFiles.value.length === 1
+        ? loadedFiles.value[0].name
+        : `${loadedFiles.value.length} tradebooks`
+    job.value = await importTransactionsCsv(investorId.value, csv, label)
     step.value = 'result'
     if (succeeded.value) {
-      ui.notify({ severity: 'success', summary: 'Import complete', detail: file.value?.name })
+      ui.notify({ severity: 'success', summary: 'Import complete', detail: label })
       integrity.clear()
       await loadReconciliation()
     }
@@ -283,9 +304,8 @@ async function runImport(): Promise<void> {
 
 function reset(): void {
   step.value = 'pick'
-  file.value = null
+  loadedFiles.value = []
   headers.value = []
-  fileRows.value = []
   mapping.value = {}
   job.value = null
   integrityRows.value = []
@@ -347,18 +367,39 @@ watch(investorId, () => {
           type="file"
           accept=".csv,.xlsx,.xls,text/csv"
           class="file-input"
-          aria-label="Choose a tradebook CSV or XLSX file"
+          multiple
+          aria-label="Choose one or more tradebook CSV or XLSX files"
           @change="onPickFile"
         />
         <i class="pi pi-file-excel" aria-hidden="true" />
         <span v-if="parsing" class="dropzone-hint"
-          ><i class="pi pi-spin pi-spinner" aria-hidden="true" /> Reading {{ file?.name }}…</span
+          ><i class="pi pi-spin pi-spinner" aria-hidden="true" /> Reading…</span
         >
-        <span v-else-if="file" class="file-name">{{ file.name }}</span>
-        <span v-else class="dropzone-hint">Drop a CSV/XLSX tradebook here, or click to browse</span>
+        <span v-else class="dropzone-hint">
+          Drop CSV/XLSX tradebooks here, or click to add —
+          <strong>select several at once</strong> (Some brokers support only one file per 365 days).
+        </span>
       </label>
-      <p v-if="file && headers.length && !parsing" class="muted small">
-        {{ headers.length }} columns, {{ fileRows.length }} rows detected.
+
+      <!-- Added files: each removable; user keeps adding until they map. -->
+      <ul v-if="loadedFiles.length" class="file-list">
+        <li v-for="(f, i) in loadedFiles" :key="f.name">
+          <i class="pi pi-file" aria-hidden="true" />
+          <span class="f-name">{{ f.name }}</span>
+          <span class="muted small">{{ f.rows.length }} rows</span>
+          <button
+            type="button"
+            class="f-remove"
+            :aria-label="`Remove ${f.name}`"
+            @click.stop="removeFile(i)"
+          >
+            <i class="pi pi-times" aria-hidden="true" />
+          </button>
+        </li>
+      </ul>
+      <p v-if="loadedFiles.length && !parsing" class="muted small">
+        {{ loadedFiles.length }} file{{ loadedFiles.length > 1 ? 's' : '' }} ·
+        {{ headers.length }} columns · {{ fileRows.length }} rows. Add more, or map the columns.
       </p>
 
       <Message v-if="errorMessage" severity="error" :closable="false">{{ errorMessage }}</Message>
@@ -759,6 +800,47 @@ watch(investorId, () => {
 }
 .dropzone-hint {
   color: var(--fm-text-muted);
+}
+.file-list {
+  list-style: none;
+  margin: var(--fm-space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-2);
+}
+.file-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--fm-space-2);
+  padding: 0.4rem 0.6rem;
+  background: var(--fm-surface-raised);
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-sm);
+}
+.file-list .f-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.f-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: none;
+  background: transparent;
+  color: var(--fm-text-subtle);
+  border-radius: var(--fm-radius-sm);
+  cursor: pointer;
+}
+.f-remove:hover {
+  background: var(--fm-surface);
+  color: var(--fm-loss);
 }
 .map-grid {
   display: flex;
