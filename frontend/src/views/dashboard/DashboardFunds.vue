@@ -143,10 +143,10 @@ const sortedFunds = computed(() => {
               </div>
             </template>
           </Column>
-          <Column header="Value" class="num">
+          <Column header="Value" class="num" header-class="num">
             <template #body="{ data }">{{ formatInr(data.value) }}</template>
           </Column>
-          <Column header="Return" class="num">
+          <Column header="Return" class="num" header-class="num">
             <template #body="{ data }">
               <DeltaChip
                 v-if="data.returnPct !== null"
@@ -157,7 +157,7 @@ const sortedFunds = computed(() => {
               <span v-else class="muted">—</span>
             </template>
           </Column>
-          <Column header="XIRR" class="num">
+          <Column header="XIRR" class="num" header-class="num">
             <template #body="{ data }">
               <span v-if="data.xirr !== null" class="xirr">{{ formatPercent(data.xirr) }}</span>
               <span v-else class="muted">—</span>

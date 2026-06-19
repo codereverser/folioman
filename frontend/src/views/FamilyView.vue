@@ -168,10 +168,10 @@ function openInvestor(investorId: number): void {
               </div>
             </template>
           </Column>
-          <Column header="Value" class="num">
+          <Column header="Value" class="num" header-class="num">
             <template #body="{ data }">{{ formatInr(data.value) }}</template>
           </Column>
-          <Column header="Return" class="num">
+          <Column header="Return" class="num" header-class="num">
             <template #body="{ data }">
               <DeltaChip
                 v-if="data.returnPct !== null"

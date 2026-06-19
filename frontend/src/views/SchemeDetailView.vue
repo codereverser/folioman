@@ -287,8 +287,8 @@ function back(): void {
           <thead>
             <tr>
               <th>Folio</th>
-              <th class="num">Units</th>
-              <th class="num">Value</th>
+              <th class="num" header-class="num">Units</th>
+              <th class="num" header-class="num">Value</th>
             </tr>
           </thead>
           <tbody>
@@ -297,8 +297,8 @@ function back(): void {
                 <span class="folio-num">{{ f.number }}</span>
                 <small v-if="f.broker"> · {{ f.broker }}</small>
               </td>
-              <td class="num">{{ formatUnits(f.units) }}</td>
-              <td class="num">{{ f.value_inr == null ? '—' : formatInr(f.value_inr) }}</td>
+              <td class="num" header-class="num">{{ formatUnits(f.units) }}</td>
+              <td class="num" header-class="num">{{ f.value_inr == null ? '—' : formatInr(f.value_inr) }}</td>
             </tr>
           </tbody>
         </table>
@@ -358,17 +358,17 @@ function back(): void {
           <Column field="ex_date" header="Ex-date" sortable>
             <template #body="{ data }">{{ formatDate(data.ex_date) }}</template>
           </Column>
-          <Column header="₹ / share" class="num">
+          <Column header="₹ / share" class="num" header-class="num">
             <template #body="{ data }">
               {{ data.dividend_per_share == null ? '—' : formatInrPaise(data.dividend_per_share) }}
             </template>
           </Column>
-          <Column header="Units" class="num">
+          <Column header="Units" class="num" header-class="num">
             <template #body="{ data }">
               {{ data.units == null ? '—' : formatUnits(data.units) }}
             </template>
           </Column>
-          <Column header="Amount" class="num">
+          <Column header="Amount" class="num" header-class="num">
             <template #body="{ data }">
               {{ data.amount_inr == null ? '—' : formatInr(data.amount_inr) }}
             </template>
@@ -401,12 +401,12 @@ function back(): void {
           <Column field="transaction_type" header="Action">
             <template #body="{ data }">{{ txnLabel(data.transaction_type) }}</template>
           </Column>
-          <Column header="Units added" class="num">
+          <Column header="Units added" class="num" header-class="num">
             <template #body="{ data }">
               {{ num(data.units) > 0 ? formatUnits(data.units) : '—' }}
             </template>
           </Column>
-          <Column header="Balance" class="num">
+          <Column header="Balance" class="num" header-class="num">
             <template #body="{ data }">
               {{ data.cost_basis_complete ? formatUnits(balanceById[data.id]) : '—' }}
             </template>
@@ -460,18 +460,18 @@ function back(): void {
                 }}</span>
               </template>
             </Column>
-            <Column header="Units" class="num">
+            <Column header="Units" class="num" header-class="num">
               <template #body="{ data }">{{ formatUnits(data.units) }}</template>
             </Column>
-            <Column header="NAV / Price" class="num">
+            <Column header="NAV / Price" class="num" header-class="num">
               <template #body="{ data }">{{ formatInrPaise(data.nav_or_price) }}</template>
             </Column>
-            <Column header="Amount" class="num">
+            <Column header="Amount" class="num" header-class="num">
               <template #body="{ data }">{{
                 data.amount == null ? '—' : formatInr(data.amount)
               }}</template>
             </Column>
-            <Column header="Balance" class="num">
+            <Column header="Balance" class="num" header-class="num">
               <template #body="{ data }">{{
                 data.cost_basis_complete ? formatUnits(balanceById[data.id]) : '—'
               }}</template>

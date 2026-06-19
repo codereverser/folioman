@@ -390,13 +390,13 @@ function openScheme(securityId: number): void {
               </div>
             </template>
           </Column>
-          <Column header="Value" class="num">
+          <Column header="Value" class="num" header-class="num">
             <template #body="{ data }">{{ formatInr(data.value) }}</template>
           </Column>
-          <Column header="Units" class="num">
+          <Column header="Units" class="num" header-class="num">
             <template #body="{ data }">{{ formatUnits(data.units) }}</template>
           </Column>
-          <Column header="Return" class="num">
+          <Column header="Return" class="num" header-class="num">
             <template #body="{ data }">
               <DeltaChip
                 v-if="data.returnPct !== null"

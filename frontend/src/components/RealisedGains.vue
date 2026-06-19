@@ -200,16 +200,16 @@ function excludedFix(row: IntegrityRow): string | null {
             <span class="term" :class="termClass(data)">{{ termLabel(data) }}</span>
           </template>
         </Column>
-        <Column header="Units" class="num">
+        <Column header="Units" class="num" header-class="num">
           <template #body="{ data }">{{ formatUnits(data.units) }}</template>
         </Column>
-        <Column header="Sale value" class="num">
+        <Column header="Sale value" class="num" header-class="num">
           <template #body="{ data }">{{ formatInr(data.saleValue) }}</template>
         </Column>
-        <Column header="Cost" class="num">
+        <Column header="Cost" class="num" header-class="num">
           <template #body="{ data }">{{ formatInr(data.cost) }}</template>
         </Column>
-        <Column header="Gain" class="num">
+        <Column header="Gain" class="num" header-class="num">
           <template #body="{ data }">
             <span class="gain-cell">
               <i
@@ -240,16 +240,16 @@ function excludedFix(row: IntegrityRow): string | null {
                   </div>
                 </template>
               </Column>
-              <Column header="Units" class="num">
+              <Column header="Units" class="num" header-class="num">
                 <template #body="{ data: lot }">{{ formatUnits(lot.units) }}</template>
               </Column>
-              <Column header="Sale value" class="num">
+              <Column header="Sale value" class="num" header-class="num">
                 <template #body="{ data: lot }">{{ formatInr(lot.sale_value) }}</template>
               </Column>
-              <Column header="Cost" class="num">
+              <Column header="Cost" class="num" header-class="num">
                 <template #body="{ data: lot }">{{ formatInr(lot.cost) }}</template>
               </Column>
-              <Column header="Gain" class="num">
+              <Column header="Gain" class="num" header-class="num">
                 <template #body="{ data: lot }">
                   <span class="gain-cell">
                     <i
