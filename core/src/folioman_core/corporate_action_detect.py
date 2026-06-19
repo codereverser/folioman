@@ -135,6 +135,13 @@ def _manual_issue(reason: str, **extra: str) -> dict:
     return payload
 
 
+def _effective_steps(steps: list[ReplayStep]) -> list[ReplayStep]:
+    """Replay steps that actually move the holding — drops events already reflected in
+    the ledger (a re-applied split is idempotent, so before == after) so the suggestion
+    never lists a no-op action."""
+    return [s for s in steps if s.units_after != s.units_before]
+
+
 def _applicable_scaling(actions: list[CachedCorporateAction]) -> list[CachedCorporateAction]:
     """Cached scaling events that can be auto-applied (parsed, not flagged)."""
     return [
@@ -173,7 +180,7 @@ def detect_corporate_action_issues(
         and holding_units is not None
         and abs(replay.replayed_units - holding_units) <= TOLERANCE
     ):
-        return [_suggestion_issue(replay.steps)]
+        return [_suggestion_issue(_effective_steps(replay.steps) or replay.steps)]
 
     if incomplete_history or negative_ledger:
         # Cached scaling events that lift an orphan to a valid (non-negative) position
@@ -181,7 +188,7 @@ def detect_corporate_action_issues(
         # gap is usually a second action (e.g. a merger) handled separately, and the
         # split/bonus are real published events. Suggest them, flagged partial.
         if replay is not None and replay.steps and replay.replayed_units >= _ZERO:
-            effective = [s for s in replay.steps if s.units_after != s.units_before]
+            effective = _effective_steps(replay.steps)
             if effective:
                 issue = _suggestion_issue(effective)
                 if (

@@ -270,6 +270,42 @@ def test_replay_with_no_applicable_events_flags_no_match():
     assert issues[0]["reason"] == "no_matching_event"
 
 
+def test_suggestion_drops_already_applied_no_op_steps():
+    """A split already in the ledger replays as a no-op (before == after); the
+    suggestion lists only the events that still move the holding (the bonus)."""
+    split = CachedCorporateAction(
+        ex_date=date(2019, 9, 19),
+        subject="Face Value Split",
+        parsed_type=CorpActionType.SPLIT.value,
+        unit_multiplier=Decimal("2"),
+        needs_review=False,
+        reference_id=42,
+    )
+    bonus = CachedCorporateAction(
+        ex_date=date(2025, 8, 26),
+        subject="Bonus 1:1",
+        parsed_type=CorpActionType.BONUS.value,
+        unit_multiplier=Decimal("2"),
+        needs_review=False,
+        reference_id=99,
+    )
+    issues = detect_corporate_action_issues(
+        net_units=Decimal("84"),
+        holding_units=Decimal("168"),
+        incomplete_history=False,
+        cached_actions=[split, bonus],
+        replay=ReplayMatch(
+            replayed_units=Decimal("168"),
+            steps=[
+                ReplayStep(action=split, units_before=Decimal("3.68"), units_after=Decimal("3.68")),
+                ReplayStep(action=bonus, units_before=Decimal("84"), units_after=Decimal("168")),
+            ],
+        ),
+    )
+    assert issues[0]["type"] == "corporate_action_suggestion"
+    assert issues[0]["reference_ids"] == [99]  # the no-op split (42) is dropped
+
+
 def test_orphan_cleared_by_split_suggests_partial_when_gap_remains():
     """Split lifts an orphan (-1) to 0, but eCAS shows 168 (from a merger). Suggest
     the split anyway, flagged partial — the residual is handled separately."""
