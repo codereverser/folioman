@@ -29,15 +29,36 @@ export function cellToString(value: unknown): string {
 }
 
 /**
- * Shape a sheet matrix (array of rows of cell strings; first row = headers) into
- * `{ headers, rows }`. Blank trailing header columns are dropped; fully-empty
- * rows are skipped. Duplicate headers are disambiguated with a numeric suffix so
- * one isn't silently shadowed.
+ * Index of the header row in a sheet matrix. A clean CSV has it at row 0, but a
+ * broker XLSX (e.g. Zerodha's Console export) prepends title/client-id/period
+ * rows — each only a cell or two wide — before the real header. The header is the
+ * first *substantially populated* row: the data table's full width, not a sparse
+ * preamble line. Falls back to row 0 if nothing stands out.
+ */
+export function headerRowIndex(matrix: unknown[][]): number {
+  const counts = matrix.map((row) => row.filter((c) => cellToString(c) !== '').length)
+  const width = Math.max(0, ...counts)
+  if (width < 2) return 0
+  // The header names every column, so it's the first row at the table's full width;
+  // preamble lines (title, client id, period) are only a cell or two wide.
+  const idx = counts.findIndex((n) => n >= width)
+  return idx === -1 ? 0 : idx
+}
+
+/**
+ * Shape a sheet matrix into `{ headers, rows }`. The header row is detected (see
+ * `headerRowIndex`), not assumed to be row 0, so a broker XLSX with a preamble
+ * parses like its CSV. Blank trailing header columns are dropped; fully-empty rows
+ * are skipped. Duplicate headers are disambiguated with a numeric suffix so one
+ * isn't silently shadowed.
  */
 export function rowsFromMatrix(matrix: unknown[][]): ParsedTable {
   if (matrix.length === 0) return { headers: [], rows: [] }
+  const start = headerRowIndex(matrix)
+  const body = matrix.slice(start)
+  if (body.length === 0) return { headers: [], rows: [] }
   const seen = new Map<string, number>()
-  const headers = matrix[0]
+  const headers = body[0]
     .map((h) => cellToString(h))
     .filter((h) => h !== '')
     .map((h) => {
@@ -46,7 +67,7 @@ export function rowsFromMatrix(matrix: unknown[][]): ParsedTable {
       return n === 0 ? h : `${h} (${n + 1})`
     })
   const rows: Record<string, string>[] = []
-  for (const raw of matrix.slice(1)) {
+  for (const raw of body.slice(1)) {
     const cells = raw.map((c) => cellToString(c))
     if (cells.every((c) => c === '')) continue
     const row: Record<string, string> = {}

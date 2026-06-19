@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellToString, rowsFromMatrix } from './parseTabular'
+import { cellToString, headerRowIndex, rowsFromMatrix } from './parseTabular'
 
 describe('rowsFromMatrix', () => {
   it('uses the first row as headers and keys each row by them', () => {
@@ -35,6 +35,42 @@ describe('rowsFromMatrix', () => {
 
   it('returns empty for an empty matrix', () => {
     expect(rowsFromMatrix([])).toEqual({ headers: [], rows: [] })
+  })
+
+  it('skips a broker XLSX preamble and finds the real header row', () => {
+    // Shape of a Zerodha Console XLSX: title + metadata + blank, then the header.
+    const { headers, rows } = rowsFromMatrix([
+      ['Tradebook', '', '', ''],
+      ['Client ID', 'AB1234', '', ''],
+      ['Period', '2023-04-01 to 2024-03-31', '', ''],
+      ['', '', '', ''],
+      ['symbol', 'isin', 'trade_type', 'quantity'],
+      ['RELIANCE', 'INE002A01018', 'buy', '10'],
+      ['TCS', 'INE467B01029', 'sell', '5'],
+    ])
+    expect(headers).toEqual(['symbol', 'isin', 'trade_type', 'quantity'])
+    expect(rows).toEqual([
+      { symbol: 'RELIANCE', isin: 'INE002A01018', trade_type: 'buy', quantity: '10' },
+      { symbol: 'TCS', isin: 'INE467B01029', trade_type: 'sell', quantity: '5' },
+    ])
+  })
+})
+
+describe('headerRowIndex', () => {
+  it('is 0 for a clean table', () => {
+    expect(headerRowIndex([['a', 'b', 'c'], ['1', '2', '3']])).toBe(0)
+  })
+
+  it('skips sparse preamble rows', () => {
+    expect(
+      headerRowIndex([
+        ['Tradebook', '', '', ''],
+        ['Client', 'X', '', ''],
+        ['', '', '', ''],
+        ['symbol', 'isin', 'type', 'qty'],
+        ['R', 'I', 'buy', '1'],
+      ]),
+    ).toBe(3)
   })
 })
 
