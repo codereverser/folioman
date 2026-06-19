@@ -1,4 +1,4 @@
-"""Reconciliation-driven corporate-action detection (E10.3 wiring)."""
+"""Reconciliation-driven corporate-action detection wiring."""
 
 from __future__ import annotations
 

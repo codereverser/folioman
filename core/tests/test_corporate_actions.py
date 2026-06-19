@@ -331,7 +331,7 @@ def test_apply_split_preserves_acquisition_date():
     assert buy.date == date(2017, 1, 2)  # split must not reset the holding period
 
 
-# --- golden fixtures (E10.4) -------------------------------------------------
+# --- golden fixtures ---------------------------------------------------------
 
 _ALLCARGO = Security(
     type=SecurityType.EQUITY,
@@ -522,7 +522,7 @@ def test_apply_bonus_from_multiplier_is_idempotent_on_source_ref():
     assert sum(1 for t in second if t.type is TransactionType.BONUS) == 1
 
 
-# --- reverse split (E10.4) ---------------------------------------------------
+# --- reverse split -----------------------------------------------------------
 
 
 def test_apply_reverse_split_floors_fractional_entitlement():
@@ -568,7 +568,7 @@ def test_split_event_with_ratio_below_one_uses_reverse_split():
     assert fifo.balance == Decimal("1")
 
 
-# --- demerger (E10.4) --------------------------------------------------------
+# --- demerger ----------------------------------------------------------------
 
 _SPINCO = Security(
     type=SecurityType.EQUITY,

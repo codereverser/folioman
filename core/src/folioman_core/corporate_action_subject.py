@@ -5,7 +5,7 @@ The exchange corporate-action feeds describe each action only as a free-text
 ``"Interim Dividend - Rs 1.10 Per Share"``, ``"Demerger"``, ``"Buy Back"``,
 ``"Scheme of Arrangement"``. This turns that string into a
 :class:`ParsedCorporateAction` carrying the type plus whatever ratio/amount is
-extractable, so the detection pass (E10.3) can match a clean unit ratio against
+extractable, so the detection pass can match a clean unit ratio against
 the eCAS anchor.
 
 Conservative by design: anything not confidently parsed — an unknown phrase, a
