@@ -270,6 +270,51 @@ def test_replay_with_no_applicable_events_flags_no_match():
     assert issues[0]["reason"] == "no_matching_event"
 
 
+def test_orphan_cleared_by_split_suggests_partial_when_gap_remains():
+    """Split lifts an orphan (-1) to 0, but eCAS shows 168 (from a merger). Suggest
+    the split anyway, flagged partial — the residual is handled separately."""
+    split = CachedCorporateAction(
+        ex_date=date(2019, 9, 19),
+        subject="Stock Split From Rs.2/- to Rs.1/-",
+        parsed_type=CorpActionType.SPLIT.value,
+        unit_multiplier=Decimal("2"),
+        needs_review=False,
+        reference_id=42,
+    )
+    issues = detect_corporate_action_issues(
+        net_units=Decimal("-1"),
+        holding_units=Decimal("168"),
+        incomplete_history=True,
+        cached_actions=[split],
+        replay=ReplayMatch(
+            replayed_units=Decimal("0"),
+            steps=[ReplayStep(action=split, units_before=Decimal("1"), units_after=Decimal("2"))],
+        ),
+    )
+    assert issues[0]["type"] == "corporate_action_suggestion"
+    assert issues[0]["reference_ids"] == [42]
+    assert issues[0]["partial"] is True
+    assert not any(i["type"] == "incomplete_history" for i in issues)
+
+
+def test_orphan_not_cleared_stays_incomplete():
+    """Replay leaves the ledger negative → still incomplete history, no suggestion."""
+    issues = detect_corporate_action_issues(
+        net_units=Decimal("-600"),
+        holding_units=Decimal("0"),
+        incomplete_history=True,
+        cached_actions=[_bonus_1_1()],
+        replay=ReplayMatch(
+            replayed_units=Decimal("-600"),
+            steps=[
+                ReplayStep(action=_bonus_1_1(), units_before=Decimal("0"), units_after=Decimal("0"))
+            ],
+        ),
+    )
+    assert issues[0]["type"] == "corporate_action_manual"
+    assert issues[0]["reason"] == "incomplete_history"
+
+
 def test_strip_corporate_action_issues():
     issues = [
         {"type": "unit_mismatch"},

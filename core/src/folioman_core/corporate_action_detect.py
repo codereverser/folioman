@@ -176,6 +176,20 @@ def detect_corporate_action_issues(
         return [_suggestion_issue(replay.steps)]
 
     if incomplete_history or negative_ledger:
+        # Cached scaling events that lift an orphan to a valid (non-negative) position
+        # are worth applying even when a residual gap to the eCAS anchor remains — the
+        # gap is usually a second action (e.g. a merger) handled separately, and the
+        # split/bonus are real published events. Suggest them, flagged partial.
+        if replay is not None and replay.steps and replay.replayed_units >= _ZERO:
+            effective = [s for s in replay.steps if s.units_after != s.units_before]
+            if effective:
+                issue = _suggestion_issue(effective)
+                if (
+                    holding_units is not None
+                    and abs(replay.replayed_units - holding_units) > TOLERANCE
+                ):
+                    issue["partial"] = True
+                return [issue]
         if replay is not None and replay.replayed_units < _ZERO:
             return [_manual_issue("incomplete_history")]
         if replay is not None and holding_units is not None and _applicable_scaling(cached_actions):

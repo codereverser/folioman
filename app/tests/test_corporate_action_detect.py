@@ -91,11 +91,12 @@ def test_allcargo_bonus_gap_auto_suggests(make_investor):
     assert ca[0]["events"][0]["unit_multiplier"] == "4"
 
 
-def test_orphan_sell_never_auto_suggests_bonus(make_investor):
-    """Orphan-sell ledger is flagged manual only — ratio matching is unreliable."""
+def test_orphan_sell_cleared_by_bonus_suggests_partial(make_investor):
+    """A bonus that explains the orphan (buy 5, 3:1 → 20, sell 15 → 5) is suggested,
+    flagged partial since the eCAS holding (168) still differs — the residual is a
+    separate event to record. A genuinely unexplained orphan stays manual (SUZLON)."""
     inv = make_investor()
     header = _TRADEBOOK_HEADER
-    # Buy 5, sell 15 → net -10, orphan overhang 10.
     rows = (
         f"equity,Allcargo Logistics,ALLCARGO,{_ALLCARGO},2024-01-10,buy,5,50,{_DEMAT},ZERODHA\n"
         f"equity,Allcargo Logistics,ALLCARGO,{_ALLCARGO},2024-06-01,sell,15,60,{_DEMAT},ZERODHA\n"
@@ -105,15 +106,16 @@ def test_orphan_sell_never_auto_suggests_bonus(make_investor):
     persist_ecas_statement(inv, _ecas_allcargo("168"), source_ref="ecas1")
 
     sec = Security.objects.get(isin=_ALLCARGO)
-    _seed_bonus_3_1(sec)
+    ref = _seed_bonus_3_1(sec)
     folio = Folio.objects.get(investor=inv, number=_DEMAT)
     reconcile_security_folio(inv, sec, folio)
 
     status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec)
-    assert not any(i["type"] == "corporate_action_suggestion" for i in status.issues)
-    manual = [i for i in status.issues if i["type"] == "corporate_action_manual"]
-    assert manual
-    assert manual[0]["reason"] in {"incomplete_history", "replay_mismatch"}
+    sugg = [i for i in status.issues if i["type"] == "corporate_action_suggestion"]
+    assert len(sugg) == 1
+    assert sugg[0]["reference_ids"] == [ref.id]
+    assert sugg[0]["partial"] is True
+    assert not any(i["type"] == "incomplete_history" for i in status.issues)
 
 
 def test_hdfc_ledger_without_ecas_line_flags_merged_out(make_investor):

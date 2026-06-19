@@ -613,6 +613,10 @@ function back(): void {
                   </tr>
                 </tbody>
               </table>
+              <p v-if="suggestionFor(row)!.partial" class="ca-preview-note">
+                Clears the missing-buys gap; a residual difference from your holdings
+                remains — likely a merger or transfer to record separately.
+              </p>
             </div>
           </li>
         </ul>
@@ -880,6 +884,12 @@ function back(): void {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--fm-text-muted);
+}
+.ca-preview-note {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--fm-text-subtle);
 }
 .ca-table {
   width: 100%;

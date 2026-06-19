@@ -106,7 +106,13 @@ describe('corporate action issues', () => {
     const parsed = corporateActionSuggestions([suggestion])
     expect(parsed).toHaveLength(1)
     expect(parsed[0].referenceIds).toEqual([42])
+    expect(parsed[0].partial).toBe(false)
     expect(corporateActionSuggestionSummary(parsed[0])).toMatch(/Bonus 3:1/)
+  })
+
+  it('parses the partial flag on an orphan-clearing suggestion', () => {
+    const parsed = corporateActionSuggestions([{ ...suggestion, partial: true }])
+    expect(parsed[0].partial).toBe(true)
   })
 
   it('parses multi-event suggestions', () => {

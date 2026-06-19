@@ -130,6 +130,9 @@ export interface CorporateActionEvent {
 export interface CorporateActionSuggestion {
   referenceIds: number[]
   events: CorporateActionEvent[]
+  /** True when applying these clears an orphan but a residual gap to eCAS remains
+   * (typically a separate action, e.g. a merger, handled on its own row). */
+  partial: boolean
 }
 
 function asRecord(issue: Record<string, unknown>): Record<string, unknown> {
@@ -159,7 +162,7 @@ export function corporateActionSuggestions(
             }
           })
         : []
-      return { referenceIds, events }
+      return { referenceIds, events, partial: i.partial === true }
     })
     .filter((s) => s.referenceIds.length > 0)
 }
