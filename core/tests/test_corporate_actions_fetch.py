@@ -116,7 +116,7 @@ def test_fetch_nse_returns_hdfcbank_bonus():
     assert parse_subject(events[0].subject).unit_multiplier == pytest.approx(2)
 
 
-def test_fetch_chunks_merge_without_dupes():
+def test_fetch_uses_a_single_window_and_dedupes():
     calls: list[tuple[str, str]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -125,14 +125,20 @@ def test_fetch_chunks_merge_without_dupes():
         return httpx.Response(200, json=_HDFCBANK_ROWS)
 
     client = _wrap(handler)
-    fetch_nse_corporate_actions(
-        "HDFCBANK", start=date(2016, 1, 1), end=date(2017, 6, 1), client=client
-    )
-    assert len(calls) == 2  # 2016 + 2017 partial
     events = fetch_nse_corporate_actions(
-        "HDFCBANK", start=date(2016, 1, 1), end=date(2017, 6, 1), client=client
+        "HDFCBANK", start=date(2016, 1, 1), end=date(2026, 6, 1), client=client
     )
+    # A decade of history is one request now, not ~10 one-year chunks.
+    assert len(calls) == 1
     assert len(events) == 1
+
+
+def test_windows_still_chunks_beyond_the_cap():
+    from folioman_core.price_feeds.corporate_actions_fetch import _windows
+
+    # Within the cap → one window; far beyond it → the safety-net chunker splits.
+    assert len(list(_windows(date(2016, 1, 1), date(2026, 6, 1)))) == 1
+    assert len(list(_windows(date(1990, 1, 1), date(2026, 6, 1)))) > 1
 
 
 def test_non_json_raises_when_no_data():

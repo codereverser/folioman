@@ -11,8 +11,9 @@ known. Both routes reuse :func:`~folioman_core.price_feeds.nse_bse_client.nse_cl
 / :func:`~folioman_core.price_feeds.nse_bse_client.bse_client` for cookie
 warm-up and transient retry.
 
-Wide ranges are fetched in ~1-year chunks so a single symbol cannot trip an
-undocumented per-response cap.
+Both NSE and BSE return a symbol's full corporate-action history for an arbitrary
+date range in a single response, so the default fetch is one request per symbol;
+the windower only splits ranges wider than ~20 years (a safety net, not the norm).
 """
 
 from __future__ import annotations
@@ -41,7 +42,10 @@ _BSE_LOOKUP_PATH = f"{_BSE_API_BASE}/PeerSmartSearch/w"
 _BSE_REFERER = "https://www.bseindia.com/corporates/corporate_act.aspx"
 
 DEFAULT_EARLIEST = date(2016, 1, 1)
-_MAX_WINDOW_DAYS = 365
+# Both feeds honour a full-range query, so one window covers a symbol's whole
+# history (back to DEFAULT_EARLIEST) in a single request. The chunker only kicks in
+# for ranges beyond this, so it stays a safety net rather than a 10x request tax.
+_MAX_WINDOW_DAYS = 366 * 20
 _SLEEP = time.sleep
 
 _BSE_SCRIP = re.compile(r"liclick\('(\d+)'", re.IGNORECASE)
