@@ -5,7 +5,7 @@ import Button from 'primevue/button'
 import InputText from 'primevue/inputtext'
 import Select from 'primevue/select'
 import { formatUnits } from '@/utils/format'
-import type { IntegrityRow, ManualCorporateActionBody } from '@/stores/integrity'
+import type { IntegrityRow, ManualCorporateActionBody, SecurityOption } from '@/stores/integrity'
 import {
   MANUAL_CA_KINDS,
   emptyManualCaForm,
@@ -24,6 +24,8 @@ const props = defineProps<{
   initialKind?: ManualCaKind
   /** ``merger`` locks the form to a cross-ISIN amalgamation (ledger_position rows). */
   variant?: 'general' | 'merger'
+  /** The investor's securities, for the acquirer picker (merger/demerger). */
+  securities?: SecurityOption[]
 }>()
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
@@ -46,6 +48,7 @@ watch(
         next.kind = props.initialKind
       }
       form.value = next
+      acquirerChoice.value = null
     }
   },
 )
@@ -56,6 +59,35 @@ const isDemerger = computed(() => form.value.kind === 'demerger')
 const isCrossSecurity = computed(() => isCrossSecurityKind(form.value.kind))
 const isRightsOrBuyback = computed(() => isRightsOrBuybackKind(form.value.kind))
 const valid = computed(() => isManualCaValid(form.value))
+
+// Acquirer picker: the acquiring company is almost always already in the portfolio.
+// Offer the investor's securities (minus the one merging away) plus a manual fallback.
+const MANUAL = '__manual__'
+const acquirerChoice = ref<number | typeof MANUAL | null>(null)
+const _EQUITY_TYPES = new Set(['equity', 'etf', 'foreign_equity'])
+const acquirerOptions = computed(() => {
+  const opts = (props.securities ?? [])
+    .filter((s) => s.id !== props.row?.securityId && _EQUITY_TYPES.has(s.security_type))
+    .map((s) => ({ label: s.symbol ? `${s.name} (${s.symbol})` : s.name, value: s.id }))
+  opts.push({ label: 'Other — enter ISIN manually', value: MANUAL })
+  return opts
+})
+const acquirerIsManual = computed(() => acquirerChoice.value === MANUAL)
+
+watch(acquirerChoice, (choice) => {
+  if (choice === MANUAL) {
+    form.value.cpIsin = ''
+    form.value.cpSymbol = ''
+    form.value.cpName = ''
+    return
+  }
+  const sec = (props.securities ?? []).find((s) => s.id === choice)
+  if (sec) {
+    form.value.cpIsin = sec.isin
+    form.value.cpSymbol = sec.symbol
+    form.value.cpName = sec.name
+  }
+})
 
 function submit(): void {
   if (!valid.value) return
@@ -129,17 +161,29 @@ function submit(): void {
       </template>
       <template v-if="isCrossSecurity">
         <label>
-          Acquiring company ISIN
-          <InputText v-model="form.cpIsin" placeholder="INE…" />
+          Acquiring company
+          <Select
+            v-model="acquirerChoice"
+            :options="acquirerOptions"
+            option-label="label"
+            option-value="value"
+            placeholder="Pick from your portfolio"
+          />
         </label>
-        <label>
-          Symbol (optional)
-          <InputText v-model="form.cpSymbol" placeholder="e.g. NEWCO" />
-        </label>
-        <label>
-          Name (optional)
-          <InputText v-model="form.cpName" />
-        </label>
+        <template v-if="acquirerIsManual">
+          <label>
+            Acquiring company ISIN
+            <InputText v-model="form.cpIsin" placeholder="INE…" />
+          </label>
+          <label>
+            Symbol (optional)
+            <InputText v-model="form.cpSymbol" placeholder="e.g. NEWCO" />
+          </label>
+          <label>
+            Name (optional)
+            <InputText v-model="form.cpName" />
+          </label>
+        </template>
       </template>
 
       <template v-if="isRightsOrBuyback">

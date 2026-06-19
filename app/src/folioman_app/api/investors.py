@@ -32,6 +32,7 @@ from folioman_app.api.schemas import (
     InvestorUpdate,
     RosterAggregateOut,
     SchemeDetailOut,
+    SecurityRef,
     TransactionIn,
     TransactionOut,
     ValuationStatusOut,
@@ -183,6 +184,19 @@ def scheme_detail(request, investor_id: int, security_id: int, as_of: date | Non
 def list_folios(request, investor_id: int):
     investor = get_owned_investor(request, investor_id)
     return list(investor.folios.all())
+
+
+@router.get("/{investor_id}/securities", response=list[SecurityRef])
+def list_securities(request, investor_id: int):
+    """Securities the investor has touched (any transaction or holding), name-sorted.
+
+    Backs the merger/demerger acquirer picker — the acquiring company is almost
+    always already in the portfolio (e.g. HDFCBANK after the HDFC merger)."""
+    investor = get_owned_investor(request, investor_id)
+    sec_ids = set(investor.transactions.values_list("security_id", flat=True))
+    sec_ids |= set(investor.holdings.values_list("security_id", flat=True))
+    sec_ids.discard(None)
+    return list(Security.objects.filter(id__in=sec_ids).order_by("name"))
 
 
 @router.get("/{investor_id}/transactions", response=list[TransactionOut])

@@ -664,6 +664,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/securities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Securities
+         * @description Securities the investor has touched (any transaction or holding), name-sorted.
+         *
+         *     Backs the merger/demerger acquirer picker — the acquiring company is almost
+         *     always already in the portfolio (e.g. HDFCBANK after the HDFC merger).
+         */
+        get: operations["folioman_app_api_investors_list_securities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/summary": {
         parameters: {
             query?: never;
@@ -3100,6 +3123,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntegrityStatusOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_investors_list_securities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityRef"][];
                 };
             };
         };

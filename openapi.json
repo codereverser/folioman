@@ -4777,6 +4777,43 @@
         ]
       }
     },
+    "/api/investors/{investor_id}/securities": {
+      "get": {
+        "description": "Securities the investor has touched (any transaction or holding), name-sorted.\n\nBacks the merger/demerger acquirer picker \u2014 the acquiring company is almost\nalways already in the portfolio (e.g. HDFCBANK after the HDFC merger).",
+        "operationId": "folioman_app_api_investors_list_securities",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SecurityRef"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List Securities",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
     "/api/investors/{investor_id}/summary": {
       "get": {
         "description": "Roster headline numbers: current INR value, tax-ready vs total holdings,\nitems needing attention, and the last successful import date.",

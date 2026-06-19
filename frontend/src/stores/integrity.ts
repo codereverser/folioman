@@ -10,6 +10,7 @@ import {
 } from '@/integrity/status'
 
 export type ManualCorporateActionBody = Schemas['ManualCorporateActionIn']
+export type SecurityOption = Schemas['SecurityRef']
 
 export interface IntegrityRow {
   securityId: number
@@ -70,6 +71,7 @@ function toRow(r: Schemas['IntegrityStatusOut']): IntegrityRow {
  */
 export const useIntegrityStore = defineStore('integrity', () => {
   const byInvestor = ref<Record<number, IntegrityRow[]>>({})
+  const securitiesByInvestor = ref<Record<number, SecurityOption[]>>({})
   const loading = ref(false)
   const acknowledging = ref(false)
   const applyingCorporateAction = ref(false)
@@ -348,8 +350,23 @@ export const useIntegrityStore = defineStore('integrity', () => {
     }
   }
 
+  function securitiesFor(investorId: number): SecurityOption[] {
+    return securitiesByInvestor.value[investorId] ?? []
+  }
+
+  /** Load the investor's securities once (for the merger/demerger acquirer picker). */
+  async function loadSecurities(investorId: number, { force = false } = {}): Promise<void> {
+    if (!force && securitiesByInvestor.value[investorId]) return
+    const { data, error: apiError } = await api.GET('/api/investors/{investor_id}/securities', {
+      params: { path: { investor_id: investorId } },
+    })
+    if (apiError || !data) return
+    securitiesByInvestor.value[investorId] = data
+  }
+
   function clear(): void {
     byInvestor.value = {}
+    securitiesByInvestor.value = {}
   }
 
   return {
@@ -364,6 +381,8 @@ export const useIntegrityStore = defineStore('integrity', () => {
     error,
     rowsFor,
     rollupFor,
+    securitiesFor,
+    loadSecurities,
     load,
     refreshCorporateActions,
     recompute,

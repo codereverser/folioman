@@ -147,3 +147,23 @@ def test_list_folios_for_investor(client, make_folio):
     resp = client.get(f"/api/investors/{folio.investor_id}/folios")
     assert resp.status_code == 200
     assert resp.json()[0]["number"] == "12345/67"
+
+
+def test_list_securities_returns_touched_securities(
+    client, make_investor, make_security, make_transaction
+):
+    """The acquirer-picker endpoint lists securities the investor has transacted/held."""
+    from folioman_core.models import SecurityType
+
+    inv = make_investor(name="Holder")
+    hdfcbank = make_security(
+        security_type=SecurityType.EQUITY.value,
+        name="HDFC Bank Ltd",
+        isin="INE040A01034",
+        symbol="HDFCBANK",
+    )
+    make_transaction(investor=inv, security=hdfcbank)
+
+    rows = client.get(f"/api/investors/{inv.id}/securities").json()
+    assert "INE040A01034" in {r["isin"] for r in rows}
+    assert any(r["symbol"] == "HDFCBANK" for r in rows)

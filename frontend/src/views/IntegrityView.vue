@@ -57,7 +57,14 @@ const investorId = computed(() => {
 })
 const investorName = computed(() => roster.investorName(investorId.value) ?? 'Investor')
 
-watch(investorId, (id) => void integrity.load(id), { immediate: true })
+watch(
+  investorId,
+  (id) => {
+    void integrity.load(id)
+    void integrity.loadSecurities(id)
+  },
+  { immediate: true },
+)
 
 const rows = computed<IntegrityRow[]>(() => integrity.rowsFor(investorId.value))
 const rollup = computed(() => integrity.rollupFor(investorId.value))
@@ -701,6 +708,7 @@ function back(): void {
       :row="manualCaRow"
       :initial-kind="manualCaInitialKind"
       :variant="manualCaVariant"
+      :securities="integrity.securitiesFor(investorId)"
       :loading="integrity.applyingManualCorporateAction"
       @submit="submitManualCa"
     />
