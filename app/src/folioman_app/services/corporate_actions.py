@@ -406,18 +406,27 @@ def apply_manual_corporate_action(
     return apply_corporate_actions_to_folio(investor, folio, events=[event])
 
 
-def apply_suggested_corporate_action(
+def apply_suggested_corporate_actions(
     investor: Investor,
     folio: Folio,
     security: Security,
-    reference_id: int,
+    reference_ids: Sequence[int],
 ) -> dict:
-    """Apply one high-confidence cached event (from an integrity suggestion)."""
-    ref = CorporateActionReference.objects.filter(pk=reference_id).first()
-    if ref is None:
-        msg = f"unknown corporate-action reference {reference_id}"
+    """Apply the high-confidence cached events from an integrity suggestion.
+
+    A suggestion may span several events (e.g. two splits, or a bonus plus a split),
+    all applied together in date order to close one unit gap.
+    """
+    if not reference_ids:
+        msg = "no corporate-action references to apply"
         raise ValueError(msg)
-    if ref.isin and ref.isin != security.isin:
-        msg = "reference does not match this security"
-        raise ValueError(msg)
-    return apply_corporate_actions_to_folio(investor, folio, reference_ids=[reference_id])
+    refs = {r.id: r for r in CorporateActionReference.objects.filter(pk__in=reference_ids)}
+    for ref_id in reference_ids:
+        ref = refs.get(ref_id)
+        if ref is None:
+            msg = f"unknown corporate-action reference {ref_id}"
+            raise ValueError(msg)
+        if ref.isin and ref.isin != security.isin:
+            msg = "reference does not match this security"
+            raise ValueError(msg)
+    return apply_corporate_actions_to_folio(investor, folio, reference_ids=list(reference_ids))

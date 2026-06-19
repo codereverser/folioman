@@ -212,12 +212,13 @@ export const useIntegrityStore = defineStore('integrity', () => {
     }
   }
 
-  /** Apply one cached corporate-action reference; patch the row from the response. */
+  /** Apply the cached corporate-action references that close a gap (one or several);
+   * patch the row from the response. */
   async function applyCorporateAction(
     investorId: number,
     securityId: number,
     folioId: number,
-    referenceId: number,
+    referenceIds: number[],
   ): Promise<boolean> {
     applyingCorporateAction.value = true
     error.value = null
@@ -228,7 +229,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
           params: {
             path: { investor_id: investorId, security_id: securityId, folio_id: folioId },
           },
-          body: { reference_id: referenceId },
+          body: { reference_ids: referenceIds },
         },
       )
       if (apiError || !data?.integrity) throw new Error('apply corporate action failed')

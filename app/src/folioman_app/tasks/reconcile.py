@@ -17,13 +17,20 @@ from django.db.models import Q
 from django.utils import timezone
 from folioman_core.corporate_action_detect import (
     CachedCorporateAction,
+    ReplayMatch,
     detect_corporate_action_issues,
     strip_corporate_action_issues,
 )
+from folioman_core.corporate_action_subject import CorpActionType
+from folioman_core.corporate_actions import (
+    CorporateActionApplyEvent,
+    apply_corporate_action_events,
+)
+from folioman_core.fifo import net_units_from_transactions
 from folioman_core.models import HoldingSource, SecurityType
-from folioman_core.reconciliation import IntegrityStatus, ReconciliationResult, reconcile
+from folioman_core.reconciliation import TOLERANCE, IntegrityStatus, ReconciliationResult, reconcile
 
-from folioman_app.mappers import to_core_holding, to_core_transaction
+from folioman_app.mappers import to_core_holding, to_core_security, to_core_transaction
 from folioman_app.models import (
     CorporateActionReference,
     Folio,
@@ -82,19 +89,93 @@ def _cached_actions_for_security(security: Security) -> list[CachedCorporateActi
     return list(rows.values())
 
 
+def _dedupe_scaling(actions: list[CachedCorporateAction]) -> list[CachedCorporateAction]:
+    """Auto-applicable scaling events, one per (ex-date, multiplier).
+
+    The feed carries one row per exchange, so the same split/bonus arrives twice
+    (NSE + BSE). Replaying both would double-count the adjustment, so collapse to a
+    single event per (ex-date, normalised multiplier) before applying.
+    """
+    seen: set[tuple] = set()
+    deduped: list[CachedCorporateAction] = []
+    for a in actions:
+        if (
+            a.parsed_type not in {CorpActionType.BONUS.value, CorpActionType.SPLIT.value}
+            or a.needs_review
+            or a.unit_multiplier is None
+            or a.reference_id is None
+        ):
+            continue
+        key = (a.ex_date, a.unit_multiplier.normalize())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(a)
+    return deduped
+
+
+def _replay_corporate_actions(
+    txns: list,
+    security: Security,
+    cached_actions: list[CachedCorporateAction],
+) -> ReplayMatch | None:
+    """Net units after applying the cached scaling events over the real timeline.
+
+    Returns ``None`` when there are no auto-applicable events (detection then has
+    nothing to suggest). Mirrors how ``apply_corporate_actions_to_folio`` builds and
+    applies events, so the prediction matches what "Apply" would actually do.
+    """
+    deduped = _dedupe_scaling(cached_actions)
+    if not deduped:
+        return None
+    core_security = to_core_security(security)
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType(a.parsed_type),
+            ex_date=a.ex_date,
+            security=core_security,
+            unit_multiplier=a.unit_multiplier,
+            source_ref=f"ca-ref:{a.reference_id}",
+        )
+        for a in deduped
+    ]
+    try:
+        replayed = apply_corporate_action_events(list(txns), events)
+    except (ValueError, KeyError):
+        # A malformed cached event can't be simulated; treat as "no clean replay" so
+        # detection falls back to a manual flag rather than crashing reconciliation.
+        return None
+    return ReplayMatch(replayed_units=net_units_from_transactions(replayed), actions=deduped)
+
+
 def _annotate_corporate_actions(
     result: ReconciliationResult,
     *,
     security: Security,
     incomplete_history: bool,
+    txns: list,
 ) -> ReconciliationResult:
     """Run the detection ruleset and merge issues into ``result``."""
     issues = strip_corporate_action_issues(result.issues)
+    cached_actions = _cached_actions_for_security(security)
+    # Only replay when there's a positive unit gap to explain — applying events to a
+    # reconciled ledger is wasted work, and detection short-circuits that case anyway.
+    replay = None
+    net = result.units_from_transactions
+    holding = result.units_from_holdings
+    if (
+        not incomplete_history
+        and net is not None
+        and holding is not None
+        and holding - net > TOLERANCE
+    ):
+        replay = _replay_corporate_actions(txns, security, cached_actions)
     ca_issues = detect_corporate_action_issues(
-        net_units=result.units_from_transactions,
-        holding_units=result.units_from_holdings,
+        net_units=net,
+        holding_units=holding,
         incomplete_history=incomplete_history,
-        cached_actions=_cached_actions_for_security(security),
+        cached_actions=cached_actions,
+        replay=replay,
     )
     if ca_issues:
         issues = [*issues, *ca_issues]
@@ -235,6 +316,7 @@ def reconcile_security_folio(
             result,
             security=security,
             incomplete_history=incomplete_history,
+            txns=txns,
         )
         result = _annotate_opening_lot(
             result,

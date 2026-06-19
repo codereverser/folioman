@@ -113,13 +113,20 @@ export function incompleteHistoryFix(): string {
   return 'Import an earlier-period tradebook that includes the missing buy transactions.'
 }
 
-/** A high-confidence corporate-action suggestion from reconciliation. */
-export interface CorporateActionSuggestion {
-  referenceId: number
+/** One event within a corporate-action suggestion. */
+export interface CorporateActionEvent {
   actionType: string
   subject: string
   exDate: string
   unitMultiplier: string
+}
+
+/** A high-confidence corporate-action suggestion from reconciliation. A unit gap
+ * can need several events applied together (e.g. two splits), so this carries the
+ * whole ordered set. */
+export interface CorporateActionSuggestion {
+  referenceIds: number[]
+  events: CorporateActionEvent[]
 }
 
 function asRecord(issue: Record<string, unknown>): Record<string, unknown> {
@@ -133,15 +140,23 @@ export function corporateActionSuggestions(
     .filter((i) => i.type === 'corporate_action_suggestion')
     .map((raw) => {
       const i = asRecord(raw)
-      return {
-        referenceId: Number(i.reference_id),
-        actionType: String(i.action_type ?? ''),
-        subject: String(i.subject ?? ''),
-        exDate: String(i.ex_date ?? ''),
-        unitMultiplier: String(i.unit_multiplier ?? ''),
-      }
+      const referenceIds = Array.isArray(i.reference_ids)
+        ? i.reference_ids.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+        : []
+      const events: CorporateActionEvent[] = Array.isArray(i.events)
+        ? i.events.map((rawEvent) => {
+            const e = asRecord(rawEvent as Record<string, unknown>)
+            return {
+              actionType: String(e.action_type ?? ''),
+              subject: String(e.subject ?? ''),
+              exDate: String(e.ex_date ?? ''),
+              unitMultiplier: String(e.unit_multiplier ?? ''),
+            }
+          })
+        : []
+      return { referenceIds, events }
     })
-    .filter((s) => Number.isFinite(s.referenceId) && s.referenceId > 0)
+    .filter((s) => s.referenceIds.length > 0)
 }
 
 export function hasCorporateActionSuggestion(issues: Record<string, unknown>[]): boolean {
@@ -161,6 +176,10 @@ const MANUAL_CA_COPY: Record<string, string> = {
     'The unit gap is not a clean bonus/split ratio — review corporate actions manually.',
   ratio_without_matching_event:
     'The unit ratio does not match any cached corporate action — refresh the feed or enter the event manually.',
+  replay_mismatch:
+    'The cached corporate actions don’t reconcile to your holdings — the feed may be incomplete or one applies differently. Review and enter the events manually.',
+  no_matching_event:
+    'A unit gap remains but no cached corporate action explains it — refresh the feed or enter the event manually.',
 }
 
 /** User-facing copy for a manual corporate-action flag, if any. */
@@ -176,17 +195,28 @@ export function corporateActionManualNote(issues: Record<string, unknown>[]): st
   return 'This unit gap needs a manual corporate-action review.'
 }
 
+function describeEvent(e: CorporateActionEvent): string {
+  const when = e.exDate ? ` (ex ${e.exDate})` : ''
+  return `${e.subject}${when} — ×${e.unitMultiplier}`
+}
+
 export function corporateActionSuggestionSummary(s: CorporateActionSuggestion): string {
-  const when = s.exDate ? ` (ex ${s.exDate})` : ''
-  return `Suggested corporate action: ${s.subject}${when} — applies a ×${s.unitMultiplier} unit adjustment.`
+  if (s.events.length === 1) {
+    return `Suggested corporate action: ${describeEvent(s.events[0])} unit adjustment.`
+  }
+  return `Suggested corporate actions (${s.events.length}): ${s.events.map(describeEvent).join('; ')}.`
 }
 
 export function corporateActionApplyConfirmMessage(
   s: CorporateActionSuggestion,
   name: string,
 ): string {
+  const what =
+    s.events.length === 1
+      ? `"${s.events[0].subject}"`
+      : `${s.events.length} corporate actions (${s.events.map((e) => e.subject).join(', ')})`
   return (
-    `Apply "${s.subject}" to "${name}"? ` +
+    `Apply ${what} to "${name}"? ` +
     'This writes bonus/split ledger rows and re-reconciles the folio. ' +
     'You can undo only by editing the ledger — review before confirming.'
   )

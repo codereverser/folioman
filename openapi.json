@@ -68,15 +68,18 @@
         "type": "object"
       },
       "ApplyCorporateActionIn": {
-        "description": "Apply one cached corporate-action reference to close a unit gap.",
+        "description": "Apply the cached corporate-action references that close a unit gap.\n\nUsually one event, but a gap can need several applied together (e.g. two splits).",
         "properties": {
-          "reference_id": {
-            "title": "Reference Id",
-            "type": "integer"
+          "reference_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Reference Ids",
+            "type": "array"
           }
         },
         "required": [
-          "reference_id"
+          "reference_ids"
         ],
         "title": "ApplyCorporateActionIn",
         "type": "object"

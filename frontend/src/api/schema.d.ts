@@ -885,11 +885,13 @@ export interface components {
         };
         /**
          * ApplyCorporateActionIn
-         * @description Apply one cached corporate-action reference to close a unit gap.
+         * @description Apply the cached corporate-action references that close a unit gap.
+         *
+         *     Usually one event, but a gap can need several applied together (e.g. two splits).
          */
         ApplyCorporateActionIn: {
-            /** Reference Id */
-            reference_id: number;
+            /** Reference Ids */
+            reference_ids: number[];
         };
         /** ApplyCorporateActionOut */
         ApplyCorporateActionOut: {

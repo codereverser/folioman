@@ -33,6 +33,7 @@ _TRADEBOOK_HEADER = (
 
 
 def _import_allcargo_tradebook(inv, *, units="240"):
+    # Buy precedes the bonus ex-date (2024-02-01) so the position is entitled to it.
     row = (
         f"equity,Allcargo Logistics,ALLCARGO,{_ALLCARGO},2024-01-15,buy,{units},50,"
         f"{_DEMAT},ZERODHA\n"
@@ -61,7 +62,7 @@ def _seed_bonus_3_1(security: Security) -> CorporateActionReference:
         isin=_ALLCARGO,
         symbol="ALLCARGO",
         exchange="NSE",
-        ex_date=dt.date(2024, 1, 2),
+        ex_date=dt.date(2024, 2, 1),
         subject="Bonus 3:1",
         parsed_type=CorpActionType.BONUS.value,
         unit_multiplier=Decimal("4"),
@@ -77,16 +78,17 @@ def test_allcargo_bonus_gap_auto_suggests(make_investor):
     persist_ecas_statement(inv, _ecas_allcargo("960"), source_ref="ecas1")
 
     sec = Security.objects.get(isin=_ALLCARGO)
-    _seed_bonus_3_1(sec)
+    ref = _seed_bonus_3_1(sec)
     folio = Folio.objects.get(investor=inv, number=_DEMAT)
     reconcile_security_folio(inv, sec, folio)
 
     status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec)
     ca = [i for i in status.issues if i["type"] == "corporate_action_suggestion"]
     assert len(ca) == 1
-    assert ca[0]["subject"] == "Bonus 3:1"
     assert ca[0]["confidence"] == "high"
-    assert ca[0]["unit_multiplier"] == "4"
+    assert ca[0]["reference_ids"] == [ref.id]
+    assert ca[0]["events"][0]["subject"] == "Bonus 3:1"
+    assert ca[0]["events"][0]["unit_multiplier"] == "4"
 
 
 def test_orphan_sell_never_auto_suggests_bonus(make_investor):

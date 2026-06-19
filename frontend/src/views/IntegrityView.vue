@@ -167,7 +167,7 @@ function askApplyCorporateAction(row: IntegrityRow): void {
         investorId.value,
         row.securityId,
         row.folioId,
-        suggestion.referenceId,
+        suggestion.referenceIds,
       )
       ui.notify(
         ok
@@ -470,7 +470,7 @@ function back(): void {
                   hasIncompleteHistory(row.issues)
                     ? 'Incomplete history'
                     : hasCorporateActionSuggestion(row.issues)
-                      ? 'CA suggested'
+                      ? 'Action suggested'
                       : undefined
                 "
                 :severity="
@@ -485,7 +485,7 @@ function back(): void {
               <div class="row-action">
                 <Button
                   v-if="suggestionFor(row)"
-                  label="Apply CA"
+                  label="Apply action"
                   icon="pi pi-bolt"
                   size="small"
                   text

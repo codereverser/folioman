@@ -28,7 +28,7 @@ from folioman_app.api.schemas import (
 from folioman_app.models import Folio, Investor, Security, SecurityIntegrityStatus
 from folioman_app.services.corporate_actions import (
     apply_manual_corporate_action,
-    apply_suggested_corporate_action,
+    apply_suggested_corporate_actions,
 )
 from folioman_app.services.identity_remap import apply_identity_remap
 from folioman_app.services.opening_lots import record_opening_lot
@@ -132,7 +132,9 @@ def apply_corporate_action(
     investor = get_owned_investor(request, investor_id)
     security, folio = _owned_status(investor, security_id, folio_id)
     try:
-        summary = apply_suggested_corporate_action(investor, folio, security, payload.reference_id)
+        summary = apply_suggested_corporate_actions(
+            investor, folio, security, payload.reference_ids
+        )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
     status = SecurityIntegrityStatus.objects.get(investor=investor, security=security, folio=folio)

@@ -69,19 +69,45 @@ describe('corporate action issues', () => {
   const suggestion = {
     type: 'corporate_action_suggestion',
     confidence: 'high',
-    action_type: 'bonus',
-    subject: 'Bonus 3:1',
-    ex_date: '2024-06-15',
-    unit_multiplier: '4',
-    reference_id: 42,
+    reference_ids: [42],
+    events: [
+      {
+        action_type: 'bonus',
+        subject: 'Bonus 3:1',
+        ex_date: '2024-06-15',
+        unit_multiplier: '4',
+        reference_id: 42,
+      },
+    ],
   }
 
   it('parses high-confidence suggestions', () => {
     expect(hasCorporateActionSuggestion([suggestion])).toBe(true)
     const parsed = corporateActionSuggestions([suggestion])
     expect(parsed).toHaveLength(1)
-    expect(parsed[0].referenceId).toBe(42)
+    expect(parsed[0].referenceIds).toEqual([42])
     expect(corporateActionSuggestionSummary(parsed[0])).toMatch(/Bonus 3:1/)
+  })
+
+  it('parses multi-event suggestions', () => {
+    const multi = {
+      type: 'corporate_action_suggestion',
+      confidence: 'high',
+      reference_ids: [7, 8],
+      events: [
+        { action_type: 'bonus', subject: 'Bonus 1:1', ex_date: '2018-09-05', unit_multiplier: '2' },
+        { action_type: 'split', subject: 'Split 1:2', ex_date: '2020-03-01', unit_multiplier: '2' },
+      ],
+    }
+    const parsed = corporateActionSuggestions([multi])
+    expect(parsed[0].referenceIds).toEqual([7, 8])
+    expect(corporateActionSuggestionSummary(parsed[0])).toMatch(/Bonus 1:1.*Split 1:2/)
+  })
+
+  it('maps replay-mismatch reason to copy', () => {
+    expect(
+      corporateActionManualNote([{ type: 'corporate_action_manual', reason: 'replay_mismatch' }]),
+    ).toMatch(/don’t reconcile/)
   })
 
   it('maps manual review reasons to copy', () => {

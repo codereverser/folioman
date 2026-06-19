@@ -454,9 +454,12 @@ class IntegrityStatusOut(Schema):
 
 
 class ApplyCorporateActionIn(Schema):
-    """Apply one cached corporate-action reference to close a unit gap."""
+    """Apply the cached corporate-action references that close a unit gap.
 
-    reference_id: int
+    Usually one event, but a gap can need several applied together (e.g. two splits).
+    """
+
+    reference_ids: list[int]
 
 
 class ApplyCorporateActionOut(Schema):
