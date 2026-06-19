@@ -74,6 +74,22 @@ describe('integrity store', () => {
     expect(rollup.needsAttention).toBe(1)
   })
 
+  it('counts snapshot opening-lot rows in needsAttention', async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        statusRow({ status: 'snapshot_only', tax_safe: false }),
+        statusRow({
+          status: 'snapshot_only',
+          tax_safe: false,
+          issues: [{ type: 'opening_lot_needed', holding_units: '50' }],
+        }),
+      ],
+    } as never)
+    const store = useIntegrityStore()
+    await store.load(10)
+    expect(store.rollupFor(10).needsAttention).toBe(1)
+  })
+
   it('acknowledge updates the matching row in place to user_acknowledged', async () => {
     mockGet.mockResolvedValue({
       data: [

@@ -66,7 +66,7 @@ def test_orphan_never_auto_suggests():
     assert issues == [{"type": "corporate_action_manual", "reason": "incomplete_history"}]
 
 
-def test_incomplete_history_flag_never_auto_suggests():
+def test_incomplete_history_flag_never_auto_suggests_without_replay():
     issues = detect_corporate_action_issues(
         net_units=Decimal("240"),
         holding_units=Decimal("960"),
@@ -74,6 +74,32 @@ def test_incomplete_history_flag_never_auto_suggests():
         cached_actions=[_bonus_3_1()],
     )
     assert issues[0]["reason"] == "incomplete_history"
+
+
+def test_incomplete_history_replay_match_still_suggests():
+    """A cached split that clears an orphan sell must suggest even when flagged incomplete."""
+    split = CachedCorporateAction(
+        ex_date=date(2019, 9, 19),
+        subject="Stock Split From Rs.2/- to Rs.1/-",
+        parsed_type=CorpActionType.SPLIT.value,
+        unit_multiplier=Decimal("2"),
+        needs_review=False,
+        reference_id=9,
+    )
+    issues = detect_corporate_action_issues(
+        net_units=None,
+        holding_units=Decimal("0"),
+        incomplete_history=True,
+        cached_actions=[split],
+        replay=ReplayMatch(
+            replayed_units=Decimal("0"),
+            steps=[
+                ReplayStep(action=split, units_before=Decimal("1"), units_after=Decimal("2")),
+            ],
+        ),
+    )
+    assert issues[0]["type"] == "corporate_action_suggestion"
+    assert issues[0]["reference_ids"] == [9]
 
 
 def test_reconciled_no_issues():

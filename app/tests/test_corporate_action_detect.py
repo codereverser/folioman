@@ -113,7 +113,7 @@ def test_orphan_sell_never_auto_suggests_bonus(make_investor):
     assert not any(i["type"] == "corporate_action_suggestion" for i in status.issues)
     manual = [i for i in status.issues if i["type"] == "corporate_action_manual"]
     assert manual
-    assert manual[0]["reason"] == "incomplete_history"
+    assert manual[0]["reason"] in {"incomplete_history", "replay_mismatch"}
 
 
 def test_hdfc_ledger_without_ecas_line_flags_merged_out(make_investor):

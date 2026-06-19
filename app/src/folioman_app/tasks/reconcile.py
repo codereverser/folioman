@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from decimal import Decimal
 
 from django.db.models import Q
 from django.utils import timezone
@@ -45,6 +46,8 @@ from folioman_app.models import (
 from folioman_app.services.dividends import attribute_dividends_for_security
 
 logger = logging.getLogger(__name__)
+
+_ZERO = Decimal("0")
 
 
 def _incomplete_history_issue(partial: PartialBlock) -> dict:
@@ -177,22 +180,22 @@ def _annotate_corporate_actions(
     security: Security,
     incomplete_history: bool,
     txns: list,
+    ledger_txns: list | None = None,
 ) -> ReconciliationResult:
     """Run the detection ruleset and merge issues into ``result``."""
     issues = strip_corporate_action_issues(result.issues)
     cached_actions = _cached_actions_for_security(security)
-    # Only replay when there's a positive unit gap to explain — applying events to a
-    # reconciled ledger is wasted work, and detection short-circuits that case anyway.
     replay = None
     net = result.units_from_transactions
     holding = result.units_from_holdings
-    if (
-        not incomplete_history
-        and net is not None
-        and holding is not None
-        and holding - net > TOLERANCE
-    ):
-        replay = _replay_corporate_actions(txns, security, cached_actions)
+    # Replay uses the full folio timeline (including display-only partial rows), not
+    # just cost-basis rows — orphan sells live in the latter bucket but still need
+    # scaling events applied in date order to test whether a cached CA explains eCAS.
+    replay_source = ledger_txns if ledger_txns else txns
+    has_gap = net is not None and holding is not None and holding - net > TOLERANCE
+    needs_replay_probe = incomplete_history or (net is not None and net < _ZERO) or has_gap
+    if replay_source and needs_replay_probe and _dedupe_scaling(cached_actions):
+        replay = _replay_corporate_actions(replay_source, security, cached_actions)
     ca_issues = detect_corporate_action_issues(
         net_units=net,
         holding_units=holding,
@@ -201,6 +204,8 @@ def _annotate_corporate_actions(
         replay=replay,
     )
     if ca_issues:
+        if ca_issues[0].get("type") == "corporate_action_suggestion":
+            issues = [i for i in issues if i.get("type") != "incomplete_history"]
         issues = [*issues, *ca_issues]
     if not issues:
         return result
@@ -340,6 +345,7 @@ def reconcile_security_folio(
             security=security,
             incomplete_history=incomplete_history,
             txns=txns,
+            ledger_txns=display_txns,
         )
         result = _annotate_opening_lot(
             result,

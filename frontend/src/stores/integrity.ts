@@ -4,6 +4,7 @@ import { api, type Schemas } from '@/api/client'
 import {
   rollupIntegrity,
   toIntegrityStatus,
+  rowNeedsAttention,
   type IntegrityRollup,
   type IntegrityStatus,
 } from '@/integrity/status'
@@ -83,7 +84,10 @@ export const useIntegrityStore = defineStore('integrity', () => {
   }
 
   function rollupFor(investorId: number): IntegrityRollup {
-    return rollupIntegrity(rowsFor(investorId).map((r) => r.status))
+    const rows = rowsFor(investorId)
+    const rollup = rollupIntegrity(rows.map((r) => r.status))
+    rollup.needsAttention = rows.filter((r) => rowNeedsAttention(r.status, r.issues)).length
+    return rollup
   }
 
   async function load(investorId: number, { force = false } = {}): Promise<void> {

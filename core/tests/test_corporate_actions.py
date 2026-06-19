@@ -116,6 +116,26 @@ def test_two_1_3_bonuses_compound_on_whole_shares():
     assert net_units_from_transactions(txns) == Decimal("354")
 
 
+def test_apply_split_is_idempotent_on_source_ref():
+    """Re-applying the same split (e.g. a reconciliation replay over an applied
+    ledger) must not re-scale — it would double the factor."""
+    once = apply_split(
+        [_buy("10", "100", on=date(2024, 1, 1))],
+        ratio=Decimal("2"),
+        effective_date=date(2024, 6, 1),
+        security=_EQUITY,
+        source_ref="ca-ref:7",
+    )
+    twice = apply_split(
+        once,
+        ratio=Decimal("2"),
+        effective_date=date(2024, 6, 1),
+        security=_EQUITY,
+        source_ref="ca-ref:7",
+    )
+    assert net_units_from_transactions(twice) == net_units_from_transactions(once) == Decimal("20")
+
+
 def test_bonus_too_small_for_a_whole_share_issues_nothing():
     """1:3 bonus on 2 shares: no whole bonus share earned, so no bonus row."""
     txns = apply_bonus_from_multiplier(

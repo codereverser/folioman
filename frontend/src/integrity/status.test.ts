@@ -10,6 +10,7 @@ import {
   incompleteHistoryFix,
   incompleteHistoryReason,
   rollupIntegrity,
+  rowNeedsAttention,
   toIntegrityStatus,
 } from './status'
 
@@ -48,6 +49,25 @@ describe('rollupIntegrity', () => {
 
   it('handles an empty set', () => {
     expect(rollupIntegrity([])).toMatchObject({ total: 0, taxReady: 0, needsAttention: 0 })
+  })
+})
+
+describe('rowNeedsAttention', () => {
+  it('includes mismatches and opening-lot snapshots', () => {
+    expect(rowNeedsAttention('mismatch', [])).toBe(true)
+    expect(
+      rowNeedsAttention('snapshot_only', [{ type: 'opening_lot_needed', holding_units: '10' }]),
+    ).toBe(true)
+    expect(rowNeedsAttention('snapshot_only', [])).toBe(false)
+    expect(rowNeedsAttention('user_acknowledged', [])).toBe(false)
+  })
+
+  it('includes full_history merger review rows', () => {
+    expect(
+      rowNeedsAttention('full_history', [
+        { type: 'corporate_action_manual', reason: 'ledger_position_not_in_holdings' },
+      ]),
+    ).toBe(true)
   })
 })
 

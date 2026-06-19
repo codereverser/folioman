@@ -5,6 +5,8 @@ import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
+import Menu from 'primevue/menu'
+import type { MenuItem } from 'primevue/menuitem'
 import Message from 'primevue/message'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
@@ -16,16 +18,20 @@ import {
   corporateActionSuggestionSummary,
   corporateActionSuggestions,
   hasCorporateActionSuggestion,
-  needsIdentityRemap,
   openingLotIssue,
   openingLotSummary,
   OPENING_LOT_CLASSIFICATIONS,
   hasIncompleteHistory,
   incompleteHistoryFix,
   incompleteHistoryReason,
+  hasLedgerPositionNotInHoldings,
+  ledgerPositionSummary,
   remediation,
+  rowNeedsAttention,
   type CorporateActionSuggestion,
 } from '@/integrity/status'
+import { metaResolutions, workResolutions, type Resolution } from '@/integrity/resolutions'
+import type { ManualCaKind } from '@/integrity/manualCorporateAction'
 import {
   useIntegrityStore,
   type IntegrityRow,
@@ -71,9 +77,12 @@ const visibleRows = computed<IntegrityRow[]>(() => {
     case 'ready':
       return rows.value.filter((r) => r.taxSafe)
     case 'snapshot':
-      return rows.value.filter((r) => r.status === 'snapshot_only')
+      // Passive eCAS snapshots only — actionable ones (opening lot, etc.) sit under Needs attention.
+      return rows.value.filter(
+        (r) => r.status === 'snapshot_only' && !rowNeedsAttention(r.status, r.issues),
+      )
     case 'mismatch':
-      return rows.value.filter((r) => r.status === 'mismatch')
+      return rows.value.filter((r) => rowNeedsAttention(r.status, r.issues))
     default:
       return rows.value
   }
@@ -116,6 +125,9 @@ function deltaLabel(row: IntegrityRow): string {
 function reasonFor(row: IntegrityRow): string {
   const incomplete = incompleteHistoryReason(row.issues)
   if (incomplete) return incomplete
+  if (hasLedgerPositionNotInHoldings(row.issues)) {
+    return ledgerPositionSummary(row.name, row.unitsFromTransactions)
+  }
   const ledger = formatUnits(row.unitsFromTransactions)
   const snap = formatUnits(row.unitsFromHoldings)
   const through = row.ledgerThrough ? ` through ${formatDate(row.ledgerThrough)}` : ''
@@ -146,6 +158,26 @@ function fixFor(row: IntegrityRow): string | null {
   const suggestion = corporateActionSuggestions(row.issues)[0]
   if (suggestion) return corporateActionSuggestionSummary(suggestion)
   return remediation(row.status, { folioType: row.folioType })
+}
+
+function integrityBadgeLabel(row: IntegrityRow): string | undefined {
+  if (hasIncompleteHistory(row.issues)) return 'Incomplete history'
+  if (hasCorporateActionSuggestion(row.issues)) return 'Action suggested'
+  if (hasLedgerPositionNotInHoldings(row.issues)) return 'Merger review'
+  if (openingLotIssue(row.issues)) return 'Needs opening lot'
+  return undefined
+}
+
+function integrityBadgeSeverity(row: IntegrityRow): 'warn' | undefined {
+  if (
+    hasIncompleteHistory(row.issues) ||
+    hasCorporateActionSuggestion(row.issues) ||
+    hasLedgerPositionNotInHoldings(row.issues) ||
+    openingLotIssue(row.issues)
+  ) {
+    return 'warn'
+  }
+  return undefined
 }
 
 function suggestionFor(row: IntegrityRow): CorporateActionSuggestion | null {
@@ -187,10 +219,10 @@ const openingLotForm = ref({
   costBasisUnknown: false,
 })
 
-function openOpeningLotDialog(row: IntegrityRow): void {
+function openOpeningLotDialog(row: IntegrityRow, classification: string = 'transfer_in'): void {
   openingLotRow.value = row
   openingLotForm.value = {
-    classification: 'transfer_in',
+    classification,
     date: row.snapshotAsOf ?? '',
     price: '',
     costBasisUnknown: false,
@@ -253,9 +285,14 @@ async function submitIdentityRemap(): Promise<void> {
 
 const manualCaVisible = ref(false)
 const manualCaRow = ref<IntegrityRow | null>(null)
+const manualCaInitialKind = ref<ManualCaKind | undefined>(undefined)
+const manualCaVariant = ref<'general' | 'merger'>('general')
 
-function openManualCaDialog(row: IntegrityRow): void {
+function openManualCaDialog(row: IntegrityRow, kind?: ManualCaKind): void {
   manualCaRow.value = row
+  manualCaInitialKind.value = kind
+  manualCaVariant.value =
+    kind === 'merger' && hasLedgerPositionNotInHoldings(row.issues) ? 'merger' : 'general'
   manualCaVisible.value = true
 }
 
@@ -297,6 +334,71 @@ async function recheck(): Promise<void> {
   } finally {
     recomputing.value = false
   }
+}
+
+async function runResolution(row: IntegrityRow, resolution: Resolution): Promise<void> {
+  switch (resolution.id) {
+    case 'apply_ca_suggestion':
+      await applyCorporateActionFor(row)
+      break
+    case 'opening_lot':
+      openOpeningLotDialog(row, resolution.openingLotClassification ?? 'transfer_in')
+      break
+    case 'identity_remap':
+      openIdentityRemapDialog(row)
+      break
+    case 'manual_ca':
+      openManualCaDialog(row, resolution.manualCaKind)
+      break
+    case 'fetch_corporate_actions':
+      await fetchCorporateActions()
+      break
+    case 'acknowledge':
+      askAcknowledge(row)
+      break
+    case 'unacknowledge':
+      await unacknowledge(row)
+      break
+  }
+}
+
+function resolutionLoading(resolution: Resolution): boolean {
+  switch (resolution.id) {
+    case 'apply_ca_suggestion':
+      return integrity.applyingCorporateAction
+    case 'opening_lot':
+      return integrity.recordingOpeningLot
+    case 'identity_remap':
+      return integrity.applyingIdentityRemap
+    case 'manual_ca':
+      return integrity.applyingManualCorporateAction
+    case 'fetch_corporate_actions':
+      return integrity.refreshingCorporateActions
+    case 'acknowledge':
+    case 'unacknowledge':
+      return integrity.acknowledging
+    default:
+      return false
+  }
+}
+
+function rowResolveLoading(row: IntegrityRow): boolean {
+  return workResolutions(row).some((r) => resolutionLoading(r))
+}
+
+const resolveMenu = ref<InstanceType<typeof Menu> | null>(null)
+const resolveMenuRow = ref<IntegrityRow | null>(null)
+const resolveMenuModel = ref<MenuItem[]>([])
+
+function openResolveMenu(e: Event, row: IntegrityRow): void {
+  resolveMenuRow.value = row
+  resolveMenuModel.value = workResolutions(row).map((r) => ({
+    label: r.label,
+    icon: r.icon,
+    disabled: readOnly.value,
+    command: () => void runResolution(row, r),
+  }))
+  resolveMenu.value?.toggle(e)
 }
 
 // A mismatch whose corporate actions haven't been fetched yet: don't let the user
@@ -403,8 +505,8 @@ function back(): void {
     >
       <strong>How to resolve:</strong> a holding ties out once it has full transaction history. We
       fetch your stocks’ corporate actions in the background; if a mismatch is still open,
-      <em>Fetch corporate actions</em> first, then apply the suggested split/bonus — or
-      <em>Resolve</em> by recording the action yourself once the history is in. You can also
+      <em>Fetch corporate actions</em> first, then apply the suggested split/bonus — or use
+      <em>Resolve…</em> to pick how to fix it once the history is in. You can also
       <em>acknowledge</em> a mismatch to mark it as known — it stays out of the worksheet either
       way.
     </Message>
@@ -458,92 +560,32 @@ function back(): void {
               </div>
               <IntegrityBadge
                 :status="row.status"
-                :label="
-                  hasIncompleteHistory(row.issues)
-                    ? 'Incomplete history'
-                    : hasCorporateActionSuggestion(row.issues)
-                      ? 'Action suggested'
-                      : undefined
-                "
-                :severity="
-                  hasIncompleteHistory(row.issues)
-                    ? 'warn'
-                    : hasCorporateActionSuggestion(row.issues)
-                      ? 'warn'
-                      : undefined
-                "
+                :label="integrityBadgeLabel(row)"
+                :severity="integrityBadgeSeverity(row)"
                 size="sm"
               />
               <div class="row-action">
                 <Button
-                  v-if="suggestionFor(row)"
-                  label="Apply action"
-                  icon="pi pi-bolt"
+                  v-if="workResolutions(row).length"
+                  label="Resolve…"
+                  icon="pi pi-wrench"
                   size="small"
-                  :loading="integrity.applyingCorporateAction"
+                  :loading="rowResolveLoading(row)"
                   :disabled="readOnly"
-                  @click="applyCorporateActionFor(row)"
+                  aria-haspopup="true"
+                  @click="openResolveMenu($event, row)"
                 />
                 <Button
-                  v-else-if="openingLotIssue(row.issues)"
-                  label="Opening lot"
-                  icon="pi pi-plus-circle"
+                  v-for="(resolution, ri) in metaResolutions(row)"
+                  :key="`${row.folioId}-${resolution.id}-${ri}`"
+                  :label="resolution.label"
+                  :icon="resolution.icon"
                   size="small"
                   text
+                  :severity="resolution.id === 'unacknowledge' ? 'secondary' : undefined"
+                  :loading="resolutionLoading(resolution)"
                   :disabled="readOnly"
-                  @click="openOpeningLotDialog(row)"
-                />
-                <Button
-                  v-else-if="needsIdentityRemap(row.issues)"
-                  label="Remap ISIN"
-                  icon="pi pi-arrow-right-arrow-left"
-                  size="small"
-                  text
-                  :disabled="readOnly"
-                  @click="openIdentityRemapDialog(row)"
-                />
-                <template v-else-if="row.status === 'mismatch'">
-                  <!-- CAs not fetched yet: nudge to fetch, withhold manual authoring
-                       so the user doesn't guess one coarse action for several. -->
-                  <Button
-                    v-if="caPending(row)"
-                    label="Fetch corporate actions"
-                    icon="pi pi-cloud-download"
-                    size="small"
-                    text
-                    :loading="integrity.refreshingCorporateActions"
-                    :disabled="readOnly"
-                    @click="fetchCorporateActions"
-                  />
-                  <Button
-                    v-else
-                    label="Resolve"
-                    icon="pi pi-wrench"
-                    size="small"
-                    text
-                    :disabled="readOnly"
-                    @click="openManualCaDialog(row)"
-                  />
-                  <Button
-                    label="Acknowledge"
-                    icon="pi pi-minus-circle"
-                    size="small"
-                    text
-                    :loading="integrity.acknowledging"
-                    :disabled="readOnly"
-                    @click="askAcknowledge(row)"
-                  />
-                </template>
-                <Button
-                  v-else-if="row.status === 'user_acknowledged'"
-                  label="Un-acknowledge"
-                  icon="pi pi-undo"
-                  size="small"
-                  text
-                  severity="secondary"
-                  :loading="integrity.acknowledging"
-                  :disabled="readOnly"
-                  @click="unacknowledge(row)"
+                  @click="runResolution(row, resolution)"
                 />
               </div>
             </div>
@@ -653,9 +695,13 @@ function back(): void {
     <CorporateActionForm
       v-model:visible="manualCaVisible"
       :row="manualCaRow"
+      :initial-kind="manualCaInitialKind"
+      :variant="manualCaVariant"
       :loading="integrity.applyingManualCorporateAction"
       @submit="submitManualCa"
     />
+
+    <Menu ref="resolveMenu" :model="resolveMenuModel" popup />
   </section>
 </template>
 
@@ -804,6 +850,10 @@ function back(): void {
 }
 .row-action {
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  justify-content: flex-end;
 }
 
 .row-detail {

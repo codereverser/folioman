@@ -95,6 +95,27 @@ def _owned_status(investor, security_id: int, folio_id: int):
     return security, folio
 
 
+def _integrity_after_apply(
+    investor: Investor,
+    folio: Folio,
+    security: Security,
+    summary: dict,
+) -> SecurityIntegrityStatus:
+    """Pick the post-apply integrity row when ledger rows may have moved off the path security.
+
+    Cross-ISIN merger and demerger re-reconcile affected securities and can delete the
+    (path security, folio) status once no transactions remain there; prefer any surviving
+    row from ``summary["security_ids"]``, then fall back to the path pair.
+    """
+    for sid in reversed(summary.get("security_ids") or []):
+        status = SecurityIntegrityStatus.objects.filter(
+            investor=investor, security_id=sid, folio=folio
+        ).first()
+        if status is not None:
+            return status
+    return SecurityIntegrityStatus.objects.get(investor=investor, security=security, folio=folio)
+
+
 @router.post(
     "/{investor_id}/integrity/{security_id}/{folio_id}/acknowledge",
     response=IntegrityStatusOut,
@@ -137,10 +158,9 @@ def apply_corporate_action(
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    status = SecurityIntegrityStatus.objects.get(investor=investor, security=security, folio=folio)
     return {
         **summary,
-        "integrity": status,
+        "integrity": _integrity_after_apply(investor, folio, security, summary),
     }
 
 
@@ -163,8 +183,10 @@ def apply_manual_corporate_action_entry(
         summary = apply_manual_corporate_action(investor, folio, security, **payload.dict())
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc
-    status = SecurityIntegrityStatus.objects.get(investor=investor, security=security, folio=folio)
-    return {**summary, "integrity": status}
+    return {
+        **summary,
+        "integrity": _integrity_after_apply(investor, folio, security, summary),
+    }
 
 
 @router.post(

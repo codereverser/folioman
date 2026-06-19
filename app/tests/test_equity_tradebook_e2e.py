@@ -15,7 +15,11 @@ from folioman_app.models import (
     Transaction,
 )
 from folioman_app.models.jobs import ImportJob, ImportKind
-from folioman_app.services.corporate_actions import apply_corporate_actions_to_folio
+from folioman_app.services.corporate_actions import (
+    apply_corporate_actions_to_folio,
+    apply_manual_corporate_action,
+)
+from folioman_app.services.opening_lots import record_opening_lot
 from folioman_app.tasks import valuation_jobs
 from folioman_app.tasks.import_csv import process_csv
 from folioman_app.tasks.import_ecas import persist_ecas_statement
@@ -26,6 +30,7 @@ from folioman_core.models import SecurityType
 from folioman_core.models.cas import Depository, EcasAccountBlock, EcasHoldingLine, EcasStatement
 from folioman_core.models.investor import Folio as CoreFolio
 from folioman_core.models.security import Security as CoreSecurity
+from folioman_core.opening_lot import OpeningLotKind
 
 from .tradebook_fixture import (
     _DEFAULT_DEMAT,
@@ -60,6 +65,10 @@ _HDFC_ISIN = "INE001A01036"
 _HDFCBANK_ISIN = "INE040A01034"
 _ALLCARGO_ISIN = "INE418H01026"
 _SUZLON_ISIN = "INE040H01021"
+_BAJAJ_AUTO_ISIN = "INE917I01010"
+_TRADEBOOK_HEADER = (
+    "security_type,name,symbol,isin,date,transaction_type,units,price,folio_number,broker\n"
+)
 
 
 def _run_fixture(make_investor, zerodha_name: str) -> dict:
@@ -155,7 +164,7 @@ def test_orphan_suzlon_never_auto_suggests_corporate_action(make_investor):
     assert not any(i["type"] == "corporate_action_suggestion" for i in status.issues)
     manual = [i for i in status.issues if i["type"] == "corporate_action_manual"]
     assert manual
-    assert manual[0]["reason"] == "incomplete_history"
+    assert manual[0]["reason"] in {"incomplete_history", "replay_mismatch"}
 
 
 # --- golden corporate-action scenarios ---------------------------------------
@@ -291,6 +300,224 @@ def test_golden_hdfc_merger_bonus_end_to_end(make_investor):
     fifo = apply_fifo(txns)
     assert fifo.balance == Decimal("168")
     assert fifo.invested.quantize(Decimal("0.01")) == Decimal("110000.00")
+
+
+def test_golden_hdfc_manual_merger_preserves_cost_and_date(make_investor):
+    """Manual merger API path: 50 HDFC → 84 HDFCBANK with original buy cost/date."""
+    inv = make_investor()
+    content = load_canonical_fixture("tradebook-zerodha-2022-hdfc.csv")
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, content, "")
+
+    hdfcbank = CoreSecurity(
+        type=SecurityType.EQUITY,
+        name="HDFC Bank Ltd",
+        isin=_HDFCBANK_ISIN,
+        symbol="HDFCBANK",
+    )
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2025, 9, 1),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=_DEFAULT_DEMAT, broker="ZERODHA"),
+                    holdings=[
+                        EcasHoldingLine(security=hdfcbank, units="84", value_observed="150000")
+                    ],
+                )
+            ],
+        ),
+        source_ref="ecas-hdfc-84",
+    )
+
+    hdfc_sec = Security.objects.get(isin=_HDFC_ISIN)
+    hdfcbank_sec = Security.objects.get(isin=_HDFCBANK_ISIN)
+    folio = hdfc_sec.transactions.first().folio
+
+    apply_manual_corporate_action(
+        inv,
+        folio,
+        hdfc_sec,
+        kind="merger",
+        ex_date=dt.date(2023, 7, 13),
+        merger_ratio=Decimal("42") / Decimal("25"),
+        counterparty_isin=_HDFCBANK_ISIN,
+        counterparty_symbol="HDFCBANK",
+        counterparty_name="HDFC Bank Ltd",
+    )
+
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=hdfcbank_sec, folio=folio)
+    assert status.status == "reconciled"
+    assert status.units_from_transactions == Decimal("84")
+    assert not Transaction.objects.filter(investor=inv, security=hdfc_sec, folio=folio).exists()
+
+    from folioman_app.mappers import to_core_transaction
+    from folioman_core.fifo import apply_fifo
+
+    txns = [
+        to_core_transaction(t) for t in inv.transactions.filter(security=hdfcbank_sec, folio=folio)
+    ]
+    fifo = apply_fifo(txns)
+    assert fifo.balance == Decimal("84")
+    assert fifo.invested.quantize(Decimal("0.01")) == Decimal("110000.00")
+    buy = min(txns, key=lambda t: t.date)
+    assert buy.date == dt.date(2022, 6, 27)
+
+
+def test_golden_hdbfs_ipo_allotment_e2e(make_investor):
+    """eCAS-only HDBFS → IPO opening lot reconciles full history."""
+    inv = make_investor()
+    hdbfs = CoreSecurity(
+        type=SecurityType.EQUITY,
+        name="HDB Financial Services",
+        isin="INE756I01056",
+        symbol="HDBFS",
+    )
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2025, 6, 1),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=_DEFAULT_DEMAT, broker="ZERODHA"),
+                    holdings=[EcasHoldingLine(security=hdbfs, units="50", value_observed="35000")],
+                )
+            ],
+        ),
+        source_ref="ecas-hdbfs",
+    )
+    sec = Security.objects.get(isin="INE756I01056")
+    folio = sec.holdings.get(investor=inv).folio
+    record_opening_lot(
+        inv,
+        folio,
+        sec,
+        kind=OpeningLotKind.IPO_ALLOTMENT,
+        lot_date=dt.date(2024, 5, 1),
+        price=Decimal("700"),
+    )
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio=folio)
+    assert status.status == "reconciled"
+    assert status.units_from_transactions == Decimal("50")
+    assert not any(i["type"] == "opening_lot_needed" for i in status.issues)
+
+
+def test_golden_bajaj_auto_buyback_e2e(make_investor):
+    """Ledger 10 vs eCAS 8 → manual buyback of 2 reconciles."""
+    inv = make_investor()
+    row = (
+        f"equity,Bajaj Auto Ltd,BAJAJ-AUTO,{_BAJAJ_AUTO_ISIN},2024-03-01,buy,10,9000,"
+        f"{_DEFAULT_DEMAT},ZERODHA\n"
+    )
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_TRADEBOOK_HEADER + row).encode(), "")
+
+    bajaj = CoreSecurity(
+        type=SecurityType.EQUITY,
+        name="Bajaj Auto Ltd",
+        isin=_BAJAJ_AUTO_ISIN,
+        symbol="BAJAJ-AUTO",
+    )
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2025, 6, 1),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=_DEFAULT_DEMAT, broker="ZERODHA"),
+                    holdings=[EcasHoldingLine(security=bajaj, units="8", value_observed="72000")],
+                )
+            ],
+        ),
+        source_ref="ecas-bajaj",
+    )
+
+    sec = Security.objects.get(isin=_BAJAJ_AUTO_ISIN)
+    folio = sec.transactions.first().folio
+    apply_manual_corporate_action(
+        inv,
+        folio,
+        sec,
+        kind="buyback",
+        ex_date=dt.date(2024, 9, 15),
+        units=Decimal("2"),
+        price=Decimal("10000"),
+    )
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio=folio)
+    assert status.status == "reconciled"
+    assert status.units_from_transactions == Decimal("8")
+
+
+def test_orphan_split_replay_suggests_corporate_action(make_investor):
+    """Orphan sell cleared by a cached face-value split → high-confidence suggestion."""
+    inv = make_investor()
+    rows = (
+        f"equity,HDFC Bank Ltd,HDFCBANK,{_HDFCBANK_ISIN},2018-01-15,buy,1,500,"
+        f"{_DEFAULT_DEMAT},ZERODHA\n"
+        f"equity,HDFC Bank Ltd,HDFCBANK,{_HDFCBANK_ISIN},2020-06-01,sell,2,600,"
+        f"{_DEFAULT_DEMAT},ZERODHA\n"
+    )
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_TRADEBOOK_HEADER + rows).encode(), "")
+
+    hdfcbank = CoreSecurity(
+        type=SecurityType.EQUITY,
+        name="HDFC Bank Ltd",
+        isin=_HDFCBANK_ISIN,
+        symbol="HDFCBANK",
+    )
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2025, 6, 1),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=_DEFAULT_DEMAT, broker="ZERODHA"),
+                    holdings=[EcasHoldingLine(security=hdfcbank, units="0", value_observed="0")],
+                )
+            ],
+        ),
+        source_ref="ecas-hdfcbank-flat",
+    )
+
+    sec = Security.objects.get(isin=_HDFCBANK_ISIN)
+    folio = sec.transactions.first().folio
+    ref = CorporateActionReference.objects.create(
+        security=sec,
+        isin=_HDFCBANK_ISIN,
+        symbol="HDFCBANK",
+        exchange="NSE",
+        ex_date=dt.date(2019, 9, 19),
+        subject="Stock Split From Rs.2/- to Rs.1/-",
+        parsed_type=CorpActionType.SPLIT.value,
+        unit_multiplier=Decimal("2"),
+        needs_review=False,
+        source="NSE",
+    )
+    reconcile_security_folio(inv, sec, folio)
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio=folio)
+    assert PartialBlock.objects.filter(investor=inv, security=sec, folio=folio).exists()
+    ca = [i for i in status.issues if i["type"] == "corporate_action_suggestion"]
+    assert len(ca) == 1
+    assert ca[0]["reference_ids"] == [ref.id]
+    assert not any(i["type"] == "incomplete_history" for i in status.issues)
+
+    apply_corporate_actions_to_folio(inv, folio, reference_ids=[ref.id])
+    status.refresh_from_db()
+    assert status.status == "reconciled"
+    assert status.units_from_transactions == Decimal("0")
+    # The replay probe re-runs on the applied ledger; the split must be idempotent so
+    # it doesn't re-scale and flag a spurious corporate_action_manual on a green row.
+    assert not any(i["type"] == "corporate_action_manual" for i in status.issues)
+    reconcile_security_folio(inv, sec, folio)
+    status.refresh_from_db()
+    assert status.status == "reconciled"
+    assert not any(i["type"] == "corporate_action_manual" for i in status.issues)
 
 
 # --- valuation trend ---------------------------------------------------------

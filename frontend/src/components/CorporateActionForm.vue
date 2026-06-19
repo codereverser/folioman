@@ -14,19 +14,39 @@ import {
   isRightsOrBuybackKind,
   isUnitFactorKind,
   toManualCaBody,
+  type ManualCaKind,
 } from '@/integrity/manualCorporateAction'
 
-const props = defineProps<{ visible: boolean; row: IntegrityRow | null; loading: boolean }>()
+const props = defineProps<{
+  visible: boolean
+  row: IntegrityRow | null
+  loading: boolean
+  initialKind?: ManualCaKind
+  /** ``merger`` locks the form to a cross-ISIN amalgamation (ledger_position rows). */
+  variant?: 'general' | 'merger'
+}>()
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
   (e: 'submit', body: ManualCorporateActionBody): void
 }>()
 
 const form = ref(emptyManualCaForm())
+const dialogHeader = computed(() =>
+  props.variant === 'merger' ? 'Resolve as merger' : 'Resolve with a corporate action',
+)
+
 watch(
   () => props.visible,
   (v) => {
-    if (v) form.value = emptyManualCaForm(props.row?.snapshotAsOf ?? '')
+    if (v) {
+      const next = emptyManualCaForm(props.row?.snapshotAsOf ?? '')
+      if (props.variant === 'merger') {
+        next.kind = 'merger'
+      } else if (props.initialKind) {
+        next.kind = props.initialKind
+      }
+      form.value = next
+    }
   },
 )
 
@@ -46,12 +66,19 @@ function submit(): void {
 <template>
   <Dialog
     :visible="visible"
-    header="Resolve with a corporate action"
+    :header="dialogHeader"
     modal
     :style="{ width: '30rem' }"
     @update:visible="emit('update:visible', $event)"
   >
-    <p v-if="row" class="dialog-copy">
+    <p v-if="row && variant === 'merger'" class="dialog-copy">
+      Your tradebook shows <strong>{{ formatUnits(row.unitsFromTransactions) }}</strong> units of
+      <strong>{{ row.name }}</strong> (<span class="mono">{{ row.isin }}</span>), but that ISIN no
+      longer appears on the eCAS holdings. Enter the <em>acquiring</em> company's ISIN and the
+      exchange ratio (new shares per old share). Example: HDFC → HDFCBANK at 42:25 is
+      <code>1.68</code>.
+    </p>
+    <p v-else-if="row" class="dialog-copy">
       <strong>{{ row.name }}</strong> — your trades net to
       <strong>{{ formatUnits(row.unitsFromTransactions) }}</strong> units, but the demat statement
       shows <strong>{{ formatUnits(row.unitsFromHoldings) }}</strong
@@ -59,7 +86,7 @@ function submit(): void {
     </p>
 
     <div class="dialog-form">
-      <label>
+      <label v-if="variant !== 'merger'">
         Action
         <Select
           v-model="form.kind"
@@ -83,8 +110,12 @@ function submit(): void {
       </label>
 
       <label v-if="isMerger">
-        New share ratio (new per old)
-        <InputText v-model="form.mergerRatio" inputmode="decimal" placeholder="e.g. 1.5" />
+        New shares per old share
+        <InputText v-model="form.mergerRatio" inputmode="decimal" placeholder="e.g. 1.68" />
+        <small v-if="variant === 'merger'" class="hint">
+          Multiply held units by this ratio — 42 new for every 25 old is
+          <code>1.68</code> (enter as a decimal, not 42:25).
+        </small>
       </label>
       <template v-if="isDemerger">
         <label>
@@ -98,7 +129,7 @@ function submit(): void {
       </template>
       <template v-if="isCrossSecurity">
         <label>
-          {{ isMerger ? 'Acquiring' : 'Child' }} security ISIN
+          Acquiring company ISIN
           <InputText v-model="form.cpIsin" placeholder="INE…" />
         </label>
         <label>
@@ -155,5 +186,9 @@ function submit(): void {
 }
 .hint code {
   font-family: var(--fm-font-mono);
+}
+.mono {
+  font-family: var(--fm-font-mono);
+  font-size: 0.8125rem;
 }
 </style>

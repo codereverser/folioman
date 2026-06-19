@@ -168,6 +168,11 @@ def apply_reverse_split(
     if ratio <= _ZERO or ratio >= 1:
         msg = "reverse split ratio must be positive and less than 1"
         raise ValueError(msg)
+    ref = source_ref or ""
+    if ref and any(txn.source_ref == ref for txn in transactions):
+        # Idempotent re-apply: the scaled rows + fractional disposal already carry
+        # this ref, so re-running would double both. Return unchanged.
+        return _sort_transactions(list(transactions))
 
     txns = apply_split(
         transactions,
@@ -375,6 +380,12 @@ def apply_split(
     if ratio <= _ZERO:
         msg = "split ratio must be positive"
         raise ValueError(msg)
+    ref = source_ref or ""
+    if ref and any(txn.source_ref == ref for txn in transactions):
+        # Idempotent re-apply: this split's marker is already in the ledger, so the
+        # rows are scaled. Re-scaling (e.g. a reconciliation replay over an applied
+        # ledger) would double the factor — return unchanged.
+        return _sort_transactions(list(transactions))
 
     adjusted: list[Transaction] = []
     for txn in transactions:

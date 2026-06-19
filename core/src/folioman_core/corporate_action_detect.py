@@ -159,8 +159,27 @@ def detect_corporate_action_issues(
 
     ``replay`` (when given) is authoritative: a gap is explained only if replaying
     the cached scaling events over the real timeline reproduces the holdings.
+
+    On incomplete-history or negative ledgers, replay still runs when the caller
+    supplies it: a cached split/bonus may lift an orphan sell to a reconcilable
+    position. ``incomplete_history`` is kept only when replay is absent, leaves
+    the ledger negative, or cannot reconcile to the eCAS anchor.
     """
-    if incomplete_history or (net_units is not None and net_units < _ZERO):
+    negative_ledger = net_units is not None and net_units < _ZERO
+
+    if (
+        replay is not None
+        and replay.steps
+        and holding_units is not None
+        and abs(replay.replayed_units - holding_units) <= TOLERANCE
+    ):
+        return [_suggestion_issue(replay.steps)]
+
+    if incomplete_history or negative_ledger:
+        if replay is not None and replay.replayed_units < _ZERO:
+            return [_manual_issue("incomplete_history")]
+        if replay is not None and holding_units is not None and _applicable_scaling(cached_actions):
+            return [_manual_issue("replay_mismatch")]
         return [_manual_issue("incomplete_history")]
 
     if net_units is None and holding_units is not None:

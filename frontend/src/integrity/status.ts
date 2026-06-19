@@ -227,15 +227,48 @@ export function openingLotSummary(issue: OpeningLotIssue): string {
   )
 }
 
+/**
+ * Rows the user can act on now — mismatches plus non-mismatch statuses that still
+ * carry an actionable issue (e.g. eCAS-only equity needing an opening lot).
+ */
+export function rowNeedsAttention(
+  status: IntegrityStatus,
+  issues: Record<string, unknown>[],
+): boolean {
+  if (status === 'mismatch') return true
+  if (status === 'user_acknowledged') return false
+  return (
+    hasLedgerPositionNotInHoldings(issues) ||
+    hasCorporateActionSuggestion(issues) ||
+    openingLotIssue(issues) !== null
+  )
+}
+
 export const OPENING_LOT_CLASSIFICATIONS = [
   { value: 'ipo_allotment', label: 'IPO allotment' },
   { value: 'transfer_in', label: 'Transfer in' },
   { value: 'demerger_result', label: 'Demerger receipt' },
 ] as const
 
+/** @deprecated Prefer `resolutionsForRow` / `applicableResolutions` in `./resolutions`. */
 export function needsIdentityRemap(issues: Record<string, unknown>[]): boolean {
+  return hasLedgerPositionNotInHoldings(issues)
+}
+
+/** Ledger shows units for an ISIN the eCAS snapshot no longer lists (typical pre-merger). */
+export function hasLedgerPositionNotInHoldings(issues: Record<string, unknown>[]): boolean {
   return issues.some(
     (i) => i.type === 'corporate_action_manual' && i.reason === 'ledger_position_not_in_holdings',
+  )
+}
+
+/** User-facing one-liner for the merged-away ISIN scenario. */
+export function ledgerPositionSummary(name: string, ledgerUnits: string | null): string {
+  const units = ledgerUnits ?? '—'
+  return (
+    `The tradebook shows ${units} units of ${name}, but that ISIN no longer appears on the ` +
+    'eCAS holdings — often a company that merged into another listed stock. ' +
+    'Record the merger (acquirer ISIN + exchange ratio) or remap 1:1 if only the ISIN changed.'
   )
 }
 

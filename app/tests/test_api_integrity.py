@@ -258,6 +258,81 @@ def test_apply_manual_bonus_resolves_mismatch(client, make_investor):
     assert status.units_from_transactions == Decimal("100")
 
 
+def test_apply_manual_merger_hdfc_rebases_onto_acquirer(client, make_investor):
+    """Manual merger API closes the HDFC→HDFCBANK ledger_position gap (42:25 → 84 units)."""
+    from folioman_app.models.jobs import ImportJob, ImportKind
+    from folioman_app.tasks.import_csv import process_csv
+
+    inv = make_investor()
+    hdfc_isin = "INE001A01036"
+    hdfcbank_isin = "INE040A01034"
+    demat = _DEMAT
+    header = (
+        "security_type,name,symbol,isin,date,transaction_type,units,price,"
+        "folio_number,broker,source_ref\n"
+    )
+    row = f"equity,HDFC Ltd,HDFC,{hdfc_isin},2022-06-27,buy,50,2200,{demat},ZERODHA,\n"
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (header + row).encode(), "")
+
+    hdfcbank = CoreSecurity(
+        type=SecurityType.EQUITY,
+        name="HDFC Bank Ltd",
+        isin=hdfcbank_isin,
+        symbol="HDFCBANK",
+    )
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2025, 9, 1),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=demat, broker="ZERODHA"),
+                    holdings=[
+                        EcasHoldingLine(security=hdfcbank, units="168", value_observed="300000")
+                    ],
+                )
+            ],
+        ),
+        source_ref="ecas-hdfc",
+    )
+
+    hdfc_sec = Security.objects.get(isin=hdfc_isin)
+    hdfcbank_sec = Security.objects.get(isin=hdfcbank_isin)
+    folio = Folio.objects.get(investor=inv, number=demat)
+
+    manual = [
+        i
+        for i in SecurityIntegrityStatus.objects.get(investor=inv, security=hdfc_sec).issues
+        if i.get("type") == "corporate_action_manual"
+    ]
+    assert manual[0]["reason"] == "ledger_position_not_in_holdings"
+
+    resp = _post_json(
+        client,
+        f"/api/investors/{inv.id}/integrity/{hdfc_sec.id}/{folio.id}/apply-manual-corporate-action",
+        {
+            "kind": "merger",
+            "ex_date": "2023-07-13",
+            "merger_ratio": "1.68",
+            "counterparty_isin": hdfcbank_isin,
+            "counterparty_symbol": "HDFCBANK",
+            "counterparty_name": "HDFC Bank Ltd",
+        },
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["integrity"]["security"]["isin"] == hdfcbank_isin
+    assert not Transaction.objects.filter(investor=inv, security=hdfc_sec, folio=folio).exists()
+
+    bank_status = SecurityIntegrityStatus.objects.get(
+        investor=inv, security=hdfcbank_sec, folio=folio
+    )
+    assert bank_status.units_from_transactions == Decimal("84")
+    assert bank_status.units_from_holdings == Decimal("168")
+
+
 def test_apply_manual_merger_requires_counterparty_isin(client, make_investor):
     inv = make_investor()
     _equity_txn(inv, txn_type="buy", units="10", price="100")
