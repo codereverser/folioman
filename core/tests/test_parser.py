@@ -225,6 +225,16 @@ def test_orphan_reversal_raises():
         parser.map_cas_data(cas)
 
 
+@pytest.mark.parametrize("gift_type", [CTxn.GIFT_IN, CTxn.GIFT_OUT])
+def test_gift_transfer_raises(gift_type):
+    # A gift moves units but carries no usable cost basis in the CAS (the donor's
+    # cost/holding period isn't reported, and a gift out isn't a taxable transfer).
+    # Mapping it to a buy/sell would corrupt the ledger, so it fails loud -> snapshot.
+    cas = _cas([_txn(date(2024, 8, 1), gift_type, "10", "10", "100")])
+    with pytest.raises(parser.UnsupportedCASTransaction, match=gift_type.value):
+        parser.map_cas_data(cas)
+
+
 def test_reversal_of_purchase_is_netted_out():
     # A bounced purchase (+30) and its same-date reversal (-30) both vanish; only
     # the real buy survives, and the block reconciles open 0 -> close 100.
