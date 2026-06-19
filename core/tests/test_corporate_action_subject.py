@@ -40,6 +40,21 @@ def test_face_value_split_tolerates_rs_dash_formatting():
     assert p.unit_multiplier == Decimal("5")
 
 
+def test_stock_split_from_to_without_face_value_label():
+    # HDFC Bank's 2019 split — "Stock Split", not "Face Value Split", Rs.X/- format.
+    p = parse_subject("Stock Split From Rs.2/- to Rs.1/-")
+    assert p.type is CorpActionType.SPLIT
+    assert p.unit_multiplier == Decimal("2")  # 2/1
+    assert p.needs_review is False
+
+
+def test_face_value_split_verbose_re_and_per_share():
+    p = parse_subject("Face Value Split (Sub-Division) - From Rs 2/- Per Share To Re 1/- Per Share")
+    assert p.type is CorpActionType.SPLIT
+    assert p.unit_multiplier == Decimal("2")
+    assert p.needs_review is False
+
+
 def test_generic_stock_split_ratio():
     p = parse_subject("Stock Split 5:1")
     assert p.type is CorpActionType.SPLIT

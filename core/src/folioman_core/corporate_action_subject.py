@@ -58,8 +58,15 @@ class ParsedCorporateAction:
 _RATIO = re.compile(r"(\d+)\s*:\s*(\d+)")
 # "Rs 10", "Rs.10/-", "INR 5", "₹2" → the number. Tolerant of the trailing "/-".
 _RS_NUM = re.compile(r"(?:rs\.?|inr|₹)\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
-_FACE_VALUE_SPLIT = re.compile(
-    r"face value.*?from\s+(?:rs\.?\s*)?(\d+(?:\.\d+)?).*?to\s+(?:rs\.?\s*)?(\d+(?:\.\d+)?)",
+# A face-value split states the old → new face value, with or without a "face value"
+# label and in assorted spellings: "Face Value Split From Rs 10 to Rs 2", "Stock Split
+# From Rs.2/- to Rs.1/-", "... From Rs 2/- Per Share To Re 1/- Per Share". The currency
+# token (Rs/Rs./Re/INR/₹) and the trailing "/-" are optional; the unit factor is
+# old / new. Gated on split context at the call site so it can't catch a stray
+# "from … to …" in another action.
+_FV_FROM_TO = re.compile(
+    r"from\s+(?:rs\.?|re\.?|inr|₹)?\s*(\d+(?:\.\d+)?)\s*(?:/-)?"
+    r".*?\bto\s+(?:rs\.?|re\.?|inr|₹)?\s*(\d+(?:\.\d+)?)",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -84,20 +91,21 @@ def parse_subject(subject: str) -> ParsedCorporateAction:
     if "reverse split" in s or "reverse stock split" in s or "consolidation" in s:
         return ParsedCorporateAction(CorpActionType.SPLIT, raw, needs_review=True)
 
-    # Face-value split ("Face Value Split From Rs 10 to Rs 2"): a stock split where
-    # the unit factor is old face value / new face value.
-    fv = _FACE_VALUE_SPLIT.search(s)
-    if fv and ("split" in s or "sub" in s):
+    # Face-value split ("Face Value Split From Rs 10 to Rs 2", "Stock Split From
+    # Rs.2/- to Rs.1/-"): a stock split where the unit factor is old / new face value.
+    fv = _FV_FROM_TO.search(s) if ("split" in s or "sub" in s) else None
+    if fv:
         frm, to = _decimal(fv.group(1)), _decimal(fv.group(2))
-        mult = frm / to if frm is not None and to else None
-        return ParsedCorporateAction(
-            CorpActionType.SPLIT,
-            raw,
-            unit_multiplier=mult,
-            face_value_from=frm,
-            face_value_to=to,
-            needs_review=mult is None,
-        )
+        if frm is not None and to and frm > to:
+            return ParsedCorporateAction(
+                CorpActionType.SPLIT,
+                raw,
+                unit_multiplier=frm / to,
+                face_value_from=frm,
+                face_value_to=to,
+                needs_review=False,
+            )
+        # Not a clean old>new reduction — fall through to the generic split handling.
 
     if "bonus" in s:
         m = _RATIO.search(s)
