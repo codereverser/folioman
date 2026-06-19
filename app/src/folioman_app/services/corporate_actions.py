@@ -29,6 +29,20 @@ _FRACTION_EPSILON = Decimal("0.0001")
 _ONE = Decimal("1")
 
 
+def _parsed_ratio(ref: CorporateActionReference) -> tuple[int, int] | None:
+    """The exact (a, b) bonus ratio the parser stored, if any — for integer-share
+    bonus issuance that a truncated decimal multiplier can't do reliably."""
+    raw = (ref.parsed or {}).get("ratio")
+    if isinstance(raw, (list, tuple)) and len(raw) == 2:
+        try:
+            a, b = int(raw[0]), int(raw[1])
+        except (TypeError, ValueError):
+            return None
+        if b != 0:
+            return (a, b)
+    return None
+
+
 def _event_from_reference(
     ref: CorporateActionReference, security: Security
 ) -> CorporateActionApplyEvent:
@@ -44,6 +58,7 @@ def _event_from_reference(
         ex_date=ref.ex_date,
         security=to_core_security(security),
         unit_multiplier=ref.unit_multiplier,
+        bonus_ratio=_parsed_ratio(ref),
         dividend_per_share=ref.amount,
         source_ref=f"ca-ref:{ref.id}",
     )

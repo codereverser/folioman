@@ -85,8 +85,22 @@ def _cached_actions_for_security(security: Security) -> list[CachedCorporateActi
             unit_multiplier=row.unit_multiplier,
             needs_review=row.needs_review,
             reference_id=row.id,
+            bonus_ratio=_parsed_ratio(row),
         )
     return list(rows.values())
+
+
+def _parsed_ratio(row: CorporateActionReference) -> tuple[int, int] | None:
+    """The exact (a, b) bonus ratio the parser stored, if any."""
+    raw = (row.parsed or {}).get("ratio")
+    if isinstance(raw, (list, tuple)) and len(raw) == 2:
+        try:
+            a, b = int(raw[0]), int(raw[1])
+        except (TypeError, ValueError):
+            return None
+        if b != 0:
+            return (a, b)
+    return None
 
 
 def _dedupe_scaling(actions: list[CachedCorporateAction]) -> list[CachedCorporateAction]:
@@ -135,6 +149,7 @@ def _replay_corporate_actions(
             ex_date=a.ex_date,
             security=core_security,
             unit_multiplier=a.unit_multiplier,
+            bonus_ratio=a.bonus_ratio,
             source_ref=f"ca-ref:{a.reference_id}",
         )
         for a in deduped

@@ -9,12 +9,22 @@ from decimal import ROUND_FLOOR, Decimal
 
 from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.fifo import net_units_from_transactions, open_lots_asof
-from folioman_core.models.security import Security
+from folioman_core.models.security import Security, SecurityType
 from folioman_core.models.transaction import Transaction, TransactionSource, TransactionType
 
 _ZERO = Decimal("0")
 # Tradebook / corp-action feeds are reliable for cost basis from this date onward.
 COST_BASIS_RELIABLE_SINCE = date(2016, 1, 1)
+
+# Exchange-traded instruments are held in whole units: a bonus issues integer
+# shares and any sub-share entitlement is dropped (settled in cash by the registrar),
+# never carried as a fractional holding. Mutual-fund units, by contrast, are genuinely
+# fractional, so their multiplier applies as-is.
+_WHOLE_SHARE_TYPES = frozenset({SecurityType.EQUITY, SecurityType.ETF, SecurityType.FOREIGN_EQUITY})
+
+
+def _issues_whole_shares(security: Security) -> bool:
+    return security.type in _WHOLE_SHARE_TYPES
 
 
 def _lot_source_key(txn: Transaction) -> int | tuple:
@@ -62,6 +72,10 @@ class CorporateActionApplyEvent:
     ex_date: date
     security: Security
     unit_multiplier: Decimal | None = None
+    # Exact bonus ratio (a, b) for an "a:b" issue — a new shares per b held. Lets a
+    # whole-share bonus issue integer shares without the rounding drift a truncated
+    # decimal multiplier introduces (3 * 0.333333 floors to 0, not 1).
+    bonus_ratio: tuple[int, int] | None = None
     merger_old_security: Security | None = None
     merger_new_security: Security | None = None
     merger_ratio: Decimal | None = None
@@ -413,8 +427,16 @@ def apply_bonus_from_multiplier(
     effective_date: date,
     security: Security,
     source_ref: str = "",
+    ratio: tuple[int, int] | None = None,
 ) -> list[Transaction]:
-    """Apply a bonus/split-style ``unit_multiplier`` as a zero-cost bonus issue."""
+    """Apply a bonus/split-style ``unit_multiplier`` as a zero-cost bonus issue.
+
+    For a whole-share instrument with a known ``ratio`` (a, b), the bonus is the
+    integer ``floor(held * a / b)`` — the registrar issues whole shares and drops the
+    sub-share remainder. Exact integer arithmetic is essential: a truncated decimal
+    multiplier (``1.333333`` for 1:3) floors ``3 * 0.333333`` to 0 instead of 1, and
+    compounds drift across successive bonuses (POWERGRID's two 1:3 issues).
+    """
     if unit_multiplier <= _ZERO:
         msg = "unit_multiplier must be positive"
         raise ValueError(msg)
@@ -425,7 +447,15 @@ def apply_bonus_from_multiplier(
     held = held_units_asof(transactions, security, effective_date)
     if held <= _ZERO:
         return _sort_transactions(list(transactions))
-    bonus_units = held * (unit_multiplier - 1)
+    if ratio is not None and _issues_whole_shares(security):
+        a, b = ratio
+        # Exact integer numerator (held * a), then floor the division by b.
+        bonus_units = (held * Decimal(a) / Decimal(b)).to_integral_value(rounding=ROUND_FLOOR)
+    else:
+        bonus_units = held * (unit_multiplier - 1)
+    if bonus_units <= _ZERO:
+        # Holding too small to earn even one whole bonus share.
+        return _sort_transactions(list(transactions))
     return apply_bonus(
         transactions,
         bonus_units=bonus_units,
@@ -590,6 +620,7 @@ def apply_corporate_action_events(
                 effective_date=event.ex_date,
                 security=event.security,
                 source_ref=ref,
+                ratio=event.bonus_ratio,
             )
         elif event.kind is CorpActionType.SPLIT:
             if event.unit_multiplier is None:

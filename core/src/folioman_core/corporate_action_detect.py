@@ -42,6 +42,9 @@ class CachedCorporateAction:
     unit_multiplier: Decimal | None
     needs_review: bool
     reference_id: int | None = None
+    # Exact (a, b) bonus ratio, when the feed parsed one — used to issue integer
+    # bonus shares on replay rather than a drifting decimal multiplier.
+    bonus_ratio: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,8 +4,12 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.corporate_actions import (
+    CorporateActionApplyEvent,
     apply_bonus,
+    apply_bonus_from_multiplier,
+    apply_corporate_action_events,
     apply_demerger,
     apply_merger,
     apply_reverse_split,
@@ -13,7 +17,7 @@ from folioman_core.corporate_actions import (
     cost_basis_complete_for_acquisition,
     record_dividend,
 )
-from folioman_core.fifo import apply_fifo
+from folioman_core.fifo import apply_fifo, net_units_from_transactions
 from folioman_core.models import (
     Security,
     SecurityType,
@@ -73,6 +77,69 @@ def test_apply_bonus_increases_units_without_cash_outflow():
     assert fifo.balance == Decimal("15")
     assert fifo.invested == Decimal("100.0000")
     assert fifo.average == Decimal("100.0000") / Decimal("15")
+
+
+def test_bonus_1_3_issues_integer_shares():
+    """1:3 bonus on 200 shares issues floor(200/3)=66 whole shares, not 66.67."""
+    txns = apply_bonus_from_multiplier(
+        [_buy("200", "100", on=date(2021, 1, 1))],
+        unit_multiplier=Decimal("1.333333"),
+        effective_date=date(2021, 7, 29),
+        security=_EQUITY,
+        ratio=(1, 3),
+        source_ref="b1",
+    )
+    assert net_units_from_transactions(txns) == Decimal("266")
+
+
+def test_two_1_3_bonuses_compound_on_whole_shares():
+    """POWERGRID: 200 -> +66 -> 266 -> +88 -> 354, each event floored independently."""
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.BONUS,
+            ex_date=date(2021, 7, 29),
+            security=_EQUITY,
+            unit_multiplier=Decimal("1.333333"),
+            bonus_ratio=(1, 3),
+            source_ref="b1",
+        ),
+        CorporateActionApplyEvent(
+            kind=CorpActionType.BONUS,
+            ex_date=date(2023, 9, 12),
+            security=_EQUITY,
+            unit_multiplier=Decimal("1.333333"),
+            bonus_ratio=(1, 3),
+            source_ref="b2",
+        ),
+    ]
+    txns = apply_corporate_action_events([_buy("200", "100", on=date(2021, 1, 1))], events)
+    assert net_units_from_transactions(txns) == Decimal("354")
+
+
+def test_bonus_too_small_for_a_whole_share_issues_nothing():
+    """1:3 bonus on 2 shares: no whole bonus share earned, so no bonus row."""
+    txns = apply_bonus_from_multiplier(
+        [_buy("2", "100", on=date(2021, 1, 1))],
+        unit_multiplier=Decimal("1.333333"),
+        effective_date=date(2021, 7, 29),
+        security=_EQUITY,
+        ratio=(1, 3),
+        source_ref="b1",
+    )
+    assert net_units_from_transactions(txns) == Decimal("2")
+
+
+def test_bonus_exact_boundary_three_shares_issues_one():
+    """held=3, 1:3 -> exactly 1 share; a decimal multiplier would floor 0.999999 to 0."""
+    txns = apply_bonus_from_multiplier(
+        [_buy("3", "100", on=date(2021, 1, 1))],
+        unit_multiplier=Decimal("1.333333"),
+        effective_date=date(2021, 7, 29),
+        security=_EQUITY,
+        ratio=(1, 3),
+        source_ref="b1",
+    )
+    assert net_units_from_transactions(txns) == Decimal("4")
 
 
 def test_record_dividend_zero_units_positive_amount():
