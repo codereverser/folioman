@@ -45,6 +45,12 @@ _CHUNK_SPACING = 0.2
 _SLEEP = time.sleep
 
 _BSE_SCRIP = re.compile(r"liclick\('(\d+)'", re.IGNORECASE)
+# Each PeerSmartSearch result lists the ISIN and scrip code together, e.g.
+# "HDFCBANK&nbsp;&nbsp;&nbsp;INE040A01034&nbsp;&nbsp;&nbsp;500180". Pairing them lets
+# us pick the scrip whose ISIN matches the security we're fetching for, instead of
+# blindly taking the first fuzzy match (a search for the delisted "HDFC" returns
+# HDFC BANK first, which would mis-file HDFC Bank's actions under HDFC).
+_BSE_ISIN_SCRIP = re.compile(r"([A-Z]{2}[A-Z0-9]{9}\d)(?:&nbsp;|\s)+(\d+)", re.IGNORECASE)
 _BSE_RS_AMOUNT = re.compile(r"(?:rs\.?|inr|₹)\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
 
 
@@ -260,8 +266,17 @@ def fetch_nse_corporate_actions(
     return deduped
 
 
-def lookup_bse_scripcode(symbol: str, *, client: ExchangeClient) -> str | None:
-    """Resolve a BSE scrip code for ``symbol`` via PeerSmartSearch."""
+def lookup_bse_scripcode(
+    symbol: str, *, client: ExchangeClient, expected_isin: str = ""
+) -> str | None:
+    """Resolve a BSE scrip code for ``symbol`` via PeerSmartSearch.
+
+    PeerSmartSearch is a fuzzy prefix match, so ``HDFC`` returns HDFC BANK, HDFC
+    LIFE, HDFC AMC … in that order. When ``expected_isin`` is given, return the
+    scrip whose ISIN matches it and ``None`` if none does — never a same-prefix
+    different company (which would mis-file its actions under this security). With
+    no ``expected_isin`` to check against, fall back to the first match.
+    """
     if not symbol:
         return None
     headers = {**BROWSER_HEADERS, "Referer": _BSE_REFERER}
@@ -276,6 +291,12 @@ def lookup_bse_scripcode(symbol: str, *, client: ExchangeClient) -> str | None:
         # corporate actions. A genuine miss is a 200 with no scrip in the body.
         msg = f"bse scripcode lookup for {symbol}: HTTP {response.status_code}"
         raise CorporateActionFetchError(msg)
+    if expected_isin:
+        want = expected_isin.strip().upper()
+        for isin, scrip in _BSE_ISIN_SCRIP.findall(response.text):
+            if isin.upper() == want:
+                return scrip
+        return None
     match = _BSE_SCRIP.search(response.text)
     return match.group(1) if match else None
 
@@ -286,9 +307,13 @@ def fetch_bse_corporate_actions(
     start: date | None = None,
     end: date | None = None,
     scripcode: str | None = None,
+    isin: str = "",
     client: ExchangeClient | None = None,
 ) -> list[CorporateActionEvent]:
-    """Corporate actions for a BSE ``symbol`` (or ``scripcode``) over ``[start, end]``."""
+    """Corporate actions for a BSE ``symbol`` (or ``scripcode``) over ``[start, end]``.
+
+    ``isin`` disambiguates the fuzzy symbol search to the right scrip (see
+    :func:`lookup_bse_scripcode`)."""
     if not symbol and not scripcode:
         return []
     end = end or date.today()
@@ -298,7 +323,7 @@ def fetch_bse_corporate_actions(
     if owned:
         client = warmed_bse_client()
     try:
-        code = scripcode or lookup_bse_scripcode(symbol, client=client)
+        code = scripcode or lookup_bse_scripcode(symbol, client=client, expected_isin=isin)
     except CorporateActionFetchError:
         if owned:
             client.close()
@@ -368,6 +393,7 @@ def fetch_corporate_actions(
     symbol: str,
     *,
     exchange: str = "",
+    isin: str = "",
     start: date | None = None,
     end: date | None = None,
     nse: ExchangeClient | None = None,
@@ -378,15 +404,18 @@ def fetch_corporate_actions(
     ``exchange`` of ``BSE`` hits BSE only; ``NSE`` hits NSE only. A blank
     exchange fetches NSE first and merges any BSE-only rows, deduping on
     (isin|symbol, ex_date, subject) regardless of which feed supplied them.
+    ``isin`` disambiguates the fuzzy BSE symbol search to the matching scrip.
     """
     ex = (exchange or "").strip().upper()
     if ex == "BSE":
-        return fetch_bse_corporate_actions(symbol, start=start, end=end, client=bse)
+        return fetch_bse_corporate_actions(symbol, start=start, end=end, isin=isin, client=bse)
     events = fetch_nse_corporate_actions(symbol, start=start, end=end, client=nse)
     if ex == "NSE":
         return events
     try:
-        bse_events = fetch_bse_corporate_actions(symbol, start=start, end=end, client=bse)
+        bse_events = fetch_bse_corporate_actions(
+            symbol, start=start, end=end, isin=isin, client=bse
+        )
     except CorporateActionFetchError:
         bse_events = []
     seen = {_cross_feed_key(e) for e in events}

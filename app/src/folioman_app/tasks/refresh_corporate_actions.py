@@ -137,6 +137,7 @@ def sync_corporate_actions_for_security(
             events = corporate_actions_fetch.fetch_corporate_actions(
                 security.symbol,
                 exchange=security.exchange,
+                isin=security.isin,
                 start=since,
                 end=end,
                 nse=clients.nse,

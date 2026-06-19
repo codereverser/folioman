@@ -199,6 +199,29 @@ def test_lookup_bse_scripcode():
     assert lookup_bse_scripcode("TCS", client=client) == "532540"
 
 
+# PeerSmartSearch is a fuzzy prefix match: "HDFC" returns HDFC BANK first, then
+# HDFC LIFE, HDFC AMC — each with its own ISIN and scrip code.
+_HDFC_SEARCH_HTML = (
+    "<li ng-click=\"liclick('500180','HDFC BANK LTD')\"><a>HDFC BANK LTD<br />"
+    "<span>HDFCBANK&nbsp;&nbsp;&nbsp;INE040A01034&nbsp;&nbsp;&nbsp;500180</span></a></li>"
+    "<li ng-click=\"liclick('540777','HDFC LIFE')\"><a>HDFC LIFE<br />"
+    "<span>HDFCLIFE&nbsp;&nbsp;&nbsp;INE795G01014&nbsp;&nbsp;&nbsp;540777</span></a></li>"
+)
+
+
+def test_lookup_bse_scripcode_matches_expected_isin():
+    """The fuzzy first hit (HDFC BANK) is rejected; the scrip whose ISIN matches wins."""
+    client = _wrap_bse(lambda _r: httpx.Response(200, text=_HDFC_SEARCH_HTML))
+    assert lookup_bse_scripcode("HDFC", client=client, expected_isin="INE795G01014") == "540777"
+
+
+def test_lookup_bse_scripcode_no_isin_match_returns_none():
+    """A delisted security whose ISIN isn't in the results gets no scrip — never a
+    same-prefix different company (the HDFC -> HDFC BANK mis-filing)."""
+    client = _wrap_bse(lambda _r: httpx.Response(200, text=_HDFC_SEARCH_HTML))
+    assert lookup_bse_scripcode("HDFC", client=client, expected_isin="INE001A01036") is None
+
+
 def test_lookup_bse_scripcode_no_match_returns_none():
     # A 200 with no scrip in the body is a genuine miss → None.
     def handler(_request: httpx.Request) -> httpx.Response:
