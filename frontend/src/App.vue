@@ -343,9 +343,9 @@ nav {
   min-width: 1.1rem;
   padding: 0 0.35rem;
   border-radius: var(--fm-radius-pill);
-  background: var(--fm-critical);
+  background: var(--fm-ack);
   color: #fff;
-  font-size: 0.6875rem;
+  font-size: 0.6rem;
   font-weight: 700;
   line-height: 1.1rem;
   text-align: center;
