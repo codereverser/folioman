@@ -136,6 +136,16 @@ const balanceById = computed<Record<number, number>>(() => {
   return map
 })
 
+// Ledger rows carry a composite sort key so the table tie-breaks same-date rows by
+// id — matching the backend's date,id order that the running balance is computed on.
+// Sorting on `date` alone leaves ties unstable, which flips the displayed balance.
+const ledgerRows = computed(() =>
+  (detail.value?.transactions ?? []).map((t) => ({
+    ...t,
+    _sortKey: `${t.date}#${String(t.id).padStart(12, '0')}`,
+  })),
+)
+
 // Buy/sell markers overlaid on the NAV line — what you paid vs the price then.
 const navMarkers = computed(() =>
   (detail.value?.transactions ?? [])
@@ -350,17 +360,17 @@ function back(): void {
           </Message>
           <DataTable
             v-if="loadCharts"
-            :value="detail.transactions"
+            :value="ledgerRows"
             data-key="id"
             size="small"
             class="ledger"
             paginator
             :rows="15"
             :rows-per-page-options="[15, 30, 100]"
-            sort-field="date"
+            sort-field="_sortKey"
             :sort-order="-1"
           >
-            <Column field="date" header="Date" sortable>
+            <Column field="date" sort-field="_sortKey" header="Date" sortable>
               <template #body="{ data }">
                 {{ formatDate(data.date) }}
                 <span v-if="!data.cost_basis_complete" class="partial-pill">partial</span>
