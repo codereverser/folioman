@@ -172,7 +172,7 @@ def test_apply_merger_marks_pre_2016_acquisition_incomplete_on_persist(make_inve
     ]
     apply_corporate_actions_to_folio(inv, folio, events=events)
     new_sec = Security.objects.get(isin=new_isin)
-    txn = inv.transactions.get(security=new_sec, folio=folio)
+    txn = inv.transactions.get(security=new_sec, folio=folio, transaction_type="buy")
     assert txn.date == dt.date(2014, 6, 1)
     assert txn.cost_basis_complete is False
 
@@ -211,7 +211,7 @@ def test_merger_persists_exact_cost_total_for_indivisible_ratio(make_investor):
     apply_corporate_actions_to_folio(inv, folio, events=events)
 
     new_sec = Security.objects.get(isin=new_isin)
-    txn = inv.transactions.get(security=new_sec, folio=folio)
+    txn = inv.transactions.get(security=new_sec, folio=folio, transaction_type="buy")
     assert txn.units == Decimal("90")
     assert txn.cost_total == Decimal("30000")  # exact total persisted
 

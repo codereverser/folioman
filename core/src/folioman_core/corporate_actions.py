@@ -92,12 +92,13 @@ class CorporateActionApplyEvent:
 # sell ahead of its buy. source_ref is only a final, stable tiebreaker.
 _TYPE_ORDER: dict[TransactionType, int] = {
     TransactionType.SPLIT: 0,
-    TransactionType.BONUS: 1,
-    TransactionType.TRANSFER_IN: 2,
-    TransactionType.BUY: 3,
-    TransactionType.DIVIDEND: 4,
-    TransactionType.SELL: 5,
-    TransactionType.TRANSFER_OUT: 6,
+    TransactionType.MERGER: 1,
+    TransactionType.BONUS: 2,
+    TransactionType.TRANSFER_IN: 3,
+    TransactionType.BUY: 4,
+    TransactionType.DIVIDEND: 5,
+    TransactionType.SELL: 6,
+    TransactionType.TRANSFER_OUT: 7,
 }
 
 
@@ -510,6 +511,7 @@ def apply_merger(
     old_security: Security,
     new_security: Security,
     ratio: Decimal,
+    effective_date: date | None = None,
     source_ref: str = "",
 ) -> list[Transaction]:
     """Convert a merged-away security's history into the acquiring security.
@@ -535,10 +537,12 @@ def apply_merger(
 
     ref = source_ref or f"merger:{old_security.isin or old_security.symbol}"
     converted: list[Transaction] = []
+    did_convert = False
     for txn in transactions:
         if not _same_security(txn.security, old_security):
             converted.append(txn)
             continue
+        did_convert = True
         # Cost-bearing rows carry their exact total onto the new scrip (an
         # indivisible swap ratio makes the new per-unit a repeating decimal);
         # sells/zero-cost rows just re-base units + per-unit.
@@ -557,6 +561,22 @@ def apply_merger(
                 # Keep the original date/type so FIFO inherits the holding
                 # period; tag provenance only where the row had none.
                 source_ref=txn.source_ref or ref,
+            )
+        )
+    # Leave a zero-unit provenance marker on the acquirer so the merger is visible as
+    # a corporate action (the rebased lots otherwise look like ordinary trades). Only
+    # when a conversion actually happened, so a re-apply over a merged ledger is a no-op.
+    if did_convert and effective_date is not None:
+        converted.append(
+            Transaction(
+                security=new_security,
+                date=effective_date,
+                type=TransactionType.MERGER,
+                units=_ZERO,
+                nav_or_price=_ZERO,
+                amount=_ZERO,
+                source=TransactionSource.CORPORATE_ACTION,
+                source_ref=ref,
             )
         )
     return _sort_transactions(converted)
@@ -666,6 +686,7 @@ def apply_corporate_action_events(
                 old_security=event.merger_old_security,
                 new_security=event.merger_new_security,
                 ratio=event.merger_ratio,
+                effective_date=event.ex_date,
                 source_ref=ref,
             )
         elif event.kind is CorpActionType.DIVIDEND:

@@ -90,6 +90,7 @@ const TXN_TYPE_LABELS: Record<string, string> = {
   dividend: 'Dividend',
   bonus: 'Bonus',
   split: 'Split',
+  merger: 'Merger',
   transfer_in: 'Transfer in',
   transfer_out: 'Transfer out',
 }
@@ -116,6 +117,7 @@ const TXN_FLOW: Record<string, 'in' | 'out' | 'neutral'> = {
   transfer_out: 'out',
   dividend: 'neutral',
   split: 'neutral',
+  merger: 'neutral',
 }
 function txnFlow(t: string): 'in' | 'out' | 'neutral' {
   return TXN_FLOW[t] ?? 'neutral'
@@ -174,7 +176,10 @@ const isEquity = computed(() => detail.value?.security.security_type === 'equity
 // change the balance) are summarised separately below.
 const tradeRows = computed(() =>
   ledgerRows.value.filter(
-    (t) => t.transaction_type !== 'dividend' && t.transaction_type !== 'split',
+    (t) =>
+      t.transaction_type !== 'dividend' &&
+      t.transaction_type !== 'split' &&
+      t.transaction_type !== 'merger',
   ),
 )
 

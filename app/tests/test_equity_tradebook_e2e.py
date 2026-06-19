@@ -365,6 +365,59 @@ def test_golden_hdfc_manual_merger_preserves_cost_and_date(make_investor):
     buy = min(txns, key=lambda t: t.date)
     assert buy.date == dt.date(2022, 6, 27)
 
+    # A zero-unit merger marker makes the conversion visible as a corporate action.
+    marker = Transaction.objects.filter(
+        investor=inv, security=hdfcbank_sec, folio=folio, transaction_type="merger"
+    )
+    assert marker.count() == 1
+    assert marker.first().units == Decimal("0")
+    assert marker.first().date == dt.date(2023, 7, 13)
+
+
+def test_merger_with_odd_lot_settles_net_fraction_as_cash_in_lieu(make_investor):
+    """A 42:25 merger of 30 HDFC → 50.4; eCAS shows 50 whole, so the 0.4 share is
+    booked as cash-in-lieu and the holding reconciles to 50 (no fractional net)."""
+    inv = make_investor()
+    rows = f"equity,HDFC Ltd,HDFC,{_HDFC_ISIN},2022-06-27,buy,30,2200,{_DEFAULT_DEMAT},ZERODHA\n"
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_TRADEBOOK_HEADER + rows).encode(), "")
+    hdfcbank = CoreSecurity(
+        type=SecurityType.EQUITY, name="HDFC Bank Ltd", isin=_HDFCBANK_ISIN, symbol="HDFCBANK"
+    )
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2025, 9, 1),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=_DEFAULT_DEMAT, broker="ZERODHA"),
+                    holdings=[
+                        EcasHoldingLine(security=hdfcbank, units="50", value_observed="90000")
+                    ],
+                )
+            ],
+        ),
+        source_ref="ecas-hdfc-50",
+    )
+    hdfc_sec = Security.objects.get(isin=_HDFC_ISIN)
+    hdfcbank_sec = Security.objects.get(isin=_HDFCBANK_ISIN)
+    folio = hdfc_sec.transactions.first().folio
+    apply_manual_corporate_action(
+        inv,
+        folio,
+        hdfc_sec,
+        kind="merger",
+        ex_date=dt.date(2023, 7, 13),
+        merger_ratio=Decimal("42") / Decimal("25"),
+        counterparty_isin=_HDFCBANK_ISIN,
+        counterparty_symbol="HDFCBANK",
+        counterparty_name="HDFC Bank Ltd",
+    )
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=hdfcbank_sec, folio=folio)
+    assert status.status == "reconciled"
+    assert status.units_from_transactions == Decimal("50")
+
 
 def test_golden_hdbfs_ipo_allotment_e2e(make_investor):
     """eCAS-only HDBFS → IPO opening lot reconciles full history."""

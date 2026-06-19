@@ -21,6 +21,10 @@ class TransactionType(StrEnum):
     DIVIDEND = "dividend"
     BONUS = "bonus"
     SPLIT = "split"
+    # Zero-unit provenance marker recording that this holding's lots were rebased from
+    # a merged-away security (the rebasing happens on the buy/sell rows; this row just
+    # makes the event visible). Unit-neutral, like SPLIT.
+    MERGER = "merger"
     TRANSFER_IN = "transfer_in"
     TRANSFER_OUT = "transfer_out"
 

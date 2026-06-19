@@ -140,6 +140,9 @@ class FIFOUnits:
                 msg = "SPLIT carrying units must be pre-applied via corporate_actions.apply_split"
                 raise ValueError(msg)
             return
+        elif txn.type is TransactionType.MERGER:
+            # Provenance marker only; the rebasing is already on the buy/sell rows.
+            return
         else:
             msg = f"unsupported transaction type for FIFO: {txn.type}"
             raise ValueError(msg)
