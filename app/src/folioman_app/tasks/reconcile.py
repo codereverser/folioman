@@ -12,12 +12,14 @@ router builds list/acknowledge endpoints on top of this.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from django.db.models import Q
 from django.utils import timezone
 from folioman_core.corporate_action_detect import (
     CachedCorporateAction,
     ReplayMatch,
+    ReplayStep,
     detect_corporate_action_issues,
     strip_corporate_action_issues,
 )
@@ -25,6 +27,7 @@ from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.corporate_actions import (
     CorporateActionApplyEvent,
     apply_corporate_action_events,
+    held_units_asof,
 )
 from folioman_core.fifo import net_units_from_transactions
 from folioman_core.models import HoldingSource, SecurityType
@@ -137,30 +140,35 @@ def _replay_corporate_actions(
 
     Returns ``None`` when there are no auto-applicable events (detection then has
     nothing to suggest). Mirrors how ``apply_corporate_actions_to_folio`` builds and
-    applies events, so the prediction matches what "Apply" would actually do.
+    applies events, so the prediction matches what "Apply" would actually do. Applies
+    one event at a time, in ex-date order, recording the holding before and after each
+    so the UI can preview every step.
     """
-    deduped = _dedupe_scaling(cached_actions)
+    deduped = sorted(_dedupe_scaling(cached_actions), key=lambda a: a.ex_date)
     if not deduped:
         return None
     core_security = to_core_security(security)
-    events = [
-        CorporateActionApplyEvent(
-            kind=CorpActionType(a.parsed_type),
-            ex_date=a.ex_date,
-            security=core_security,
-            unit_multiplier=a.unit_multiplier,
-            bonus_ratio=a.bonus_ratio,
-            source_ref=f"ca-ref:{a.reference_id}",
-        )
-        for a in deduped
-    ]
+    running = list(txns)
+    steps: list[ReplayStep] = []
     try:
-        replayed = apply_corporate_action_events(list(txns), events)
+        for a in deduped:
+            event = CorporateActionApplyEvent(
+                kind=CorpActionType(a.parsed_type),
+                ex_date=a.ex_date,
+                security=core_security,
+                unit_multiplier=a.unit_multiplier,
+                bonus_ratio=a.bonus_ratio,
+                source_ref=f"ca-ref:{a.reference_id}",
+            )
+            before = held_units_asof(running, core_security, a.ex_date)
+            running = apply_corporate_action_events(running, [event])
+            after = held_units_asof(running, core_security, a.ex_date + timedelta(days=1))
+            steps.append(ReplayStep(action=a, units_before=before, units_after=after))
     except (ValueError, KeyError):
         # A malformed cached event can't be simulated; treat as "no clean replay" so
         # detection falls back to a manual flag rather than crashing reconciliation.
         return None
-    return ReplayMatch(replayed_units=net_units_from_transactions(replayed), actions=deduped)
+    return ReplayMatch(replayed_units=net_units_from_transactions(running), steps=steps)
 
 
 def _annotate_corporate_actions(

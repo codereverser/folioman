@@ -6,6 +6,7 @@ from decimal import Decimal
 from folioman_core.corporate_action_detect import (
     CachedCorporateAction,
     ReplayMatch,
+    ReplayStep,
     clean_unit_ratio,
     detect_corporate_action_issues,
     strip_corporate_action_issues,
@@ -169,11 +170,20 @@ def test_replay_match_suggests_despite_post_event_buys():
         holding_units=Decimal("70"),
         incomplete_history=False,
         cached_actions=[_bonus_1_1()],
-        replay=ReplayMatch(replayed_units=Decimal("70"), actions=[_bonus_1_1()]),
+        replay=ReplayMatch(
+            replayed_units=Decimal("70"),
+            steps=[
+                ReplayStep(
+                    action=_bonus_1_1(), units_before=Decimal("15"), units_after=Decimal("30")
+                )
+            ],
+        ),
     )
     assert issues[0]["type"] == "corporate_action_suggestion"
     assert issues[0]["reference_ids"] == [7]
     assert issues[0]["events"][0]["subject"] == "Bonus 1:1"
+    assert issues[0]["events"][0]["units_before"] == "15"
+    assert issues[0]["events"][0]["units_after"] == "30"
 
 
 def test_replay_match_handles_several_events():
@@ -191,7 +201,13 @@ def test_replay_match_handles_several_events():
         holding_units=Decimal("220"),
         incomplete_history=False,
         cached_actions=[a, b],
-        replay=ReplayMatch(replayed_units=Decimal("220"), actions=[a, b]),
+        replay=ReplayMatch(
+            replayed_units=Decimal("220"),
+            steps=[
+                ReplayStep(action=a, units_before=Decimal("50"), units_after=Decimal("100")),
+                ReplayStep(action=b, units_before=Decimal("110"), units_after=Decimal("220")),
+            ],
+        ),
     )
     assert issues[0]["type"] == "corporate_action_suggestion"
     # Ordered by ex-date: the 2018 bonus before the 2020 split.
@@ -204,7 +220,14 @@ def test_replay_that_does_not_reconcile_flags_manual():
         holding_units=Decimal("70"),
         incomplete_history=False,
         cached_actions=[_bonus_1_1()],
-        replay=ReplayMatch(replayed_units=Decimal("60"), actions=[_bonus_1_1()]),
+        replay=ReplayMatch(
+            replayed_units=Decimal("60"),
+            steps=[
+                ReplayStep(
+                    action=_bonus_1_1(), units_before=Decimal("15"), units_after=Decimal("30")
+                )
+            ],
+        ),
     )
     assert issues[0]["type"] == "corporate_action_manual"
     assert issues[0]["reason"] == "replay_mismatch"
@@ -216,7 +239,7 @@ def test_replay_with_no_applicable_events_flags_no_match():
         holding_units=Decimal("70"),
         incomplete_history=False,
         cached_actions=[],
-        replay=ReplayMatch(replayed_units=Decimal("55"), actions=[]),
+        replay=ReplayMatch(replayed_units=Decimal("55"), steps=[]),
     )
     assert issues[0]["reason"] == "no_matching_event"
 

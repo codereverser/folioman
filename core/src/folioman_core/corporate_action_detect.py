@@ -48,16 +48,30 @@ class CachedCorporateAction:
 
 
 @dataclass(frozen=True, slots=True)
+class ReplayStep:
+    """One applied event with the position it acts on, for the preview table.
+
+    ``units_before`` is the holding entering the event (strictly before its ex-date);
+    ``units_after`` is the holding leaving it (including the bonus/split it produced).
+    """
+
+    action: CachedCorporateAction
+    units_before: Decimal
+    units_after: Decimal
+
+
+@dataclass(frozen=True, slots=True)
 class ReplayMatch:
     """The outcome of replaying cached scaling events over the real ledger.
 
-    ``replayed_units`` is the net units after applying ``actions`` in date order to
-    the transaction timeline. The detection pass suggests these events iff that net
-    reconciles to the eCAS holdings.
+    ``replayed_units`` is the net units after applying ``steps`` in date order to the
+    transaction timeline. The detection pass suggests these events iff that net
+    reconciles to the eCAS holdings. ``steps`` carries the per-event before/after so
+    the UI can show exactly what each action does.
     """
 
     replayed_units: Decimal
-    actions: list[CachedCorporateAction] = field(default_factory=list)
+    steps: list[ReplayStep] = field(default_factory=list)
 
 
 def clean_unit_ratio(holding_units: Decimal, net_units: Decimal) -> Decimal | None:
@@ -73,30 +87,45 @@ def clean_unit_ratio(holding_units: Decimal, net_units: Decimal) -> Decimal | No
     return None
 
 
-def _event_descriptor(action: CachedCorporateAction) -> dict:
+def _fmt_units(value: Decimal) -> str:
+    """Plain decimal string, no scientific notation, trailing zeros trimmed
+    (``Decimal("30").normalize()`` would render ``"3E+1"``)."""
+    text = f"{value:f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
+
+
+def _event_descriptor(step: ReplayStep) -> dict:
+    action = step.action
     return {
         "action_type": action.parsed_type,
         "subject": action.subject,
         "ex_date": action.ex_date.isoformat(),
         "unit_multiplier": (
-            str(action.unit_multiplier.normalize()) if action.unit_multiplier is not None else ""
+            _fmt_units(action.unit_multiplier) if action.unit_multiplier is not None else ""
         ),
         "reference_id": action.reference_id,
+        "units_before": _fmt_units(step.units_before),
+        "units_after": _fmt_units(step.units_after),
     }
 
 
-def _suggestion_issue(actions: list[CachedCorporateAction]) -> dict:
+def _suggestion_issue(steps: list[ReplayStep]) -> dict:
     """A high-confidence suggestion covering one *or several* cached events.
 
     ``reference_ids`` is the ordered set to apply together; ``events`` describes each
-    for the UI. Applying the whole set is what reconciles the ledger to holdings.
+    (with the before/after share count) for the inline preview table. Applying the
+    whole set is what reconciles the ledger to holdings.
     """
-    ordered = sorted(actions, key=lambda a: a.ex_date)
+    ordered = sorted(steps, key=lambda s: s.action.ex_date)
     return {
         "type": "corporate_action_suggestion",
         "confidence": "high",
-        "reference_ids": [a.reference_id for a in ordered if a.reference_id is not None],
-        "events": [_event_descriptor(a) for a in ordered],
+        "reference_ids": [
+            s.action.reference_id for s in ordered if s.action.reference_id is not None
+        ],
+        "events": [_event_descriptor(s) for s in ordered],
     }
 
 
@@ -155,8 +184,8 @@ def detect_corporate_action_issues(
 
     # Authoritative path: did replaying the cached events reproduce the holdings?
     if replay is not None:
-        if replay.actions and abs(replay.replayed_units - holding_units) <= TOLERANCE:
-            return [_suggestion_issue(replay.actions)]
+        if replay.steps and abs(replay.replayed_units - holding_units) <= TOLERANCE:
+            return [_suggestion_issue(replay.steps)]
         # Events exist but don't reconcile (feed disagrees with reality, or a subset
         # applies), or there are no auto-applicable events at all.
         if _applicable_scaling(cached_actions):
@@ -176,7 +205,10 @@ def detect_corporate_action_issues(
     if matches:
         # Prefer the latest ex-date when several events share the same multiplier.
         matches.sort(key=lambda a: a.ex_date, reverse=True)
-        return [_suggestion_issue([matches[0]])]
+        # No real timeline here; the fallback assumes the whole position scaled, so
+        # before/after are the net and holding totals.
+        step = ReplayStep(action=matches[0], units_before=net_units, units_after=holding_units)
+        return [_suggestion_issue([step])]
 
     return [_manual_issue("ratio_without_matching_event", unit_ratio=str(ratio))]
 

@@ -13,7 +13,6 @@ import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import CorporateActionForm from '@/components/CorporateActionForm.vue'
 import {
   corporateActionManualNote,
-  corporateActionApplyConfirmMessage,
   corporateActionSuggestionSummary,
   corporateActionSuggestions,
   hasCorporateActionSuggestion,
@@ -153,37 +152,30 @@ function suggestionFor(row: IntegrityRow): CorporateActionSuggestion | null {
   return corporateActionSuggestions(row.issues)[0] ?? null
 }
 
-function askApplyCorporateAction(row: IntegrityRow): void {
+// The inline preview table is the verification surface, so applying is a direct
+// action — no second confirmation dialog repeating what the table already shows.
+async function applyCorporateActionFor(row: IntegrityRow): Promise<void> {
   const suggestion = suggestionFor(row)
   if (!suggestion) return
-  confirm.require({
-    header: 'Apply corporate action?',
-    message: corporateActionApplyConfirmMessage(suggestion, row.name),
-    icon: 'pi pi-bolt',
-    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
-    acceptProps: { label: 'Apply' },
-    accept: async () => {
-      const ok = await integrity.applyCorporateAction(
-        investorId.value,
-        row.securityId,
-        row.folioId,
-        suggestion.referenceIds,
-      )
-      ui.notify(
-        ok
-          ? {
-              severity: 'success',
-              summary: 'Corporate action applied',
-              detail: 'Ledger updated and folio re-reconciled.',
-            }
-          : {
-              severity: 'error',
-              summary: 'Could not apply',
-              detail: integrity.error ?? '',
-            },
-      )
-    },
-  })
+  const ok = await integrity.applyCorporateAction(
+    investorId.value,
+    row.securityId,
+    row.folioId,
+    suggestion.referenceIds,
+  )
+  ui.notify(
+    ok
+      ? {
+          severity: 'success',
+          summary: 'Corporate action applied',
+          detail: 'Ledger updated and folio re-reconciled.',
+        }
+      : {
+          severity: 'error',
+          summary: 'Could not apply',
+          detail: integrity.error ?? '',
+        },
+  )
 }
 
 const openingLotVisible = ref(false)
@@ -488,10 +480,9 @@ function back(): void {
                   label="Apply action"
                   icon="pi pi-bolt"
                   size="small"
-                  text
                   :loading="integrity.applyingCorporateAction"
                   :disabled="readOnly"
-                  @click="askApplyCorporateAction(row)"
+                  @click="applyCorporateActionFor(row)"
                 />
                 <Button
                   v-else-if="openingLotIssue(row.issues)"
@@ -560,6 +551,27 @@ function back(): void {
               <span class="reason">{{ reasonFor(row) }}</span>
               <span v-if="fixFor(row)" class="fix">{{ fixFor(row) }}</span>
             </p>
+            <div v-if="suggestionFor(row)" class="ca-preview">
+              <p class="ca-preview-head">We’ll apply these on their original dates:</p>
+              <table class="ca-table">
+                <thead>
+                  <tr>
+                    <th>Ex-date</th>
+                    <th>Action</th>
+                    <th class="num">Shares before</th>
+                    <th class="num">Shares after</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(e, i) in suggestionFor(row)!.events" :key="i">
+                    <td>{{ formatDate(e.exDate) }}</td>
+                    <td>{{ e.subject }}</td>
+                    <td class="num">{{ e.unitsBefore }}</td>
+                    <td class="num">{{ e.unitsAfter }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </li>
         </ul>
       </section>
@@ -807,6 +819,46 @@ function back(): void {
   display: block;
   margin-top: 0.15rem;
   color: var(--fm-text-subtle);
+}
+
+.ca-preview {
+  margin-top: 0.55rem;
+  max-width: 32rem;
+}
+.ca-preview-head {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--fm-text-muted);
+}
+.ca-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  background: var(--fm-surface-2, var(--fm-surface));
+  border: 1px solid var(--fm-border);
+  border-radius: var(--fm-radius-2, 6px);
+  overflow: hidden;
+}
+.ca-table th,
+.ca-table td {
+  padding: 0.3rem 0.6rem;
+  text-align: left;
+  border-bottom: 1px solid var(--fm-border);
+}
+.ca-table thead th {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--fm-text-subtle);
+}
+.ca-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ca-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .empty {

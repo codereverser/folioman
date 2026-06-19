@@ -119,6 +119,9 @@ export interface CorporateActionEvent {
   subject: string
   exDate: string
   unitMultiplier: string
+  /** Shares held entering / leaving this event — for the preview table. */
+  unitsBefore: string
+  unitsAfter: string
 }
 
 /** A high-confidence corporate-action suggestion from reconciliation. A unit gap
@@ -151,6 +154,8 @@ export function corporateActionSuggestions(
               subject: String(e.subject ?? ''),
               exDate: String(e.ex_date ?? ''),
               unitMultiplier: String(e.unit_multiplier ?? ''),
+              unitsBefore: String(e.units_before ?? ''),
+              unitsAfter: String(e.units_after ?? ''),
             }
           })
         : []
@@ -195,31 +200,14 @@ export function corporateActionManualNote(issues: Record<string, unknown>[]): st
   return 'This unit gap needs a manual corporate-action review.'
 }
 
-function describeEvent(e: CorporateActionEvent): string {
-  const when = e.exDate ? ` (ex ${e.exDate})` : ''
-  return `${e.subject}${when} — ×${e.unitMultiplier}`
-}
-
 export function corporateActionSuggestionSummary(s: CorporateActionSuggestion): string {
-  if (s.events.length === 1) {
-    return `Suggested corporate action: ${describeEvent(s.events[0])} unit adjustment.`
+  // The per-event detail (dates, share counts) is shown in the preview table; this is
+  // just the one-line headline, so name the events without the raw multiplier.
+  const names = s.events.map((e) => e.subject).filter(Boolean)
+  if (names.length === 1) {
+    return `Suggested corporate action: ${names[0]}.`
   }
-  return `Suggested corporate actions (${s.events.length}): ${s.events.map(describeEvent).join('; ')}.`
-}
-
-export function corporateActionApplyConfirmMessage(
-  s: CorporateActionSuggestion,
-  name: string,
-): string {
-  const what =
-    s.events.length === 1
-      ? `"${s.events[0].subject}"`
-      : `${s.events.length} corporate actions (${s.events.map((e) => e.subject).join(', ')})`
-  return (
-    `Apply ${what} to "${name}"? ` +
-    'This writes bonus/split ledger rows and re-reconciles the folio. ' +
-    'You can undo only by editing the ledger — review before confirming.'
-  )
+  return `Suggested corporate actions (${names.length}): ${names.join(', ')}.`
 }
 
 export interface OpeningLotIssue {
