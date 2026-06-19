@@ -333,6 +333,20 @@ def test_orphan_cleared_by_split_suggests_partial_when_gap_remains():
     assert not any(i["type"] == "incomplete_history" for i in issues)
 
 
+def test_reconciled_units_clear_a_stale_incomplete_flag():
+    """Once the units tie out (an applied bonus healed the orphan), no action is
+    suggested or flagged — even with a lingering incomplete_history flag and an
+    already-applied (empty-steps) replay."""
+    issues = detect_corporate_action_issues(
+        net_units=Decimal("168"),
+        holding_units=Decimal("168"),
+        incomplete_history=True,
+        cached_actions=[_bonus_1_1()],
+        replay=ReplayMatch(replayed_units=Decimal("168"), steps=[]),
+    )
+    assert issues == []
+
+
 def test_orphan_not_cleared_stays_incomplete():
     """Replay leaves the ledger negative → still incomplete history, no suggestion."""
     issues = detect_corporate_action_issues(

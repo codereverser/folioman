@@ -155,18 +155,26 @@ def _replay_corporate_actions(
     steps: list[ReplayStep] = []
     try:
         for a in deduped:
+            ref = f"ca-ref:{a.reference_id}"
             event = CorporateActionApplyEvent(
                 kind=CorpActionType(a.parsed_type),
                 ex_date=a.ex_date,
                 security=core_security,
                 unit_multiplier=a.unit_multiplier,
                 bonus_ratio=a.bonus_ratio,
-                source_ref=f"ca-ref:{a.reference_id}",
+                source_ref=ref,
             )
+            # Already in the ledger (a prior apply wrote it)? Re-applying is an
+            # idempotent no-op, so it must not appear as an outstanding step — else a
+            # reconciled holding keeps "suggesting" an action that's already done. A
+            # bonus row sits at its ex-date, so its before/after still spans the jump
+            # and the units-changed check alone can't tell it's applied.
+            already_applied = any(txn.source_ref == ref for txn in running)
             before = held_units_asof(running, core_security, a.ex_date)
             running = apply_corporate_action_events(running, [event])
             after = held_units_asof(running, core_security, a.ex_date + timedelta(days=1))
-            steps.append(ReplayStep(action=a, units_before=before, units_after=after))
+            if not already_applied:
+                steps.append(ReplayStep(action=a, units_before=before, units_after=after))
     except (ValueError, KeyError):
         # A malformed cached event can't be simulated; treat as "no clean replay" so
         # detection falls back to a manual flag rather than crashing reconciliation.

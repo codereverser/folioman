@@ -174,6 +174,16 @@ def detect_corporate_action_issues(
     """
     negative_ledger = net_units is not None and net_units < _ZERO
 
+    # Units already tie out to the eCAS holding → nothing to suggest or flag, even if an
+    # `incomplete_history` flag lingers from a since-resolved orphan (an applied bonus/
+    # split healed it). Checked first so a reconciled holding never re-surfaces an action.
+    if (
+        net_units is not None
+        and holding_units is not None
+        and abs(net_units - holding_units) <= TOLERANCE
+    ):
+        return []
+
     if (
         replay is not None
         and replay.steps
@@ -216,9 +226,7 @@ def detect_corporate_action_issues(
     if net_units is None or holding_units is None:
         return []
 
-    if abs(net_units - holding_units) <= TOLERANCE:
-        return []
-
+    # (the net == holding case returned at the top)
     if holding_units < net_units:
         return [_manual_issue("holding_below_ledger")]
 
