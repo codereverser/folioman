@@ -10,6 +10,7 @@ interface PyWebviewApi {
   pick_cas_file: () => Promise<{ name: string; data: string } | null>
   pick_tradebook_file?: () => Promise<{ name: string; data: string } | null>
   pick_tradebook_files?: () => Promise<{ name: string; data: string }[] | null>
+  save_csv_file: (filename: string, content: string) => Promise<boolean>
 }
 
 interface PyWebview {
@@ -73,4 +74,12 @@ export async function pickTradebookFiles(): Promise<File[]> {
   }
   const one = await pickTradebookFile()
   return one ? [one] : []
+}
+
+/** Open the native OS file save dialog and save `content` to `filename`.
+ * Returns true if saved, false if cancelled (or not in desktop shell). */
+export async function saveCsvFile(filename: string, content: string): Promise<boolean> {
+  const api = bridge()?.api
+  if (!api?.save_csv_file) return false
+  return await api.save_csv_file(filename, content)
 }

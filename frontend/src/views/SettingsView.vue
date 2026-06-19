@@ -80,6 +80,16 @@ const problemValuations = computed<Diagnostics[]>(() =>
 
 const isLocal = computed(() => meta.value?.storage === 'local')
 
+async function copyPath(text: string | null | undefined): Promise<void> {
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ui.notify({ severity: 'success', summary: 'Copied', detail: 'Path copied to clipboard.', life: 3000 })
+  } catch {
+    ui.notify({ severity: 'error', summary: 'Copy failed', detail: 'Could not copy path to clipboard.', life: 3000 })
+  }
+}
+
 // Exports are per-investor; enabled once a single investor is in scope.
 const investorId = computed(() => ui.selectedInvestorId)
 const investorName = computed(() =>
@@ -97,13 +107,14 @@ async function exportHoldings(): Promise<void> {
       params: { path: { investor_id: id } },
       parseAs: 'text',
     })
-    if (typeof res.data === 'string') downloadText(`holdings_${id}.csv`, res.data)
-    else
-      ui.notify({
-        severity: 'error',
-        summary: 'Export failed',
-        detail: 'Could not build the holdings CSV.',
-      })
+    if (typeof res.data === 'string') {
+      // Await the download: in the desktop shell it opens a native save dialog, and
+      // `finally` must not clear the spinner until that resolves. `false` means the
+      // user cancelled the dialog, so suppress the success toast.
+      const saved = await downloadText(`holdings_${id}.csv`, res.data)
+      if (saved !== false) ui.notify({ severity: 'success', summary: 'Holdings exported' })
+    } else
+      ui.notify({ severity: 'error', summary: 'Export failed', detail: 'Could not build the holdings CSV.' })
   } finally {
     exporting.value = null
   }
@@ -118,8 +129,12 @@ async function exportTransactions(): Promise<void> {
       params: { path: { investor_id: id } },
       parseAs: 'text',
     })
-    if (typeof res.data === 'string') downloadText(`transactions_${id}.csv`, res.data)
-    else
+    if (typeof res.data === 'string') {
+      // See exportHoldings: await so the desktop save dialog completes before the
+      // spinner clears; `false` means cancelled, so don't toast success.
+      const saved = await downloadText(`transactions_${id}.csv`, res.data)
+      if (saved !== false) ui.notify({ severity: 'success', summary: 'Transactions exported' })
+    } else
       ui.notify({
         severity: 'error',
         summary: 'Export failed',
@@ -205,7 +220,12 @@ async function exportTransactions(): Promise<void> {
             <p v-else>
               Stored in the hosted Folioman database (managed and backed up on the server).
             </p>
-            <code v-if="isLocal && meta.data_location" class="path">{{ meta.data_location }}</code>
+            <code
+              v-if="isLocal && meta.data_location"
+              class="path copyable"
+              title="Click to copy path"
+              @click="copyPath(meta.data_location)"
+            >{{ meta.data_location }}</code>
             <p v-if="isLocal" class="hint">
               <strong>Backup:</strong> copy that file somewhere safe. To restore, put it back before
               launching Folioman. That one file is your whole portfolio.
@@ -215,7 +235,11 @@ async function exportTransactions(): Promise<void> {
                 <strong>Encryption key:</strong> your PANs are encrypted at rest with a key stored
                 separately, here:
               </p>
-              <code class="path">{{ meta.key_location }}</code>
+              <code
+                class="path copyable"
+                title="Click to copy path"
+                @click="copyPath(meta.key_location)"
+              >{{ meta.key_location }}</code>
               <p class="hint">
                 Back this up too — without it, encrypted PANs can't be recovered. Keep it somewhere
                 different from the database file.
@@ -466,6 +490,13 @@ async function exportTransactions(): Promise<void> {
   font-size: 0.8125rem;
   color: var(--fm-text);
   word-break: break-all;
+}
+.path.copyable {
+  cursor: pointer;
+  transition: background-color var(--fm-dur-fast) var(--fm-ease);
+}
+.path.copyable:hover {
+  background: var(--fm-surface-overlay);
 }
 .hint {
   margin-top: 0.5rem !important;

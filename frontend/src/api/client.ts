@@ -33,7 +33,12 @@ export const api = createClient<paths>({
  */
 export function unwrap<T>(res: { data?: T; error?: unknown }, message: string): T {
   if (res.error !== undefined || res.data === undefined) {
-    throw new Error(message)
+    let detail = ''
+    if (res.error && typeof res.error === 'object' && 'detail' in res.error) {
+      const d = (res.error as any).detail
+      if (typeof d === 'string') detail = `: ${d}`
+    }
+    throw new Error(message + detail)
   }
   return res.data
 }
