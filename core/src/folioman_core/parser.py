@@ -65,9 +65,13 @@ _SKIP_TXNS = frozenset({CTxn.STT_TAX, CTxn.STAMP_DUTY_TAX, CTxn.TDS_TAX, CTxn.MI
 # is netted out against it before mapping (see ``_cancel_reversals``); only an
 # *unpaired* reversal — one whose original isn't in this statement's window —
 # reaches ``_map_line`` and fails loud (→ snapshot fallback). SEGREGATION
-# (side-pocketing into a separate portfolio) stays unsupported. Failing loud
-# beats silently corrupting the unit balance / cost basis.
-_UNSUPPORTED_TXNS = frozenset({CTxn.REVERSAL, CTxn.SEGREGATION})
+# (side-pocketing into a separate portfolio) stays unsupported. GIFT_IN /
+# GIFT_OUT move units but carry no usable cost basis here: a gift inherits the
+# donor's cost and holding period (s.49(1)), which the CAS doesn't report, and
+# a gift out is not a transfer for capital gains (s.47(iii)). Mapping them to a
+# buy/sell would mint a wrong lot or book a phantom gain — they need manual
+# basis entry. Failing loud beats silently corrupting the unit balance / cost basis.
+_UNSUPPORTED_TXNS = frozenset({CTxn.REVERSAL, CTxn.SEGREGATION, CTxn.GIFT_IN, CTxn.GIFT_OUT})
 # Buy/sell rows a reversal can void (the only rows that move units 1:1).
 _REVERSIBLE_TXNS = _BUY_TXNS | _SELL_TXNS
 _PAIR_TOLERANCE = Decimal("0.0001")
