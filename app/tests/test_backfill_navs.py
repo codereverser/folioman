@@ -99,6 +99,43 @@ def test_backfill_missing_bounds_since_earliest_transaction(monkeypatch, make_in
     assert summary["points"] == 1
 
 
+def test_backfill_refills_short_tail_despite_fresh_head(monkeypatch, make_investor):
+    """A series current at the head but not reaching the first trade must re-pull —
+    the head-only freshness check used to skip it, leaving early history unpriced."""
+    from folioman_app.models import NAVHistory
+    from folioman_app.services.trading_calendar import last_trading_day
+
+    captured = {}
+
+    def _fake(code, *, since=None, **_):
+        captured["since"] = since
+        return _history(("2018-02-26", "200"))
+
+    monkeypatch.setattr(mfapi, "fetch_nav_history", _fake)
+    inv = make_investor()
+    create_manual_transaction(
+        inv,
+        {
+            "security_type": "mf",
+            "name": "Fund",
+            "amfi_code": "122639",
+            "folio_number": "MF0001",
+            "date": dt.date(2018, 2, 26),
+            "transaction_type": "buy",
+            "units": Decimal("100"),
+            "price": Decimal("200"),
+        },
+    )
+    sec = Security.objects.get(amfi_code="122639")
+    # Head is current (today's close) but the tail only reaches this year — a shallow
+    # series that the old head-only check wrongly treated as fully fresh.
+    NAVHistory.objects.create(
+        security=sec, date=last_trading_day(dt.date.today()), nav=Decimal("250")
+    )
+    backfill_missing_history()
+    assert captured["since"] == dt.date(2018, 2, 26)  # re-pulled from the first trade
+
+
 def test_backfill_records_feed_errors(monkeypatch):
     def _boom(code, **_):
         raise mfapi.NAVFetchError("mfapi down")
