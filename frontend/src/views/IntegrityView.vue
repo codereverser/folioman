@@ -621,8 +621,8 @@ function back(): void {
                 </tbody>
               </table>
               <p v-if="suggestionFor(row)!.partial" class="ca-preview-note">
-                Clears the missing-buys gap; a residual difference from your holdings
-                remains — likely a merger or transfer to record separately.
+                Clears the missing-buys gap; a residual difference from your holdings remains —
+                likely a merger or transfer to record separately.
               </p>
             </div>
           </li>

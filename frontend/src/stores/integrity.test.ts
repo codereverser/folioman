@@ -172,7 +172,7 @@ describe('integrity store', () => {
 
     const store = useIntegrityStore()
     await store.load(10)
-    const ok = await store.applyCorporateAction(10, 1, 7, 99)
+    const ok = await store.applyCorporateAction(10, 1, 7, [99])
     expect(ok).toBe(true)
     expect(store.rowsFor(10)[0].status).toBe('reconciled')
     expect(store.rowsFor(10)[0].issues).toEqual([])

@@ -58,7 +58,12 @@ describe('rowsFromMatrix', () => {
 
 describe('headerRowIndex', () => {
   it('is 0 for a clean table', () => {
-    expect(headerRowIndex([['a', 'b', 'c'], ['1', '2', '3']])).toBe(0)
+    expect(
+      headerRowIndex([
+        ['a', 'b', 'c'],
+        ['1', '2', '3'],
+      ]),
+    ).toBe(0)
   })
 
   it('skips sparse preamble rows', () => {

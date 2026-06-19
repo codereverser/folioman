@@ -377,8 +377,8 @@ watch(investorId, () => {
         >
         <span v-else class="dropzone-hint">
           Drop CSV/XLSX tradebooks here, or click to add —
-          <strong>you can select several</strong> (brokers often limit each export's date range, so a
-          full history comes as multiple files).
+          <strong>you can select several</strong> (brokers often limit each export's date range, so
+          a full history comes as multiple files).
         </span>
       </label>
 

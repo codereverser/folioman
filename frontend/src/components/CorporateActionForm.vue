@@ -66,7 +66,7 @@ const MANUAL = '__manual__'
 const acquirerChoice = ref<number | typeof MANUAL | null>(null)
 const _EQUITY_TYPES = new Set(['equity', 'etf', 'foreign_equity'])
 const acquirerOptions = computed(() => {
-  const opts = (props.securities ?? [])
+  const opts: { label: string; value: number | typeof MANUAL }[] = (props.securities ?? [])
     .filter((s) => s.id !== props.row?.securityId && _EQUITY_TYPES.has(s.security_type))
     .map((s) => ({ label: s.symbol ? `${s.name} (${s.symbol})` : s.name, value: s.id }))
   opts.push({ label: 'Other — enter ISIN manually', value: MANUAL })
@@ -105,10 +105,10 @@ function submit(): void {
   >
     <p v-if="row && variant === 'merger'" class="dialog-copy">
       Your tradebook shows <strong>{{ formatUnits(row.unitsFromTransactions) }}</strong> units of
-      <strong>{{ row.name }}</strong> (<span class="mono">{{ row.isin }}</span>), but that ISIN no
-      longer appears on the eCAS holdings. Enter the <em>acquiring</em> company's ISIN and the
-      exchange ratio (new shares per old share). Example: HDFC → HDFCBANK at 42:25 is
-      <code>1.68</code>.
+      <strong>{{ row.name }}</strong> (<span class="mono">{{ row.isin }}</span
+      >), but that ISIN no longer appears on the eCAS holdings. Enter the
+      <em>acquiring</em> company's ISIN and the exchange ratio (new shares per old share). Example:
+      HDFC → HDFCBANK at 42:25 is <code>1.68</code>.
     </p>
     <p v-else-if="row" class="dialog-copy">
       <strong>{{ row.name }}</strong> — your trades net to

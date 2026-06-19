@@ -303,7 +303,9 @@ function back(): void {
                 <small v-if="f.broker"> · {{ f.broker }}</small>
               </td>
               <td class="num" header-class="num">{{ formatUnits(f.units) }}</td>
-              <td class="num" header-class="num">{{ f.value_inr == null ? '—' : formatInr(f.value_inr) }}</td>
+              <td class="num" header-class="num">
+                {{ f.value_inr == null ? '—' : formatInr(f.value_inr) }}
+              </td>
             </tr>
           </tbody>
         </table>
