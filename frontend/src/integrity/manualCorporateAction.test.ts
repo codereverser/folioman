@@ -27,15 +27,6 @@ describe('isManualCaValid', () => {
     ).toBe(true)
   })
 
-  it('demerger needs ISIN + child ratio + cost fraction', () => {
-    expect(isManualCaValid(form({ kind: 'demerger', cpIsin: 'INE1', childRatio: '1' }))).toBe(false)
-    expect(
-      isManualCaValid(
-        form({ kind: 'demerger', cpIsin: 'INE1', childRatio: '1', childCostFraction: '0.4' }),
-      ),
-    ).toBe(true)
-  })
-
   it('rights/buyback need units + price', () => {
     expect(isManualCaValid(form({ kind: 'rights', units: '10' }))).toBe(false)
     expect(isManualCaValid(form({ kind: 'buyback', units: '10', price: '500' }))).toBe(true)
@@ -71,14 +62,6 @@ describe('toManualCaBody', () => {
       counterparty_symbol: 'NEWCO',
       counterparty_name: 'New Co',
     })
-  })
-
-  it('demerger carries child ratio + cost fraction', () => {
-    const b = toManualCaBody(
-      form({ kind: 'demerger', cpIsin: 'INE1YPB01014', childRatio: '1', childCostFraction: '0.4' }),
-    )
-    expect(b).toMatchObject({ child_ratio: '1', child_cost_fraction: '0.4' })
-    expect(b.unit_multiplier).toBeUndefined()
   })
 
   it('rights/buyback carry units + price', () => {

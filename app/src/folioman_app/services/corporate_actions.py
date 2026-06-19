@@ -76,7 +76,6 @@ def _securities_for_events(events: Sequence[CorporateActionApplyEvent]) -> set[s
             event.security,
             event.merger_old_security,
             event.merger_new_security,
-            event.demerger_child_security,
         ):
             if sec is not None and sec.isin:
                 isins.add(sec.isin)
@@ -321,14 +320,14 @@ def apply_corporate_actions_to_folio(
 
 
 def _counterparty_security(isin: str, symbol: str, name: str) -> CoreSecurity:
-    """The other security in a merger (acquirer) / demerger (child), typed by hand.
+    """The acquiring security in a merger, typed by hand.
 
     A real ISIN is required so it persists as a distinct security and reconciles;
     name falls back to symbol/ISIN until the resolver fills it.
     """
     isin = (isin or "").strip().upper()
     if not isin:
-        msg = "merger/demerger requires the counterparty security's ISIN"
+        msg = "merger requires the counterparty security's ISIN"
         raise ValueError(msg)
     return CoreSecurity(
         type=SecurityType.EQUITY,
@@ -345,8 +344,6 @@ def build_manual_event(
     ex_date: date,
     unit_multiplier: Decimal | None = None,
     merger_ratio: Decimal | None = None,
-    child_ratio: Decimal | None = None,
-    child_cost_fraction: Decimal | None = None,
     units: Decimal | None = None,
     price: Decimal | None = None,
     counterparty_isin: str = "",
@@ -356,9 +353,9 @@ def build_manual_event(
     """Build a user-authored corporate-action event for the affected ``security``.
 
     The path's security is the affected stock; ``kind`` selects the transform and
-    the matching params. Cross-security kinds (merger/demerger) take a typed
-    counterparty ISIN. Per-kind required fields are validated again by the apply
-    engine, but raise here with a clear message first.
+    the matching params. A merger takes a typed counterparty (acquirer) ISIN.
+    Per-kind required fields are validated again by the apply engine, but raise
+    here with a clear message first.
     """
     try:
         action = CorpActionType(kind)
@@ -391,14 +388,6 @@ def build_manual_event(
             merger_ratio=merger_ratio,
             source_ref=ref,
         )
-    if action is CorpActionType.DEMERGER:
-        # Disabled at the authoring boundary, not just hidden in the UI: a demerger
-        # that splits a partially consumed parent lot, or issues several child lots,
-        # isn't safely persisted yet (the writer keys updates by ledger_id and dedupes
-        # created rows by source_ref, so derived rows collide). Re-enable once the
-        # persistence layer can represent one-source-to-many-rows.
-        msg = "demerger authoring is not enabled yet"
-        raise ValueError(msg)
     if action in (CorpActionType.RIGHTS, CorpActionType.BUYBACK):
         return CorporateActionApplyEvent(
             kind=action,

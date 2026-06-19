@@ -613,7 +613,7 @@ export interface paths {
         put?: never;
         /**
          * Apply Manual Corporate Action Entry
-         * @description Author a corporate action by hand (bonus/split/merger/demerger/rights/buyback)
+         * @description Author a corporate action by hand (bonus/split/merger/rights/buyback)
          *     for the flagged (security, folio), apply it, and re-reconcile.
          */
         post: operations["folioman_app_api_integrity_apply_manual_corporate_action_entry"];
@@ -1600,14 +1600,9 @@ export interface components {
          *     The path's security is the affected stock; ``kind`` selects which params apply:
          *       - ``bonus`` / ``split`` → ``unit_multiplier`` (split < 1 = reverse split)
          *       - ``merger`` → ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)
-         *       - ``demerger`` → ``counterparty_*`` (child) + ``child_ratio`` + ``child_cost_fraction``
          *       - ``rights`` / ``buyback`` → ``units`` + ``price``
          */
         ManualCorporateActionIn: {
-            /** Child Cost Fraction */
-            child_cost_fraction?: number | string | null;
-            /** Child Ratio */
-            child_ratio?: number | string | null;
             /**
              * Counterparty Isin
              * @default

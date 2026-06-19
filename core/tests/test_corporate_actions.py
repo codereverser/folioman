@@ -10,7 +10,6 @@ from folioman_core.corporate_actions import (
     apply_bonus,
     apply_bonus_from_multiplier,
     apply_corporate_action_events,
-    apply_demerger,
     apply_merger,
     apply_reverse_split,
     apply_split,
@@ -568,76 +567,6 @@ def test_split_event_with_ratio_below_one_uses_reverse_split():
     assert fifo.balance == Decimal("1")
 
 
-# --- demerger ----------------------------------------------------------------
-
-_SPINCO = Security(
-    type=SecurityType.EQUITY,
-    name="SpinCo",
-    isin="INE999B01012",
-    symbol="SPINCO",
-)
-
-
-def test_apply_demerger_splits_cost_and_issues_child():
-    """100 parent @ ₹10 → 60% parent / 40% child, 1:1 spin → child matches parent units."""
-    txns = apply_demerger(
-        [_buy("100", "10", on=date(2020, 5, 1))],
-        parent_security=_EQUITY,
-        child_security=_SPINCO,
-        child_per_parent=Decimal("1"),
-        child_cost_fraction=Decimal("0.4"),
-        effective_date=date(2024, 7, 1),
-    )
-    parent_fifo = apply_fifo([t for t in txns if _same_isin(t.security, _EQUITY)])
-    child_fifo = apply_fifo([t for t in txns if _same_isin(t.security, _SPINCO)])
-    assert parent_fifo.balance == Decimal("100")
-    assert child_fifo.balance == Decimal("100")
-    assert parent_fifo.invested == Decimal("600")
-    assert child_fifo.invested == Decimal("400")
-
-
-def _same_isin(left: Security, right: Security) -> bool:
-    return bool(left.isin and right.isin and left.isin == right.isin)
-
-
-def test_apply_demerger_preserves_child_acquisition_date():
-    txns = apply_demerger(
-        [_buy("10", "100", on=date(2018, 3, 15))],
-        parent_security=_EQUITY,
-        child_security=_SPINCO,
-        child_per_parent=Decimal("1"),
-        child_cost_fraction=Decimal("0.5"),
-        effective_date=date(2024, 7, 1),
-    )
-    child = next(t for t in txns if _same_isin(t.security, _SPINCO))
-    assert child.date == date(2018, 3, 15)
-
-
-def test_apply_demerger_leaves_pre_demerger_realised_gain_unchanged():
-    txns = apply_demerger(
-        [
-            _buy("100", "10", on=date(2020, 1, 1)),
-            _sell("40", "15", on=date(2021, 6, 1)),
-        ],
-        parent_security=_EQUITY,
-        child_security=_SPINCO,
-        child_per_parent=Decimal("1"),
-        child_cost_fraction=Decimal("0.4"),
-        effective_date=date(2024, 7, 1),
-    )
-    pre_sell = apply_fifo(
-        [
-            _buy("100", "10", on=date(2020, 1, 1)),
-            _sell("40", "15", on=date(2021, 6, 1)),
-        ]
-    )
-    post_parent = apply_fifo([t for t in txns if _same_isin(t.security, _EQUITY)])
-    post_child = apply_fifo([t for t in txns if _same_isin(t.security, _SPINCO)])
-    assert pre_sell.pnl == post_parent.pnl
-    assert post_parent.balance == Decimal("60")
-    assert post_child.balance == Decimal("60")
-
-
 def test_cost_basis_complete_for_acquisition():
     assert cost_basis_complete_for_acquisition(date(2016, 1, 1)) is True
     assert cost_basis_complete_for_acquisition(date(2015, 12, 31)) is False
@@ -691,23 +620,3 @@ def test_split_indivisible_ratio_carries_total():
     buy = next(t for t in txns if t.type is TransactionType.BUY)
     assert buy.units == Decimal("30")
     assert buy.cost_total == Decimal("1000")  # 10 * 100, preserved exactly
-
-
-def test_demerger_splits_total_cost_across_parent_and_child():
-    # 100 sh @ ₹300 = ₹30,000; spin off a child taking 40% of cost, 1 child/parent.
-    txns = apply_demerger(
-        [_buy("100", "300", on=date(2019, 1, 1))],
-        parent_security=_EQUITY,
-        child_security=_NEWCO,
-        child_per_parent=Decimal("1"),
-        child_cost_fraction=Decimal("0.4"),
-        effective_date=date(2020, 1, 1),
-    )
-    parent_buy = next(
-        t for t in txns if t.type is TransactionType.BUY and t.security.isin == _EQUITY.isin
-    )
-    child = next(t for t in txns if t.security.isin == _NEWCO.isin)
-    assert parent_buy.cost_total == Decimal("18000")  # 60% of 30,000
-    assert child.cost_total == Decimal("12000")  # 40% of 30,000
-    # Parent + child totals reconstruct the original lot cost exactly.
-    assert parent_buy.cost_total + child.cost_total == Decimal("30000")

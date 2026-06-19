@@ -1726,38 +1726,8 @@
         "type": "object"
       },
       "ManualCorporateActionIn": {
-        "description": "Author one corporate action by hand to resolve a flagged unit mismatch.\n\nThe path's security is the affected stock; ``kind`` selects which params apply:\n  - ``bonus`` / ``split`` \u2192 ``unit_multiplier`` (split < 1 = reverse split)\n  - ``merger`` \u2192 ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)\n  - ``demerger`` \u2192 ``counterparty_*`` (child) + ``child_ratio`` + ``child_cost_fraction``\n  - ``rights`` / ``buyback`` \u2192 ``units`` + ``price``",
+        "description": "Author one corporate action by hand to resolve a flagged unit mismatch.\n\nThe path's security is the affected stock; ``kind`` selects which params apply:\n  - ``bonus`` / ``split`` \u2192 ``unit_multiplier`` (split < 1 = reverse split)\n  - ``merger`` \u2192 ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)\n  - ``rights`` / ``buyback`` \u2192 ``units`` + ``price``",
         "properties": {
-          "child_cost_fraction": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Child Cost Fraction"
-          },
-          "child_ratio": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Child Ratio"
-          },
           "counterparty_isin": {
             "default": "",
             "title": "Counterparty Isin",
@@ -4606,7 +4576,7 @@
     },
     "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-manual-corporate-action": {
       "post": {
-        "description": "Author a corporate action by hand (bonus/split/merger/demerger/rights/buyback)\nfor the flagged (security, folio), apply it, and re-reconcile.",
+        "description": "Author a corporate action by hand (bonus/split/merger/rights/buyback)\nfor the flagged (security, folio), apply it, and re-reconcile.",
         "operationId": "folioman_app_api_integrity_apply_manual_corporate_action_entry",
         "parameters": [
           {

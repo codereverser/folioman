@@ -174,7 +174,6 @@ describe('applicableResolutions', () => {
       'Bonus',
       'Split',
       'Merger',
-      'Demerger',
       'Rights issue',
       'Buyback',
     ])

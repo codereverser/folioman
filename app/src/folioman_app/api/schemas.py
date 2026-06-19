@@ -475,7 +475,6 @@ class ManualCorporateActionIn(Schema):
     The path's security is the affected stock; ``kind`` selects which params apply:
       - ``bonus`` / ``split`` → ``unit_multiplier`` (split < 1 = reverse split)
       - ``merger`` → ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)
-      - ``demerger`` → ``counterparty_*`` (child) + ``child_ratio`` + ``child_cost_fraction``
       - ``rights`` / ``buyback`` → ``units`` + ``price``
     """
 
@@ -483,8 +482,6 @@ class ManualCorporateActionIn(Schema):
     ex_date: date
     unit_multiplier: Decimal | None = None
     merger_ratio: Decimal | None = None
-    child_ratio: Decimal | None = None
-    child_cost_fraction: Decimal | None = None
     units: Decimal | None = None
     price: Decimal | None = None
     counterparty_isin: str = ""

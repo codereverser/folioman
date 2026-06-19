@@ -5,12 +5,11 @@
  */
 import type { ManualCorporateActionBody } from '@/stores/integrity'
 
-export type ManualCaKind = 'bonus' | 'split' | 'merger' | 'demerger' | 'rights' | 'buyback'
+export type ManualCaKind = 'bonus' | 'split' | 'merger' | 'rights' | 'buyback'
 
-// Demerger is intentionally absent: its lot-splitting persistence (a partially
-// consumed parent lot becomes two derived rows, and multiple open lots become
-// multiple child receipts) isn't safely represented yet, so it stays out of the
-// manual picker until that lands. The form/validation/payload still understand it.
+// Demerger is intentionally absent: it isn't a manually-authored corporate action.
+// A demerger is resolved by recording the child's lots as opening lots (the broker
+// already allocated their cost) and linking the parent — not through this form.
 export const MANUAL_CA_KINDS: { label: string; value: ManualCaKind }[] = [
   { label: 'Bonus', value: 'bonus' },
   { label: 'Split', value: 'split' },
@@ -24,8 +23,6 @@ export interface ManualCaForm {
   exDate: string
   unitMultiplier: string
   mergerRatio: string
-  childRatio: string
-  childCostFraction: string
   units: string
   price: string
   cpIsin: string
@@ -39,8 +36,6 @@ export function emptyManualCaForm(exDate = ''): ManualCaForm {
     exDate,
     unitMultiplier: '',
     mergerRatio: '',
-    childRatio: '',
-    childCostFraction: '',
     units: '',
     price: '',
     cpIsin: '',
@@ -50,7 +45,7 @@ export function emptyManualCaForm(exDate = ''): ManualCaForm {
 }
 
 export const isUnitFactorKind = (k: ManualCaKind): boolean => k === 'bonus' || k === 'split'
-export const isCrossSecurityKind = (k: ManualCaKind): boolean => k === 'merger' || k === 'demerger'
+export const isCrossSecurityKind = (k: ManualCaKind): boolean => k === 'merger'
 export const isRightsOrBuybackKind = (k: ManualCaKind): boolean => k === 'rights' || k === 'buyback'
 
 /** Every field the chosen kind requires is filled. */
@@ -58,13 +53,12 @@ export function isManualCaValid(f: ManualCaForm): boolean {
   if (!f.exDate) return false
   if (isUnitFactorKind(f.kind)) return !!f.unitMultiplier
   if (f.kind === 'merger') return !!f.cpIsin.trim() && !!f.mergerRatio
-  if (f.kind === 'demerger') return !!f.cpIsin.trim() && !!f.childRatio && !!f.childCostFraction
   if (isRightsOrBuybackKind(f.kind)) return !!f.units && !!f.price
   return false
 }
 
 /** Build the API payload for the chosen kind. `counterparty_*` are always present
- * (the schema types them non-nullable); only a merger/demerger fills them. */
+ * (the schema types them non-nullable); only a merger fills them. */
 export function toManualCaBody(f: ManualCaForm): ManualCorporateActionBody {
   const body: ManualCorporateActionBody = {
     kind: f.kind,
@@ -79,11 +73,7 @@ export function toManualCaBody(f: ManualCaForm): ManualCorporateActionBody {
     body.counterparty_isin = f.cpIsin.trim().toUpperCase()
     body.counterparty_symbol = f.cpSymbol.trim().toUpperCase()
     body.counterparty_name = f.cpName.trim()
-    if (f.kind === 'merger') body.merger_ratio = f.mergerRatio
-    else {
-      body.child_ratio = f.childRatio
-      body.child_cost_fraction = f.childCostFraction
-    }
+    body.merger_ratio = f.mergerRatio
   } else {
     body.units = f.units
     body.price = f.price

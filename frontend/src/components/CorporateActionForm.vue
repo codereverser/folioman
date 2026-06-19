@@ -24,7 +24,7 @@ const props = defineProps<{
   initialKind?: ManualCaKind
   /** ``merger`` locks the form to a cross-ISIN amalgamation (ledger_position rows). */
   variant?: 'general' | 'merger'
-  /** The investor's securities, for the acquirer picker (merger/demerger). */
+  /** The investor's securities, for the merger acquirer picker. */
   securities?: SecurityOption[]
 }>()
 const emit = defineEmits<{
@@ -55,7 +55,6 @@ watch(
 
 const isUnitFactor = computed(() => isUnitFactorKind(form.value.kind))
 const isMerger = computed(() => form.value.kind === 'merger')
-const isDemerger = computed(() => form.value.kind === 'demerger')
 const isCrossSecurity = computed(() => isCrossSecurityKind(form.value.kind))
 const isRightsOrBuyback = computed(() => isRightsOrBuybackKind(form.value.kind))
 const valid = computed(() => isManualCaValid(form.value))
@@ -149,16 +148,6 @@ function submit(): void {
           <code>1.68</code> (enter as a decimal, not 42:25).
         </small>
       </label>
-      <template v-if="isDemerger">
-        <label>
-          Child shares per parent share
-          <InputText v-model="form.childRatio" inputmode="decimal" placeholder="e.g. 1" />
-        </label>
-        <label>
-          Fraction of cost moving to the child (0–1)
-          <InputText v-model="form.childCostFraction" inputmode="decimal" placeholder="e.g. 0.4" />
-        </label>
-      </template>
       <template v-if="isCrossSecurity">
         <label>
           Acquiring company

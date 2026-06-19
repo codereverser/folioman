@@ -400,22 +400,21 @@ def test_dividend_reference_is_not_auto_applicable(make_investor):
 
 
 def test_manual_demerger_authoring_is_rejected(make_investor):
-    """Demerger authoring is disabled at the boundary until its lot-splitting
-    persistence is safe — not merely hidden in the UI."""
+    """Demerger is not a manually-authored corporate action: it's resolved by
+    recording the child's lots (opening lots) + linking the parent, not via the
+    apply engine."""
     from folioman_app.services.corporate_actions import apply_manual_corporate_action
 
     inv = make_investor()
     _import_allcargo(inv)
     sec = Security.objects.get(isin=_ALLCARGO)
     folio = Folio.objects.get(investor=inv, number=_DEMAT)
-    with pytest.raises(ValueError, match="demerger authoring is not enabled"):
+    with pytest.raises(ValueError, match="not supported for manual authoring"):
         apply_manual_corporate_action(
             inv,
             folio,
             sec,
             kind="demerger",
             ex_date=dt.date(2024, 1, 2),
-            child_ratio=Decimal("1"),
-            child_cost_fraction=Decimal("0.4"),
             counterparty_isin="INE999X01010",
         )

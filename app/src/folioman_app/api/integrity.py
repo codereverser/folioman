@@ -103,7 +103,7 @@ def _integrity_after_apply(
 ) -> SecurityIntegrityStatus:
     """Pick the post-apply integrity row when ledger rows may have moved off the path security.
 
-    Cross-ISIN merger and demerger re-reconcile affected securities and can delete the
+    A cross-ISIN merger re-reconciles affected securities and can delete the
     (path security, folio) status once no transactions remain there; prefer any surviving
     row from ``summary["security_ids"]``, then fall back to the path pair.
     """
@@ -175,7 +175,7 @@ def apply_manual_corporate_action_entry(
     folio_id: int,
     payload: ManualCorporateActionIn,
 ):
-    """Author a corporate action by hand (bonus/split/merger/demerger/rights/buyback)
+    """Author a corporate action by hand (bonus/split/merger/rights/buyback)
     for the flagged (security, folio), apply it, and re-reconcile."""
     investor = get_owned_investor(request, investor_id)
     security, folio = _owned_status(investor, security_id, folio_id)
