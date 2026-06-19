@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
   <template v-if="bare">
     <RouterView />
     <Toast />
-    <ConfirmDialog />
+    <ConfirmDialog :style="{ width: 'min(30rem, 92vw)' }" />
   </template>
 
   <div
@@ -254,7 +254,7 @@ onBeforeUnmount(() => {
     </nav>
 
     <Toast />
-    <ConfirmDialog />
+    <ConfirmDialog :style="{ width: 'min(30rem, 92vw)' }" />
   </div>
 </template>
 

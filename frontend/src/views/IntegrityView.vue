@@ -160,8 +160,8 @@ function askApplyCorporateAction(row: IntegrityRow): void {
     header: 'Apply corporate action?',
     message: corporateActionApplyConfirmMessage(suggestion, row.name),
     icon: 'pi pi-bolt',
-    acceptLabel: 'Apply',
-    rejectLabel: 'Cancel',
+    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
+    acceptProps: { label: 'Apply' },
     accept: async () => {
       const ok = await integrity.applyCorporateAction(
         investorId.value,
@@ -336,8 +336,8 @@ function askAcknowledge(row: IntegrityRow): void {
       'It stays out of the capital-gains worksheet — this dismisses the flag, it does not fix the units. ' +
       'To actually resolve it, re-import a since-inception CAS.',
     icon: 'pi pi-minus-circle',
-    acceptLabel: 'Acknowledge',
-    rejectLabel: 'Cancel',
+    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
+    acceptProps: { label: 'Acknowledge' },
     accept: async () => {
       const ok = await integrity.acknowledge(investorId.value, row.securityId, row.folioId)
       ui.notify(
