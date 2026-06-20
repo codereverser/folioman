@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 from folioman_app.models import AppliedCorporateAction
-from folioman_app.services.projected_ledger import compute_ledger
+from folioman_app.services.projected_ledger import compute_ledger, projected_transactions
 from folioman_core.fifo import apply_fifo, net_units_from_transactions
 from folioman_core.models import SecurityType, TransactionType
 
@@ -146,3 +146,75 @@ def test_as_of_excludes_later_corporate_actions(make_investor, make_security, ma
     assert net_units_from_transactions(before) == Decimal("10")  # split not yet effective
     after = compute_ledger(inv, sec, as_of=dt.date(2022, 6, 1))
     assert net_units_from_transactions(after) == Decimal("20")  # split applied
+
+
+def test_folio_scopes_the_projection(make_investor, make_security, make_transaction, make_folio):
+    inv = make_investor()
+    sec = _equity(make_security, "INE004A01016", "TWOFOLIO")
+    f1 = make_folio(investor=inv, folio_type="demat", number="DEMAT-1")
+    f2 = make_folio(investor=inv, folio_type="demat", number="DEMAT-2")
+    make_transaction(
+        investor=inv,
+        security=sec,
+        folio=f1,
+        date=dt.date(2020, 1, 1),
+        units=Decimal("10"),
+        nav_or_price=Decimal("100"),
+    )
+    make_transaction(
+        investor=inv,
+        security=sec,
+        folio=f2,
+        date=dt.date(2020, 1, 1),
+        units=Decimal("7"),
+        nav_or_price=Decimal("100"),
+    )
+    AppliedCorporateAction.objects.create(
+        investor=inv,
+        security=sec,
+        folio=f1,
+        kind="split",
+        ex_date=dt.date(2021, 1, 1),
+        unit_multiplier=Decimal("2"),
+        source_ref="f1-split",
+    )
+
+    # f1's split applies only to f1's lots; f2 is untouched.
+    assert net_units_from_transactions(compute_ledger(inv, sec, folio=f1)) == Decimal("20")
+    assert net_units_from_transactions(compute_ledger(inv, sec, folio=f2)) == Decimal("7")
+
+
+def test_projected_transactions_spans_the_whole_investor(
+    make_investor, make_security, make_transaction
+):
+    inv = make_investor()
+    a = _equity(make_security, "INE005A01014", "AAA")
+    b = _equity(make_security, "INE006A01012", "BBB")
+    make_transaction(
+        investor=inv,
+        security=a,
+        date=dt.date(2020, 1, 1),
+        units=Decimal("10"),
+        nav_or_price=Decimal("100"),
+    )
+    make_transaction(
+        investor=inv,
+        security=b,
+        date=dt.date(2020, 1, 1),
+        units=Decimal("5"),
+        nav_or_price=Decimal("100"),
+    )
+    AppliedCorporateAction.objects.create(
+        investor=inv,
+        security=a,
+        kind="split",
+        ex_date=dt.date(2021, 1, 1),
+        unit_multiplier=Decimal("3"),
+        source_ref="aaa-split",
+    )
+
+    rows = projected_transactions(inv)
+    a_units = net_units_from_transactions([r for r in rows if r.security.isin == "INE005A01014"])
+    b_units = net_units_from_transactions([r for r in rows if r.security.isin == "INE006A01012"])
+    assert a_units == Decimal("30")  # AAA split 1->3
+    assert b_units == Decimal("5")  # BBB untouched

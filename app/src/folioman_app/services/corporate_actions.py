@@ -20,6 +20,7 @@ from folioman_core.models.transaction import TransactionSource, TransactionType
 
 from folioman_app.mappers import to_core_security, to_core_transaction
 from folioman_app.models import CorporateActionReference, Folio, Investor, Security, Transaction
+from folioman_app.services.projected_ledger import compute_ledger
 from folioman_app.tasks._upsert import upsert_security
 from folioman_app.tasks.reconcile import reconcile_security
 
@@ -218,12 +219,7 @@ def _settle_fractional_entitlement(investor: Investor, folio: Folio, security: S
     if holding is None or holding.units != holding.units.to_integral_value():
         return False  # no anchor, or the anchor itself isn't a whole share count
 
-    core_txns = [
-        to_core_transaction(t)
-        for t in investor.transactions.cost_basis()
-        .filter(security=security, folio=folio)
-        .select_related("security", "folio")
-    ]
+    core_txns = compute_ledger(investor, security, folio=folio)
     if not core_txns:
         return False
     excess = net_units_from_transactions(core_txns) - holding.units

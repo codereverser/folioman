@@ -44,6 +44,7 @@ from folioman_app.models import (
     SecurityIntegrityStatus,
 )
 from folioman_app.services.dividends import attribute_dividends_for_security
+from folioman_app.services.projected_ledger import compute_ledger
 
 logger = logging.getLogger(__name__)
 
@@ -283,12 +284,9 @@ def reconcile_security_folio(
     # Cost-basis rows only: a partial-history folio has none here, so it reconciles
     # as snapshot-only (its closing-balance holding vs an empty ledger) — never a
     # spurious MISMATCH from partial units.
-    txns = [
-        to_core_transaction(t)
-        for t in investor.transactions.cost_basis()
-        .filter(security=security, folio=folio)
-        .select_related("security", "folio")
-    ]
+    # Cost-basis ledger with corporate actions applied in memory (split-scaled units,
+    # merged lots, bonus shares) — read from the projection, never from rewritten rows.
+    txns = compute_ledger(investor, security, folio=folio)
     holdings_qs = investor.holdings.filter(security=security, folio=folio)
     # A pure eCAS-only zero holding carries no position — e.g. a rights entitlement (a
     # transient line) that lapsed or was exercised, now reported as 0. Drop it so it
