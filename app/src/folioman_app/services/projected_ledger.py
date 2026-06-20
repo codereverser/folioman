@@ -1,0 +1,109 @@
+"""Project the as-traded ledger through applied corporate actions.
+
+The ``Transaction`` table stays exactly as imported. The *adjusted* view — split-
+scaled units, merged lots, bonus shares — is derived here on read by replaying the
+:class:`AppliedCorporateAction` event log over the raw rows via the pure
+:func:`apply_corporate_action_events` engine. Nothing is mutated.
+
+This is additive: ``compute_ledger`` exists for read paths to adopt; the apply path
+and the existing rewrite are untouched until read paths are redirected onto it.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+from django.db.models import Q
+from folioman_core.corporate_action_subject import CorpActionType
+from folioman_core.corporate_actions import CorporateActionApplyEvent, apply_corporate_action_events
+from folioman_core.models.transaction import Transaction as CoreTransaction
+
+from folioman_app.mappers import to_core_security, to_core_transaction
+from folioman_app.models import AppliedCorporateAction, Investor, Security
+
+
+def _same_isin(left, right) -> bool:
+    """ISIN identity when both carry one, else object equality — mirrors the core."""
+    if left.isin and right.isin:
+        return left.isin == right.isin
+    return left == right
+
+
+def event_from_applied(aca: AppliedCorporateAction) -> CorporateActionApplyEvent:
+    """Reconstruct the core apply-event from a stored :class:`AppliedCorporateAction`."""
+    kind = CorpActionType(aca.kind)
+    if kind is CorpActionType.MERGER:
+        # The affected security merges away into the acquirer (counterparty). The core
+        # event's ``security`` is the acquirer; old/new carry the conversion.
+        acquirer = to_core_security(aca.counterparty_security)
+        return CorporateActionApplyEvent(
+            kind=kind,
+            ex_date=aca.ex_date,
+            security=acquirer,
+            merger_old_security=to_core_security(aca.security),
+            merger_new_security=acquirer,
+            merger_ratio=aca.merger_ratio,
+            source_ref=aca.source_ref,
+        )
+    bonus_ratio = (
+        (aca.bonus_ratio_a, aca.bonus_ratio_b)
+        if aca.bonus_ratio_a is not None and aca.bonus_ratio_b is not None
+        else None
+    )
+    return CorporateActionApplyEvent(
+        kind=kind,
+        ex_date=aca.ex_date,
+        security=to_core_security(aca.security),
+        unit_multiplier=aca.unit_multiplier,
+        bonus_ratio=bonus_ratio,
+        dividend_per_share=aca.dividend_per_share,
+        rights_units=aca.units,
+        rights_price=aca.price,
+        source_ref=aca.source_ref,
+    )
+
+
+def compute_ledger(
+    investor: Investor, security: Security, *, as_of: date | None = None
+) -> list[CoreTransaction]:
+    """The cost-basis ledger for ``security`` with corporate actions applied in memory.
+
+    Replays every applied event touching ``security`` — including a merger that
+    re-bases another security's lots onto it — over the immutable as-traded rows, and
+    returns the rows that now belong to ``security`` (oldest-first, via the engine's
+    sort). ``as_of`` restricts to events and rows on or before that date for a
+    point-in-time view; ``None`` returns the full ledger.
+
+    Only ``cost_basis()`` rows feed the projection (partial-history rows carry no
+    usable basis), matching every other cost-basis consumer.
+    """
+    # Securities in scope: this one, plus any linked by a merger (old <-> acquirer),
+    # so the acquirer's projection includes the lots rebased onto it.
+    linked = AppliedCorporateAction.objects.filter(investor=investor).filter(
+        Q(security=security) | Q(counterparty_security=security)
+    )
+    sec_ids: set[int] = {security.id}
+    for aca in linked:
+        sec_ids.add(aca.security_id)
+        if aca.counterparty_security_id:
+            sec_ids.add(aca.counterparty_security_id)
+
+    events_qs = AppliedCorporateAction.objects.filter(investor=investor).filter(
+        Q(security_id__in=sec_ids) | Q(counterparty_security_id__in=sec_ids)
+    )
+    if as_of is not None:
+        events_qs = events_qs.filter(ex_date__lte=as_of)
+
+    raw = [
+        to_core_transaction(t)
+        for t in investor.transactions.cost_basis()
+        .filter(security_id__in=sec_ids)
+        .select_related("security", "folio")
+    ]
+    events = [event_from_applied(aca) for aca in events_qs]
+    adjusted = apply_corporate_action_events(raw, events)
+
+    result = [t for t in adjusted if _same_isin(t.security, security)]
+    if as_of is not None:
+        result = [t for t in result if t.date <= as_of]
+    return result

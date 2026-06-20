@@ -369,3 +369,67 @@ class InvestorValue(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.value_inr} @ {self.date}"
+
+
+class AppliedCorporateAction(TimeStampedModel):
+    """The event log replayed over the immutable as-traded ledger.
+
+    A corporate action is recorded here as one event — never by mutating trade rows.
+    ``compute_ledger`` replays these events (in ex-date order) over the raw
+    ``Transaction`` rows to derive the adjusted view (split-scaled units, merged
+    lots, bonus shares). The trade rows stay exactly as imported, so they always
+    match the contract note and re-import stays idempotent.
+
+    ``security`` is the affected stock (for a merger, the security merging away);
+    ``counterparty_security`` is the acquirer. ``source_ref`` is the stable
+    idempotency key (``ca-ref:{id}`` for a cached feed event, ``manual:…`` for a
+    hand-authored one), so an event is applied at most once.
+    """
+
+    investor = models.ForeignKey(
+        Investor, on_delete=models.CASCADE, related_name="applied_corporate_actions"
+    )
+    folio = models.ForeignKey(
+        Folio,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="applied_corporate_actions",
+    )
+    security = models.ForeignKey(
+        Security, on_delete=models.PROTECT, related_name="applied_corporate_actions"
+    )
+    counterparty_security = models.ForeignKey(
+        Security, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
+    )
+    kind = models.CharField(max_length=32)  # CorpActionType value
+    ex_date = models.DateField()
+    # Per-kind params (only the columns the kind needs are set):
+    unit_multiplier = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    bonus_ratio_a = models.IntegerField(null=True, blank=True)
+    bonus_ratio_b = models.IntegerField(null=True, blank=True)
+    merger_ratio = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    units = models.DecimalField(max_digits=24, decimal_places=8, null=True, blank=True)
+    price = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    dividend_per_share = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    source_ref = models.CharField(max_length=128, blank=True, default="")
+    # Forward-compat for richer events (e.g. a demerger's children + cost fractions).
+    params = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["investor", "ex_date", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["investor", "folio", "security", "source_ref"],
+                condition=~models.Q(source_ref=""),
+                name="uniq_applied_ca_investor_folio_sec_ref",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["investor", "security", "ex_date"], name="idx_applied_ca_inv_sec_date"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind} {self.security_id} @ {self.ex_date}"

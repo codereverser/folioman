@@ -8,6 +8,7 @@ what `django.apps` imports). master = global reference data; ledger / integrity
 from folioman_app.models.integrity import SecurityIntegrityStatus
 from folioman_app.models.jobs import ImportJob, ImportQuarantine
 from folioman_app.models.ledger import (
+    AppliedCorporateAction,
     Family,
     Folio,
     Holding,
@@ -28,6 +29,7 @@ from folioman_app.models.master import (
 
 __all__ = [
     "AMC",
+    "AppliedCorporateAction",
     "CorporateActionReference",
     "FXRate",
     "Family",
