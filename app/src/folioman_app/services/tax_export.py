@@ -21,9 +21,9 @@ from folioman_core.tax.india import india_fy_range
 from folioman_core.tax.models import Term
 from folioman_core.tax.schedule_112a import SCHEDULE_112A_CSV_COLUMNS
 
-from folioman_app.mappers import to_core_transaction
 from folioman_app.models import Investor, Security
 from folioman_app.services.fmv import fmv_lookup as _default_fmv
+from folioman_app.services.projected_ledger import projected_transactions, security_key
 
 _Q2 = Decimal("0.01")
 
@@ -45,16 +45,18 @@ def _tax_ready_transactions(investor: Investor, *, include_unreconciled: bool) -
     is simply absent from the ready set.
     """
     ready_keys = {
-        (st.security_id, st.folio.number)
-        for st in investor.integrity_statuses.select_related("folio").all()
+        (security_key(st.security), st.folio.number)
+        for st in investor.integrity_statuses.select_related("security", "folio").all()
         if _folio_tax_ready(IntegrityStatus(st.status), include_unreconciled=include_unreconciled)
     }
+    # Corporate-action-adjusted ledger (split-scaled units, merged lots, bonus shares):
+    # FIFO over the projection gives the right cost basis and proceeds without rewriting
+    # rows. Keyed by stable security identity + folio so a merged disposal is gated by —
+    # and attributed to — the acquirer's tax-ready bucket.
     return [
-        to_core_transaction(t)
-        # Cost-basis rows only — a partial-history bucket is SNAPSHOT_ONLY (never
-        # tax-ready) anyway, but exclude its rows explicitly so they can't reach FIFO.
-        for t in investor.transactions.cost_basis().select_related("security", "folio").all()
-        if (t.security_id, t.folio.number if t.folio else "") in ready_keys
+        core
+        for core in projected_transactions(investor)
+        if (security_key(core.security), core.folio_number or "") in ready_keys
     ]
 
 

@@ -29,6 +29,12 @@ def _same_isin(left, right) -> bool:
     return left == right
 
 
+def security_key(sec) -> str:
+    """Stable identity for grouping projected core rows back to a Django security.
+    Works on both core and Django ``Security`` (ISIN for equity, AMFI for MF)."""
+    return sec.isin or sec.amfi_code or sec.symbol or sec.name
+
+
 def event_from_applied(aca: AppliedCorporateAction) -> CorporateActionApplyEvent:
     """Reconstruct the core apply-event from a stored :class:`AppliedCorporateAction`."""
     kind = CorpActionType(aca.kind)

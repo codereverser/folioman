@@ -39,16 +39,11 @@ from folioman_app.models import (
 )
 from folioman_app.models.jobs import ImportJob, ImportJobStatus
 from folioman_app.services.dividends import build_equity_dividend_detail
-from folioman_app.services.projected_ledger import projected_transactions
+from folioman_app.services.projected_ledger import projected_transactions, security_key
 from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
 
 _ZERO = Decimal("0")
-
-
-def _security_key(sec) -> str:
-    """Stable identity for grouping core projection rows back to a Django security.
-    Works on both core and Django ``Security`` (ISIN for equity, AMFI for MF)."""
-    return sec.isin or sec.amfi_code or sec.symbol or sec.name
+_security_key = security_key
 
 
 # Transaction types that deploy / return capital, for the invested baseline and
