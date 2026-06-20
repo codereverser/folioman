@@ -15,7 +15,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.db.models import Max
+from django.db.models import Max, Q
 from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
 from folioman_core.models import Holding as CoreHolding
 from folioman_core.models import HoldingSource, Quote, SecurityType, TransactionType
@@ -25,21 +25,31 @@ from folioman_core.xirr import cashflows_from_transactions, compute_xirr
 
 from folioman_app.mappers import to_core_security, to_core_transaction
 from folioman_app.models import (
+    AppliedCorporateAction,
     Family,
     Folio,
     Holding,
     Investor,
     InvestorValue,
     NAVHistory,
+    Security,
     SecurityIntegrityStatus,
     Transaction,
     ValuationStatus,
 )
 from folioman_app.models.jobs import ImportJob, ImportJobStatus
 from folioman_app.services.dividends import build_equity_dividend_detail
+from folioman_app.services.projected_ledger import projected_transactions
 from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
 
 _ZERO = Decimal("0")
+
+
+def _security_key(sec) -> str:
+    """Stable identity for grouping core projection rows back to a Django security.
+    Works on both core and Django ``Security`` (ISIN for equity, AMFI for MF)."""
+    return sec.isin or sec.amfi_code or sec.symbol or sec.name
+
 
 # Transaction types that deploy / return capital, for the invested baseline and
 # XIRR cashflows. Bonus/split/dividend-reinvest move units without fresh cash.
@@ -107,26 +117,45 @@ def _current_positions(investor: Investor):
     swap this body for DB-side signed aggregation (or a materialized
     current-units table updated on import) with no change to callers.
     """
-    txns_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
-    # Cost-basis rows only — a partial scheme then has no ledger here and falls back
-    # to its holding snapshot below (units/value unchanged from the pre-V7 behaviour).
-    for txn in investor.transactions.cost_basis().select_related(
-        "security", "security__amc", "folio"
-    ):
-        txns_by_key[(txn.security_id, txn.folio_id)].append(txn)
-    holdings_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
-    for holding in investor.holdings.select_related("security", "security__amc", "folio"):
-        holdings_by_key[(holding.security_id, holding.folio_id)].append(holding)
+    # Ledger units come from the corporate-action-adjusted projection (split-scaled,
+    # merged, bonus shares) over the immutable rows — keyed by a stable security
+    # identity + folio so a merger that rebases lots onto the acquirer is counted under
+    # the acquirer, not the merged-away scrip. (Cost-basis rows only; a partial scheme
+    # has none and falls back to its holding snapshot below.)
+    txns_by_key: dict[tuple[str, str], list] = defaultdict(list)
+    for core in projected_transactions(investor):
+        txns_by_key[(_security_key(core.security), core.folio_number or "")].append(core)
 
-    # security_id -> [django_security, units, latest_as_of, source]
-    agg: dict[int, list] = {}
+    holdings_by_key: dict[tuple[str, str], list] = defaultdict(list)
+    sec_by_key: dict[str, Security] = {}
+    for holding in investor.holdings.select_related("security", "security__amc", "folio"):
+        skey = _security_key(holding.security)
+        holdings_by_key[(skey, holding.folio.number if holding.folio else "")].append(holding)
+        sec_by_key.setdefault(skey, holding.security)
+
+    # Django securities for ledger-only keys (incl. a merger acquirer the investor never
+    # traded directly — its lots arrive via the event, so resolve counterparties too).
+    cp_ids = list(
+        AppliedCorporateAction.objects.filter(investor=investor)
+        .exclude(counterparty_security=None)
+        .values_list("counterparty_security_id", flat=True)
+    )
+    for sec in (
+        Security.objects.filter(Q(transactions__investor=investor) | Q(pk__in=cp_ids))
+        .select_related("amc")
+        .distinct()
+    ):
+        sec_by_key.setdefault(_security_key(sec), sec)
+
+    # security_key -> [django_security, units, latest_as_of, source]
+    agg: dict[str, list] = {}
     for key in set(txns_by_key) | set(holdings_by_key):
-        sec_id = key[0]
+        skey = key[0]
         if key in txns_by_key:
-            txns = txns_by_key[key]
-            units = net_units_from_transactions([to_core_transaction(t) for t in txns])
-            security = txns[0].security
-            as_of = max(t.date for t in txns)
+            cores = txns_by_key[key]
+            units = net_units_from_transactions(cores)
+            security = sec_by_key.get(skey)
+            as_of = max(c.date for c in cores)
             source = HoldingSource.LEDGER.value
         else:
             rows = holdings_by_key[key]
@@ -135,7 +164,9 @@ def _current_positions(investor: Investor):
             security = rows[0].security
             as_of = latest
             source = rows[0].source
-        slot = agg.setdefault(sec_id, [security, _ZERO, as_of, source])
+        if security is None:
+            continue  # projected key with no Django security (defensive; shouldn't happen)
+        slot = agg.setdefault(skey, [security, _ZERO, as_of, source])
         slot[0] = security
         slot[1] += units
         slot[2] = max(slot[2], as_of)
