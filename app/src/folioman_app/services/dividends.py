@@ -17,8 +17,9 @@ from folioman_core.dividend_attribution import (
 from folioman_core.models import SecurityType, TransactionSource, TransactionType
 from folioman_core.reconciliation import IntegrityStatus
 
-from folioman_app.mappers import to_core_security, to_core_transaction
+from folioman_app.mappers import to_core_security
 from folioman_app.models import CorporateActionReference, Folio, Investor, Security, Transaction
+from folioman_app.services.projected_ledger import compute_ledger
 
 _ZERO = Decimal("0")
 
@@ -74,12 +75,9 @@ def attribute_dividends_for_folio(investor: Investor, folio: Folio, security: Se
     if not schedule:
         return 0
 
-    orm_txns = list(
-        investor.transactions.filter(security=security, folio=folio).select_related(
-            "security", "folio"
-        )
-    )
-    cores = [to_core_transaction(t) for t in orm_txns]
+    # Units held at each ex-date come from the corporate-action-adjusted projection,
+    # so a dividend is attributed on the split-adjusted share count, not the as-traded one.
+    cores = compute_ledger(investor, security, folio=folio)
     existing = {
         ref
         for ref in investor.transactions.filter(security=security, folio=folio)
@@ -172,7 +170,8 @@ def build_equity_dividend_detail(
     from folioman_core.corporate_actions import held_units_asof
 
     core_security = to_core_security(security)
-    ledger_cores = [to_core_transaction(t) for t in ledger_orm_txns]
+    # Held-units at each ex-date from the corporate-action-adjusted projection.
+    ledger_cores = compute_ledger(investor, security)
     folio_ids = {t.folio_id for t in ledger_orm_txns if t.folio_id}
     folios_by_id = {f.id: f for f in Folio.objects.filter(id__in=folio_ids)}
 
