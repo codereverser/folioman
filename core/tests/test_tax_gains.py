@@ -202,3 +202,39 @@ def test_indivisible_merger_grandfathering_actual_cost_wins_exact():
     lines = compute_gain_lines(txns, get_policy("IN"), fmv_lookup=fmv_lookup)
     assert sum(line.adjusted_cost for line in lines) == Decimal("30000.00")
     assert sum(line.gain for line in lines) == Decimal("15000.00")
+
+
+def _buyback(units: str, nav: str, *, on: date) -> Transaction:
+    return Transaction(
+        security=_EQUITY,
+        date=on,
+        type=TransactionType.SELL,
+        units=units,
+        nav_or_price=nav,
+        source=TransactionSource.CORPORATE_ACTION,
+        source_ref="manual:buyback:2024-03-24:INE002A01018",
+    )
+
+
+def test_buyback_gain_is_exempt_before_oct_2024():
+    # A buyback (s.115QA) up to 30-Sep-2024 is exempt under s.10(34A): the lots are
+    # still consumed (shares gone) but the gain is classified EXEMPT, not ST/LT.
+    txns = [
+        _buy("10", "1000", on=date(2019, 1, 1)),
+        _buyback("10", "2000", on=date(2024, 3, 24)),
+    ]
+    lines = compute_gain_lines(txns, get_policy("IN"))
+    assert len(lines) == 1
+    assert lines[0].term is Term.EXEMPT
+    assert lines[0].gain == Decimal("10000.00")  # gain exists, just not chargeable
+
+
+def test_buyback_after_sep_2024_is_not_exempt():
+    # From 01-Oct-2024 the exemption is gone (deemed-dividend regime); falls through
+    # to ordinary classification rather than being silently exempted.
+    txns = [
+        _buy("10", "1000", on=date(2019, 1, 1)),
+        _buyback("10", "2000", on=date(2024, 11, 1)),
+    ]
+    lines = compute_gain_lines(txns, get_policy("IN"))
+    assert lines[0].term is Term.LONG

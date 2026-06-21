@@ -87,13 +87,16 @@ def build_capital_gains(
     rows: list[dict] = []
     stcg = Decimal("0")
     ltcg = Decimal("0")
+    exempt = Decimal("0")
     for line in in_fy:
         d = line.disposal
         sale_value = (d.units * d.sale_price_per_unit).quantize(_Q2, rounding=ROUND_HALF_EVEN)
         if line.term is Term.SHORT:
             stcg += line.gain
-        else:
+        elif line.term is Term.LONG:
             ltcg += line.gain
+        else:  # Term.EXEMPT — e.g. a buyback (s.10(34A)); not chargeable to CG
+            exempt += line.gain
         rows.append(
             {
                 "security_id": isin_to_id.get(d.security.isin),
@@ -122,6 +125,7 @@ def build_capital_gains(
         "fy": fy_label,
         "stcg_total": stcg.quantize(_Q2, rounding=ROUND_HALF_EVEN),
         "ltcg_total": ltcg.quantize(_Q2, rounding=ROUND_HALF_EVEN),
+        "exempt_total": exempt.quantize(_Q2, rounding=ROUND_HALF_EVEN),
         "rows": rows,
     }
 

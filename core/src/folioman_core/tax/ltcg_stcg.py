@@ -33,6 +33,7 @@ def disposal_from_lot(sell: SellDisposal, lot_index: int) -> Disposal:
         cost_per_unit=lot.cost_per_unit,
         fees_allocated=lot.stamp_allocated,
         currency=sell.security.currency,
+        is_buyback=sell.is_buyback,
     )
 
 

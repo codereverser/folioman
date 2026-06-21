@@ -14,7 +14,7 @@ from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
 
 from folioman_core.models.security import Security
-from folioman_core.models.transaction import Transaction, TransactionType
+from folioman_core.models.transaction import Transaction, TransactionSource, TransactionType
 
 _ZERO = Decimal("0")
 _BALANCE_EPSILON = Decimal("0.0001")
@@ -62,6 +62,7 @@ class SellDisposal:
     sale_price_per_unit: Decimal
     fees: Decimal
     lots: tuple[ConsumedLot, ...]
+    is_buyback: bool = False
 
     @property
     def units(self) -> Decimal:
@@ -118,12 +119,18 @@ class FIFOUnits:
                 cost_total=txn.cost_total,
             )
         elif txn.type in (TransactionType.SELL, TransactionType.TRANSFER_OUT):
+            # A buyback disposal still consumes lots (the shares are gone), but its
+            # gain is exempt (s.10(34A)); carry the flag so the tax policy classifies it.
+            is_buyback = txn.source is TransactionSource.CORPORATE_ACTION and "buyback" in (
+                txn.source_ref or ""
+            )
             self.sell(
                 txn.units,
                 txn.nav_or_price,
                 fees=txn.fees,
                 security=txn.security,
                 sold_on=txn.date,
+                is_buyback=is_buyback,
             )
         elif txn.type is TransactionType.BONUS:
             bonus_amount = txn.amount if txn.amount is not None else _ZERO
@@ -185,6 +192,7 @@ class FIFOUnits:
         fees: Decimal = _ZERO,
         security: Security | None = None,
         sold_on: date | None = None,
+        is_buyback: bool = False,
     ) -> SellDisposal | None:
         if quantity <= _ZERO:
             msg = "sell quantity must be positive"
@@ -255,6 +263,7 @@ class FIFOUnits:
             sale_price_per_unit=nav,
             fees=fees,
             lots=tuple(consumed_lots),
+            is_buyback=is_buyback,
         )
         self.disposals.append(disposal)
         return disposal
