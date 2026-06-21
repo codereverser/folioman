@@ -864,15 +864,35 @@ def _ledger_index(investors: list[Investor]):
     single load every series/XIRR path funnels through (the perf seam: swap for
     DB-side aggregation if a long ledger makes it slow).
     """
+    # Ledger rows come from the corporate-action-adjusted projection (split-scaled,
+    # merged, bonus). The bucket key stays (security_id, folio_id) — same contract every
+    # downstream consumer relies on — by resolving the projected row's identity back to a
+    # Django security and its folio number to a folio id. Cash flows are CA-invariant
+    # (each row's amount is preserved), so XIRR is unaffected.
+    cp_ids = list(
+        AppliedCorporateAction.objects.filter(investor__in=investors)
+        .exclude(counterparty_security=None)
+        .values_list("counterparty_security_id", flat=True)
+    )
+    sec_by_key: dict[str, Security] = {}
+    for sec in (
+        Security.objects.filter(Q(transactions__investor__in=investors) | Q(pk__in=cp_ids))
+        .select_related("amc")
+        .distinct()
+    ):
+        sec_by_key.setdefault(security_key(sec), sec)
+
     txn_keys: dict[tuple[int, int | None], dict] = {}
     for investor in investors:
-        # Cost-basis rows only — partial-history rows are display-only and would skew
-        # FIFO units / invested / XIRR; a partial scheme falls back to its snapshot.
-        for txn in investor.transactions.cost_basis().select_related("security", "folio"):
-            key = (txn.security_id, txn.folio_id)
-            rec = txn_keys.setdefault(key, {"security": txn.security, "core": [], "cash": []})
-            rec["core"].append((txn.date, to_core_transaction(txn)))
-            rec["cash"].append((txn.date, txn.transaction_type, _txn_cash(txn)))
+        folio_by_num = {f.number: f.id for f in investor.folios.all()}
+        for core in projected_transactions(investor):
+            security = sec_by_key.get(security_key(core.security))
+            if security is None:
+                continue  # projected key with no Django security (defensive)
+            key = (security.id, folio_by_num.get(core.folio_number or ""))
+            rec = txn_keys.setdefault(key, {"security": security, "core": [], "cash": []})
+            rec["core"].append((core.date, core))
+            rec["cash"].append((core.date, core.type.value, _txn_cash(core)))
     hold_keys: dict[tuple[int, int | None], dict] = {}
     for investor in investors:
         for holding in investor.holdings.select_related("security", "folio"):
