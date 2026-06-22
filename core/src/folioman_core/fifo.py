@@ -306,6 +306,66 @@ def build_sell_disposals(transactions: Sequence[Transaction]) -> list[SellDispos
     return disposals
 
 
+def _scaled_to_units(txn: Transaction, units: Decimal) -> Transaction:
+    """A copy of ``txn`` reduced to ``units``, scaling amount/cost_total by the ratio
+    (per-unit price unchanged). Used to trim the delivery portion of a same-day trade."""
+    ratio = units / txn.units
+    updates: dict = {"units": units}
+    if txn.amount is not None:
+        updates["amount"] = txn.amount * ratio
+    if txn.cost_total is not None:
+        updates["cost_total"] = txn.cost_total * ratio
+    return txn.model_copy(update=updates)
+
+
+def net_intraday_offsets(transactions: Sequence[Transaction]) -> list[Transaction]:
+    """Strip same-day squared-off (intraday) quantity per (security, folio, date).
+
+    Same-scrip same-day buys and sells net at settlement — no actual delivery — so the
+    offsetting ``min(buys, sells)`` is a speculative transaction (s.43(5)), not a
+    delivery capital-gains trade. Remove that quantity from the day's buys and sells so
+    only the net delivery feeds FIFO. A read-time transform: the stored ledger keeps the
+    trades as imported. Only plain BUY/SELL net; bonus/split/merger/dividend/transfer
+    rows pass through untouched.
+    """
+
+    def key(t: Transaction):
+        return (t.security.isin or t.security.symbol or t.security.name, t.folio_number, t.date)
+
+    buys: dict = {}
+    sells: dict = {}
+    for t in transactions:
+        if t.type is TransactionType.BUY:
+            buys[key(t)] = buys.get(key(t), _ZERO) + t.units
+        elif t.type is TransactionType.SELL:
+            sells[key(t)] = sells.get(key(t), _ZERO) + t.units
+    # Speculative (netted) units to strip from each leg, per day. On a net-sell day all
+    # buys are intraday (strip fully) and sells are trimmed by that amount; vice versa.
+    strip = {k: min(buys[k], sells.get(k, _ZERO)) for k in buys}
+    strip = {k: q for k, q in strip.items() if q > _ZERO}
+    if not strip:
+        return list(transactions)
+    strip_buy = dict(strip)
+    strip_sell = dict(strip)
+
+    out: list[Transaction] = []
+    for t in transactions:
+        k = key(t)
+        if t.type is TransactionType.BUY and strip_buy.get(k, _ZERO) > _ZERO:
+            take = min(t.units, strip_buy[k])
+            strip_buy[k] -= take
+            if t.units - take > _ZERO:
+                out.append(_scaled_to_units(t, t.units - take))
+        elif t.type is TransactionType.SELL and strip_sell.get(k, _ZERO) > _ZERO:
+            take = min(t.units, strip_sell[k])
+            strip_sell[k] -= take
+            if t.units - take > _ZERO:
+                out.append(_scaled_to_units(t, t.units - take))
+        else:
+            out.append(t)
+    return out
+
+
 def net_units_from_transactions(transactions: Iterable[Transaction]) -> Decimal:
     """Net units implied by the ledger (independent of FIFO cost basis)."""
     total = _ZERO

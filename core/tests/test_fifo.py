@@ -8,6 +8,7 @@ from folioman_core.fifo import (
     FIFOUnits,
     InsufficientUnitsError,
     apply_fifo,
+    net_intraday_offsets,
     net_units_from_transactions,
 )
 from folioman_core.models import (
@@ -433,3 +434,36 @@ def test_without_cost_total_persisted_per_unit_drifts():
     # 6dp per-unit (300 * 333.333333 = 99999.9999), drifting the realised gain.
     fifo = apply_fifo([_buy("300", "333.333333"), _sell("300", "500")])
     assert fifo.pnl == Decimal("50000.0001")
+
+
+def test_net_intraday_drops_fully_offset_same_day_pair():
+    # Held 100 (2020), then a same-day sell 100 + buy 100 in 2021 — a squared-off
+    # intraday round-trip that nets at settlement. It must not touch the delivery
+    # ledger: the 2020 lot stays intact and the 2021 day vanishes from FIFO input.
+    txns = [
+        _buy("100", "200", on=date(2020, 1, 1)),
+        _sell("100", "250", on=date(2021, 1, 1)),
+        _buy("100", "230", on=date(2021, 1, 1)),
+    ]
+    netted = net_intraday_offsets(txns)
+    assert net_units_from_transactions(netted) == Decimal("100")
+    assert all(t.date == date(2020, 1, 1) for t in netted)
+
+
+def test_net_intraday_trims_partial_offset_keeping_the_net_delivery():
+    # Same day: sell 9 + buy 3 -> 3 speculative (dropped), net delivery sell 6.
+    txns = [
+        _buy("50", "100", on=date(2020, 1, 1)),
+        _sell("9", "110", on=date(2021, 1, 1)),
+        _buy("3", "108", on=date(2021, 1, 1)),
+    ]
+    netted = net_intraday_offsets(txns)
+    buys = sum((t.units for t in netted if t.type is TransactionType.BUY), Decimal("0"))
+    sells = sum((t.units for t in netted if t.type is TransactionType.SELL), Decimal("0"))
+    assert buys == Decimal("50")  # the 2021 buy of 3 is fully intraday, dropped
+    assert sells == Decimal("6")  # the 2021 sell trimmed 9 -> 6 (net delivery)
+
+
+def test_net_intraday_leaves_non_same_day_trades_untouched():
+    txns = [_buy("100", "200", on=date(2020, 1, 1)), _sell("40", "250", on=date(2021, 1, 1))]
+    assert net_intraday_offsets(txns) == txns

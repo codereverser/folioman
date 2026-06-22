@@ -16,6 +16,7 @@ from datetime import date
 from django.db.models import Q
 from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.corporate_actions import CorporateActionApplyEvent, apply_corporate_action_events
+from folioman_core.fifo import net_intraday_offsets
 from folioman_core.models.transaction import Transaction as CoreTransaction
 
 from folioman_app.mappers import to_core_security, to_core_transaction
@@ -92,7 +93,7 @@ def projected_transactions(
     if folio is not None:
         raw_qs = raw_qs.filter(folio=folio)
         events_qs = events_qs.filter(folio=folio)
-    raw = [to_core_transaction(t) for t in raw_qs]
+    raw = net_intraday_offsets([to_core_transaction(t) for t in raw_qs])
     return _replay(raw, events_qs, as_of)
 
 
@@ -135,6 +136,6 @@ def compute_ledger(
         events_qs = events_qs.filter(folio=folio)
         raw_qs = raw_qs.filter(folio=folio)
 
-    raw = [to_core_transaction(t) for t in raw_qs]
+    raw = net_intraday_offsets([to_core_transaction(t) for t in raw_qs])
     adjusted = _replay(raw, events_qs, as_of)
     return [t for t in adjusted if _same_isin(t.security, security)]
