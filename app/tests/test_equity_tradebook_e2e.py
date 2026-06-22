@@ -321,13 +321,11 @@ def test_golden_hdfc_merger_bonus_end_to_end(make_investor):
     status = SecurityIntegrityStatus.objects.get(investor=inv, security=hdfcbank_sec, folio=folio)
     assert status.status == "reconciled"
     assert status.units_from_transactions == Decimal("168")
-    from folioman_app.mappers import to_core_transaction
+    from folioman_app.services.projected_ledger import compute_ledger
     from folioman_core.fifo import apply_fifo
 
-    txns = [
-        to_core_transaction(t) for t in inv.transactions.filter(security=hdfcbank_sec, folio=folio)
-    ]
-    fifo = apply_fifo(txns)
+    # Trade rows stay as imported; the projection rebases + applies the bonus on read.
+    fifo = apply_fifo(compute_ledger(inv, hdfcbank_sec, folio=folio))
     assert fifo.balance == Decimal("168")
     assert fifo.invested.quantize(Decimal("0.01")) == Decimal("110000.00")
 
@@ -381,27 +379,29 @@ def test_golden_hdfc_manual_merger_preserves_cost_and_date(make_investor):
     status = SecurityIntegrityStatus.objects.get(investor=inv, security=hdfcbank_sec, folio=folio)
     assert status.status == "reconciled"
     assert status.units_from_transactions == Decimal("84")
-    assert not Transaction.objects.filter(investor=inv, security=hdfc_sec, folio=folio).exists()
+    # The as-traded HDFC buy stays exactly as imported (immutable); the projection rebases
+    # it onto HDFCBANK with the original cost and acquisition date.
+    assert Transaction.objects.filter(investor=inv, security=hdfc_sec, folio=folio).exists()
 
-    from folioman_app.mappers import to_core_transaction
+    from folioman_app.services.projected_ledger import compute_ledger
     from folioman_core.fifo import apply_fifo
 
-    txns = [
-        to_core_transaction(t) for t in inv.transactions.filter(security=hdfcbank_sec, folio=folio)
-    ]
-    fifo = apply_fifo(txns)
+    rows = compute_ledger(inv, hdfcbank_sec, folio=folio)
+    fifo = apply_fifo(rows)
     assert fifo.balance == Decimal("84")
     assert fifo.invested.quantize(Decimal("0.01")) == Decimal("110000.00")
-    buy = min(txns, key=lambda t: t.date)
-    assert buy.date == dt.date(2022, 6, 27)
+    # Original acquisition date preserved through the rebasing.
+    assert all(r.date == dt.date(2022, 6, 27) for r in rows if r.type.value == "buy")
 
-    # A zero-unit merger marker makes the conversion visible as a corporate action.
-    marker = Transaction.objects.filter(
-        investor=inv, security=hdfcbank_sec, folio=folio, transaction_type="merger"
+    # The conversion is visible as a corporate-action event on the log (the acquirer is
+    # the counterparty), not as a rewritten/marker trade row.
+    from folioman_app.models import AppliedCorporateAction
+
+    link = AppliedCorporateAction.objects.get(
+        investor=inv, security=hdfc_sec, folio=folio, kind="merger"
     )
-    assert marker.count() == 1
-    assert marker.first().units == Decimal("0")
-    assert marker.first().date == dt.date(2023, 7, 13)
+    assert link.counterparty_security_id == hdfcbank_sec.id
+    assert link.ex_date == dt.date(2023, 7, 13)
 
 
 def test_merger_with_odd_lot_settles_net_fraction_as_cash_in_lieu(make_investor):

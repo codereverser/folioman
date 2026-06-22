@@ -6,8 +6,8 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from folioman_app.mappers import to_core_transaction
 from folioman_app.models import (
+    AppliedCorporateAction,
     CorporateActionReference,
     Folio,
     ImportJob,
@@ -19,11 +19,12 @@ from folioman_app.services.corporate_actions import (
     apply_corporate_actions_to_folio,
     apply_suggested_corporate_actions,
 )
+from folioman_app.services.projected_ledger import compute_ledger
 from folioman_app.tasks.import_csv import process_csv
 from folioman_app.tasks.import_ecas import persist_ecas_statement
 from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.corporate_actions import CorporateActionApplyEvent
-from folioman_core.fifo import apply_fifo
+from folioman_core.fifo import apply_fifo, net_units_from_transactions
 from folioman_core.models import SecurityType, TransactionType
 from folioman_core.models import Transaction as CoreTransaction
 from folioman_core.models.cas import Depository, EcasAccountBlock, EcasHoldingLine, EcasStatement
@@ -140,7 +141,11 @@ def test_apply_bonus_idempotent_on_re_run(make_investor):
     apply_corporate_actions_to_folio(inv, folio, reference_ids=[ref.id])
     again = apply_corporate_actions_to_folio(inv, folio, reference_ids=[ref.id])
     assert again.get("skipped") == "already_applied"
-    assert inv.transactions.filter(folio=folio, transaction_type="bonus").count() == 1
+    # The bonus is recorded once in the event log; the trade rows are never rewritten.
+    assert (
+        AppliedCorporateAction.objects.filter(investor=inv, folio=folio, kind="bonus").count() == 1
+    )
+    assert not inv.transactions.filter(folio=folio, transaction_type="bonus").exists()
 
 
 def test_apply_merger_marks_pre_2016_acquisition_incomplete_on_persist(make_investor):
@@ -171,10 +176,15 @@ def test_apply_merger_marks_pre_2016_acquisition_incomplete_on_persist(make_inve
         )
     ]
     apply_corporate_actions_to_folio(inv, folio, events=events)
+    # The as-traded 2014 buy stays exactly as imported (never rewritten), but is flagged
+    # cost-basis incomplete (pre-window, unreliable) — so the merger projection, which
+    # only feeds complete rows to FIFO, carries no cost basis onto the acquirer.
+    old_sec = Security.objects.get(isin=old_isin)
+    old_buy = inv.transactions.get(security=old_sec, folio=folio, transaction_type="buy")
+    assert old_buy.date == dt.date(2014, 6, 1)
+    assert old_buy.cost_basis_complete is False
     new_sec = Security.objects.get(isin=new_isin)
-    txn = inv.transactions.get(security=new_sec, folio=folio, transaction_type="buy")
-    assert txn.date == dt.date(2014, 6, 1)
-    assert txn.cost_basis_complete is False
+    assert compute_ledger(inv, new_sec, folio=folio) == []
 
 
 def test_merger_persists_exact_cost_total_for_indivisible_ratio(make_investor):
@@ -210,23 +220,24 @@ def test_merger_persists_exact_cost_total_for_indivisible_ratio(make_investor):
     ]
     apply_corporate_actions_to_folio(inv, folio, events=events)
 
+    # The projection rebases the 30-unit lot onto the acquirer at 3:1, preserving the
+    # exact lot cost (the per-unit 1000/3 repeats, so only the total is exact).
     new_sec = Security.objects.get(isin=new_isin)
-    txn = inv.transactions.get(security=new_sec, folio=folio, transaction_type="buy")
-    assert txn.units == Decimal("90")
-    assert txn.cost_total == Decimal("30000")  # exact total persisted
+    rows = compute_ledger(inv, new_sec, folio=folio)
+    buy = next(r for r in rows if r.type is TransactionType.BUY)
+    assert buy.units == Decimal("90")
+    assert buy.cost_total == Decimal("30000")  # exact total preserved through projection
 
-    # Replay the persisted row as valuation/tax do, then sell the whole position:
-    # the gain is exact (45000 - 30000), with no 6dp per-unit drift.
-    core = to_core_transaction(txn)
+    # Sell the whole projected position: the gain is exact (45000 - 30000), no 6dp drift.
     sell = CoreTransaction(
-        security=core.security,
+        security=buy.security,
         date=dt.date(2022, 1, 1),
         type=TransactionType.SELL,
         units=Decimal("90"),
         nav_or_price=Decimal("500"),
-        source=core.source,
+        source=buy.source,
     )
-    assert apply_fifo([core, sell]).pnl == Decimal("15000")
+    assert apply_fifo([*rows, sell]).pnl == Decimal("15000")
 
 
 def test_apply_merger_and_bonus_events_hdfcbank(make_investor):
@@ -302,9 +313,14 @@ def test_apply_merger_and_bonus_events_hdfcbank(make_investor):
     status = SecurityIntegrityStatus.objects.get(investor=inv, security=hdfcbank_sec, folio=folio)
     assert status.status == "reconciled"
     assert status.units_from_transactions == Decimal("168")
-    # Original HDFC row should now point at HDFCBANK.
-    assert not inv.transactions.filter(security=hdfc_sec, folio=folio).exists()
-    assert inv.transactions.filter(security=hdfcbank_sec, folio=folio).count() >= 2
+    # The as-traded HDFC buy stays exactly as imported (immutable ledger); the projection
+    # rebases it onto HDFCBANK and applies the bonus. 50 * 42/25 = 84, doubled = 168.
+    assert inv.transactions.filter(security=hdfc_sec, folio=folio).count() == 1
+    assert not inv.transactions.filter(security=hdfcbank_sec, folio=folio).exists()
+    assert net_units_from_transactions(compute_ledger(inv, hdfc_sec, folio=folio)) == Decimal("0")
+    assert net_units_from_transactions(compute_ledger(inv, hdfcbank_sec, folio=folio)) == Decimal(
+        "168"
+    )
 
 
 def test_fractional_entitlement_settled_against_ecas_whole_holding(make_investor):

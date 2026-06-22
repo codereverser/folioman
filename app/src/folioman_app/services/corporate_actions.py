@@ -9,17 +9,23 @@ from decimal import Decimal
 from django.db import transaction as db_transaction
 from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.corporate_actions import (
+    COST_BASIS_RELIABLE_SINCE,
     CorporateActionApplyEvent,
-    apply_corporate_action_events,
-    cost_basis_complete_for_acquisition,
 )
 from folioman_core.fifo import net_units_from_transactions, open_lots_asof
 from folioman_core.models import HoldingSource, SecurityType
 from folioman_core.models.security import Security as CoreSecurity
 from folioman_core.models.transaction import TransactionSource, TransactionType
 
-from folioman_app.mappers import to_core_security, to_core_transaction
-from folioman_app.models import CorporateActionReference, Folio, Investor, Security, Transaction
+from folioman_app.mappers import to_core_security
+from folioman_app.models import (
+    AppliedCorporateAction,
+    CorporateActionReference,
+    Folio,
+    Investor,
+    Security,
+    Transaction,
+)
 from folioman_app.services.projected_ledger import compute_ledger
 from folioman_app.tasks._upsert import upsert_security
 from folioman_app.tasks.reconcile import reconcile_security
@@ -70,101 +76,80 @@ def _event_from_reference(
     )
 
 
-def _securities_for_events(events: Sequence[CorporateActionApplyEvent]) -> set[str]:
-    isins: set[str] = set()
-    for event in events:
-        for sec in (
-            event.security,
-            event.merger_old_security,
-            event.merger_new_security,
-        ):
-            if sec is not None and sec.isin:
-                isins.add(sec.isin)
-    return isins
-
-
-def _cost_basis_complete_for_core(core) -> bool:
-    """Mark acquisitions before the reliable window as display-only for cost basis."""
-    if core.type in (
-        TransactionType.BUY,
-        TransactionType.BONUS,
-        TransactionType.TRANSFER_IN,
-    ):
-        return cost_basis_complete_for_acquisition(core.date)
-    return True
-
-
-def _persist_applied_ledger(
+def _persist_applied_events(
     investor: Investor,
     folio: Folio,
-    result: list,
-) -> tuple[int, int]:
-    """Write core apply output back to ORM rows. Returns (updated, created)."""
-    from folioman_core.corporate_actions import _stable_source_ref
+    events: Sequence[CorporateActionApplyEvent],
+) -> tuple[int, set[int]]:
+    """Record each event in the corporate-action log (never rewriting trade rows).
 
-    updated = 0
+    The as-traded ``Transaction`` rows stay exactly as imported; the read-time
+    projection (``compute_ledger``) replays these events to derive the split-scaled /
+    merged / bonus view. Returns (events persisted, affected security ids). A merger's
+    acquirer is upserted so it exists as a security to reconcile and project onto.
+    """
     created = 0
-    for core in result:
-        if core.ledger_id:
-            orm = Transaction.objects.filter(
-                pk=core.ledger_id, investor=investor, folio=folio
-            ).first()
-            if orm is None:
-                continue
-            sec = upsert_security(core.security)
-            fields: list[str] = []
-            if orm.security_id != sec.id:
-                orm.security = sec
-                fields.append("security")
-            if orm.units != core.units:
-                orm.units = core.units
-                fields.append("units")
-            if orm.nav_or_price != core.nav_or_price:
-                orm.nav_or_price = core.nav_or_price
-                fields.append("nav_or_price")
-            if orm.cost_total != core.cost_total:
-                # Exact lot cost preserved by the CA; per-unit above is display-only.
-                orm.cost_total = core.cost_total
-                fields.append("cost_total")
-            if orm.amount != core.amount:
-                orm.amount = core.amount
-                fields.append("amount")
-            complete = _cost_basis_complete_for_core(core)
-            if orm.cost_basis_complete != complete:
-                orm.cost_basis_complete = complete
-                fields.append("cost_basis_complete")
-            if fields:
-                orm.save(update_fields=[*fields, "updated_at"])
-                updated += 1
-            continue
-
-        source_ref = core.source_ref or _stable_source_ref(core)
-        if Transaction.objects.filter(
-            investor=investor, folio=folio, source_ref=source_ref
-        ).exists():
-            continue
-
-        sec = upsert_security(core.security)
-        Transaction.objects.create(
+    affected: set[int] = set()
+    for event in events:
+        if event.kind is CorpActionType.MERGER:
+            # The affected security merges away (``security`` on the log row); the
+            # acquirer is the counterparty the lots rebase onto.
+            old = event.merger_old_security
+            acquirer = upsert_security(event.merger_new_security or event.security)
+            security = Security.objects.filter(isin=old.isin).first() or upsert_security(old)
+            counterparty = acquirer
+            affected.add(acquirer.id)
+        else:
+            security = Security.objects.filter(isin=event.security.isin).first() or upsert_security(
+                event.security
+            )
+            counterparty = None
+        affected.add(security.id)
+        ratio = event.bonus_ratio
+        _, was_created = AppliedCorporateAction.objects.update_or_create(
             investor=investor,
-            security=sec,
             folio=folio,
-            date=core.date,
-            transaction_type=core.type.value,
-            units=core.units,
-            nav_or_price=core.nav_or_price,
-            amount=core.amount,
-            currency=core.currency,
-            fees=core.fees,
-            stamp_duty=core.stamp_duty,
-            brokerage=core.brokerage,
-            cost_total=core.cost_total,
-            source=core.source.value,
-            source_ref=source_ref,
-            cost_basis_complete=_cost_basis_complete_for_core(core),
+            security=security,
+            source_ref=event.source_ref,
+            defaults={
+                "counterparty_security": counterparty,
+                "kind": event.kind.value,
+                "ex_date": event.ex_date,
+                "unit_multiplier": event.unit_multiplier,
+                "bonus_ratio_a": ratio[0] if ratio else None,
+                "bonus_ratio_b": ratio[1] if ratio else None,
+                "merger_ratio": event.merger_ratio,
+                "units": event.rights_units,
+                "price": event.rights_price,
+                "dividend_per_share": event.dividend_per_share,
+            },
         )
-        created += 1
-    return updated, created
+        created += 1 if was_created else 0
+    return created, affected
+
+
+def _flag_pre2016_cost_basis(investor: Investor, folio: Folio, security_ids: set[int]) -> None:
+    """Mark pre-window equity acquisitions as cost-basis-incomplete (display only).
+
+    Tradebook / corporate-action feeds are reliable for cost basis only from
+    ``COST_BASIS_RELIABLE_SINCE``; an earlier acquisition's cost is untrustworthy, so it
+    is kept for units but excluded from cost basis (the projection only feeds complete
+    rows to FIFO). This is a reliability annotation, not a trade rewrite — units and
+    price are untouched. Applied to the securities a corporate action just touched.
+    """
+    Transaction.objects.filter(
+        investor=investor,
+        folio=folio,
+        security_id__in=security_ids,
+        security__security_type=SecurityType.EQUITY.value,
+        transaction_type__in=[
+            TransactionType.BUY.value,
+            TransactionType.BONUS.value,
+            TransactionType.TRANSFER_IN.value,
+        ],
+        date__lt=COST_BASIS_RELIABLE_SINCE,
+        cost_basis_complete=True,
+    ).update(cost_basis_complete=False)
 
 
 def _filter_unapplied_events(
@@ -172,20 +157,15 @@ def _filter_unapplied_events(
     folio: Folio,
     events: list[CorporateActionApplyEvent],
 ) -> list[CorporateActionApplyEvent]:
-    """Drop events whose ``source_ref`` (or ``ca-ref:{id}``) is already on the ledger."""
+    """Drop events whose ``source_ref`` is already recorded in the event log."""
     existing = set(
-        investor.transactions.filter(folio=folio)
+        AppliedCorporateAction.objects.filter(investor=investor, folio=folio)
         .exclude(source_ref="")
         .values_list("source_ref", flat=True)
     )
     out: list[CorporateActionApplyEvent] = []
     for event in events:
-        ref = event.source_ref
-        if not ref and event.kind in {CorpActionType.BONUS, CorpActionType.SPLIT}:
-            # Stable key mirrors _stable_source_ref for pre-persist idempotency checks.
-            ident = event.security.isin or event.security.symbol or event.security.name
-            ref = f"ca:{event.kind.value}:{event.ex_date}:{ident}"
-        if ref and ref in existing:
+        if event.source_ref and event.source_ref in existing:
             continue
         out.append(event)
     return out
@@ -287,29 +267,21 @@ def apply_corporate_actions_to_folio(
             "skipped": "already_applied",
         }
 
-    isins = _securities_for_events(all_events)
-    orm_txns = list(
-        investor.transactions.filter(folio=folio, security__isin__in=isins).select_related(
-            "security", "folio"
-        )
-    )
-    cores = [to_core_transaction(t) for t in orm_txns]
-    result = apply_corporate_action_events(cores, all_events)
-    updated, created = _persist_applied_ledger(investor, folio, result)
+    # Record the events; the trade rows stay as imported and the projection applies
+    # them on read. Flag any pre-window acquisitions the events touch as cost-basis
+    # incomplete before anything reads the projection.
+    events_written, affected_ids = _persist_applied_events(investor, folio, all_events)
+    _flag_pre2016_cost_basis(investor, folio, affected_ids)
 
-    affected_ids: set[int] = set()
-    for isin in isins:
-        sec = Security.objects.filter(isin=isin).first()
-        if sec is not None:
-            # Whole the ledger against the eCAS anchor before reconciling, so a CA
-            # fractional remainder doesn't read as a mismatch.
-            _settle_fractional_entitlement(investor, folio, sec)
-            reconcile_security(investor, sec)
-            affected_ids.add(sec.id)
+    for sec in Security.objects.filter(id__in=affected_ids):
+        # Whole the ledger against the eCAS anchor before reconciling, so a CA
+        # fractional remainder doesn't read as a mismatch.
+        _settle_fractional_entitlement(investor, folio, sec)
+        reconcile_security(investor, sec)
 
     return {
-        "updated": updated,
-        "created": created,
+        "updated": 0,
+        "created": events_written,
         "events_applied": len(all_events),
         "security_ids": sorted(affected_ids),
     }

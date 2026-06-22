@@ -324,7 +324,13 @@ def test_apply_manual_merger_hdfc_rebases_onto_acquirer(client, make_investor):
     assert resp.status_code == 200, resp.content
     body = resp.json()
     assert body["integrity"]["security"]["isin"] == hdfcbank_isin
-    assert not Transaction.objects.filter(investor=inv, security=hdfc_sec, folio=folio).exists()
+    # The as-traded HDFC buy stays exactly as imported; the projection rebases it onto
+    # HDFCBANK (so HDFC nets to 0), never rewriting the trade row.
+    assert Transaction.objects.filter(investor=inv, security=hdfc_sec, folio=folio).exists()
+    from folioman_app.services.projected_ledger import compute_ledger
+    from folioman_core.fifo import net_units_from_transactions
+
+    assert net_units_from_transactions(compute_ledger(inv, hdfc_sec, folio=folio)) == Decimal("0")
 
     bank_status = SecurityIntegrityStatus.objects.get(
         investor=inv, security=hdfcbank_sec, folio=folio
