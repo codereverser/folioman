@@ -177,4 +177,36 @@ describe('integrity store', () => {
     expect(store.rowsFor(10)[0].status).toBe('reconciled')
     expect(store.rowsFor(10)[0].issues).toEqual([])
   })
+
+  it('records multiple opening lots (demerger receipt) and updates the row', async () => {
+    mockGet.mockResolvedValue({
+      data: [statusRow({ status: 'snapshot_only', tax_safe: false })],
+    } as never)
+    mockPost.mockResolvedValue({
+      data: {
+        created: 4,
+        net_units: '0',
+        integrity: statusRow({ status: 'reconciled', tax_safe: true, issues: [] }),
+      },
+    } as never)
+
+    const store = useIntegrityStore()
+    await store.load(10)
+    const ok = await store.recordOpeningLots(10, 1, 7, {
+      classification: 'demerger_result',
+      lots: [
+        { date: '2021-11-10', units: '15', price: '45.84' },
+        { date: '2022-03-04', units: '10', price: '37.82' },
+      ],
+    })
+    expect(ok).toBe(true)
+    const body = (
+      mockPost.mock.calls[0][1] as {
+        body: { lots: { date: string; units: number; price?: number }[] }
+      }
+    ).body
+    expect(body.lots).toHaveLength(2)
+    expect(body.lots[0]).toEqual({ date: '2021-11-10', units: 15, price: 45.84 })
+    expect(store.rowsFor(10)[0].status).toBe('reconciled')
+  })
 })

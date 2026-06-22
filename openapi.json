@@ -1960,6 +1960,49 @@
         "title": "NavSecurityFreshnessOut",
         "type": "object"
       },
+      "OpeningLotRow": {
+        "description": "One acquisition lot \u2014 a row from the broker's per-lot demerger breakdown.",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Units"
+          }
+        },
+        "required": [
+          "date",
+          "units"
+        ],
+        "title": "OpeningLotRow",
+        "type": "object"
+      },
       "RecordOpeningLotIn": {
         "description": "Classified opening lot for an eCAS-only equity holding.",
         "properties": {
@@ -2045,6 +2088,61 @@
           "integrity"
         ],
         "title": "RecordOpeningLotOut",
+        "type": "object"
+      },
+      "RecordOpeningLotsIn": {
+        "description": "Several opening lots at once \u2014 a demerger receipt's per-lot allocation\n(date, qty, allocated cost), transcribed from the broker's holding breakdown.",
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "cost_basis_unknown": {
+            "default": false,
+            "title": "Cost Basis Unknown",
+            "type": "boolean"
+          },
+          "lots": {
+            "items": {
+              "$ref": "#/components/schemas/OpeningLotRow"
+            },
+            "title": "Lots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "classification",
+          "lots"
+        ],
+        "title": "RecordOpeningLotsIn",
+        "type": "object"
+      },
+      "RecordOpeningLotsOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "integrity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntegrityStatusOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "net_units": {
+            "title": "Net Units",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created",
+          "net_units"
+        ],
+        "title": "RecordOpeningLotsOut",
         "type": "object"
       },
       "RosterAggregateOut": {
@@ -4691,6 +4789,67 @@
           }
         },
         "summary": "Record Opening Lot Entry",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lots": {
+      "post": {
+        "description": "Record several opening lots (a demerger receipt's per-lot allocation) and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_record_opening_lots_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordOpeningLotsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordOpeningLotsOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Record Opening Lots Entry",
         "tags": [
           "integrity"
         ]

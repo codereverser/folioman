@@ -643,6 +643,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Opening Lots Entry
+         * @description Record several opening lots (a demerger receipt's per-lot allocation) and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_record_opening_lots_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/unacknowledge": {
         parameters: {
             query?: never;
@@ -1697,6 +1717,21 @@ export interface components {
             status: string;
         };
         /**
+         * OpeningLotRow
+         * @description One acquisition lot — a row from the broker's per-lot demerger breakdown.
+         */
+        OpeningLotRow: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Price */
+            price?: number | string | null;
+            /** Units */
+            units: number | string;
+        };
+        /**
          * RecordOpeningLotIn
          * @description Classified opening lot for an eCAS-only equity holding.
          */
@@ -1729,6 +1764,30 @@ export interface components {
             integrity: components["schemas"]["IntegrityStatusOut"];
             /** Units */
             units: string;
+        };
+        /**
+         * RecordOpeningLotsIn
+         * @description Several opening lots at once — a demerger receipt's per-lot allocation
+         *     (date, qty, allocated cost), transcribed from the broker's holding breakdown.
+         */
+        RecordOpeningLotsIn: {
+            /** Classification */
+            classification: string;
+            /**
+             * Cost Basis Unknown
+             * @default false
+             */
+            cost_basis_unknown: boolean;
+            /** Lots */
+            lots: components["schemas"]["OpeningLotRow"][];
+        };
+        /** RecordOpeningLotsOut */
+        RecordOpeningLotsOut: {
+            /** Created */
+            created: number;
+            integrity?: components["schemas"]["IntegrityStatusOut"] | null;
+            /** Net Units */
+            net_units: string;
         };
         /**
          * RosterAggregateOut
@@ -3094,6 +3153,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecordOpeningLotOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_record_opening_lots_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordOpeningLotsIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordOpeningLotsOut"];
                 };
             };
         };

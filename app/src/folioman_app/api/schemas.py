@@ -507,6 +507,30 @@ class RecordOpeningLotOut(Schema):
     integrity: IntegrityStatusOut
 
 
+class OpeningLotRow(Schema):
+    """One acquisition lot — a row from the broker's per-lot demerger breakdown."""
+
+    date: date
+    units: Decimal
+    price: Decimal | None = None
+
+
+class RecordOpeningLotsIn(Schema):
+    """Several opening lots at once — a demerger receipt's per-lot allocation
+    (date, qty, allocated cost), transcribed from the broker's holding breakdown."""
+
+    classification: str  # ipo_allotment | transfer_in | demerger_result
+    lots: list[OpeningLotRow]
+    cost_basis_unknown: bool = False
+
+
+class RecordOpeningLotsOut(Schema):
+    created: int
+    net_units: str
+    # A fully-sold child reconciles to net 0 and carries no surviving status row.
+    integrity: IntegrityStatusOut | None = None
+
+
 class IdentityRemapIn(Schema):
     """Re-point ledger rows from the current security to another ISIN."""
 

@@ -288,6 +288,50 @@ export const useIntegrityStore = defineStore('integrity', () => {
     }
   }
 
+  async function recordOpeningLots(
+    investorId: number,
+    securityId: number,
+    folioId: number,
+    body: {
+      classification: string
+      lots: { date: string; units: string; price?: string }[]
+      cost_basis_unknown?: boolean
+    },
+  ): Promise<boolean> {
+    recordingOpeningLot.value = true
+    error.value = null
+    try {
+      const { data, error: apiError } = await api.POST(
+        '/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lots',
+        {
+          params: {
+            path: { investor_id: investorId, security_id: securityId, folio_id: folioId },
+          },
+          body: {
+            classification: body.classification,
+            lots: body.lots.map((l) => ({
+              date: l.date,
+              units: Number(l.units),
+              price: l.price ? Number(l.price) : undefined,
+            })),
+            cost_basis_unknown: body.cost_basis_unknown ?? false,
+          },
+        },
+      )
+      if (apiError) throw new Error('record opening lots failed')
+      // A fully-sold child reconciles to net 0 and may drop its status row — refetch
+      // rather than patch. A still-held child returns the updated row.
+      if (data?.integrity) patchRow(investorId, data.integrity)
+      else await load(investorId, { force: true })
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'unknown error'
+      return false
+    } finally {
+      recordingOpeningLot.value = false
+    }
+  }
+
   async function applyIdentityRemap(
     investorId: number,
     securityId: number,
@@ -391,6 +435,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
     applyCorporateAction,
     applyManualCorporateAction,
     recordOpeningLot,
+    recordOpeningLots,
     applyIdentityRemap,
     clear,
   }

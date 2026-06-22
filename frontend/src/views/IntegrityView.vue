@@ -219,12 +219,23 @@ async function applyCorporateActionFor(row: IntegrityRow): Promise<void> {
 
 const openingLotVisible = ref(false)
 const openingLotRow = ref<IntegrityRow | null>(null)
+interface OpeningLotEntry {
+  date: string
+  units: string
+  price: string
+}
 const openingLotForm = ref({
   classification: 'transfer_in',
   date: '',
   price: '',
   costBasisUnknown: false,
+  // Multi-lot entry for a demerger receipt — one row per lot on the broker's breakdown.
+  lots: [] as OpeningLotEntry[],
 })
+
+// A demerger receipt arrives as several lots (the broker allocates a date + cost to
+// each), so its entry is a multi-row grid; other classifications are a single lot.
+const isMultiLot = computed(() => openingLotForm.value.classification === 'demerger_result')
 
 function openOpeningLotDialog(row: IntegrityRow, classification: string = 'transfer_in'): void {
   openingLotRow.value = row
@@ -233,19 +244,52 @@ function openOpeningLotDialog(row: IntegrityRow, classification: string = 'trans
     date: row.snapshotAsOf ?? '',
     price: '',
     costBasisUnknown: false,
+    lots: classification === 'demerger_result' ? [{ date: '', units: '', price: '' }] : [],
   }
   openingLotVisible.value = true
 }
 
+function addOpeningLot(): void {
+  openingLotForm.value.lots.push({ date: '', units: '', price: '' })
+}
+
+function removeOpeningLot(index: number): void {
+  openingLotForm.value.lots.splice(index, 1)
+}
+
+const openingLotUnitsTotal = computed(() =>
+  openingLotForm.value.lots.reduce((sum, l) => sum + (Number(l.units) || 0), 0),
+)
+
+const openingLotValid = computed(() => {
+  if (isMultiLot.value) {
+    return (
+      openingLotForm.value.lots.length > 0 &&
+      openingLotForm.value.lots.every((l) => l.date && Number(l.units) > 0)
+    )
+  }
+  return !!openingLotForm.value.date
+})
+
 async function submitOpeningLot(): Promise<void> {
   const row = openingLotRow.value
-  if (!row || !openingLotForm.value.date) return
-  const ok = await integrity.recordOpeningLot(investorId.value, row.securityId, row.folioId, {
-    classification: openingLotForm.value.classification,
-    date: openingLotForm.value.date,
-    price: openingLotForm.value.price || undefined,
-    cost_basis_unknown: openingLotForm.value.costBasisUnknown,
-  })
+  if (!row || !openingLotValid.value) return
+  const ok = isMultiLot.value
+    ? await integrity.recordOpeningLots(investorId.value, row.securityId, row.folioId, {
+        classification: openingLotForm.value.classification,
+        lots: openingLotForm.value.lots.map((l) => ({
+          date: l.date,
+          units: l.units,
+          price: l.price || undefined,
+        })),
+        cost_basis_unknown: openingLotForm.value.costBasisUnknown,
+      })
+    : await integrity.recordOpeningLot(investorId.value, row.securityId, row.folioId, {
+        classification: openingLotForm.value.classification,
+        date: openingLotForm.value.date,
+        price: openingLotForm.value.price || undefined,
+        cost_basis_unknown: openingLotForm.value.costBasisUnknown,
+      })
   if (ok) {
     openingLotVisible.value = false
     openingLotRow.value = null
@@ -650,18 +694,47 @@ function back(): void {
             option-value="value"
           />
         </label>
-        <label>
-          Acquisition date
-          <InputText v-model="openingLotForm.date" type="date" />
-        </label>
-        <label>
-          Cost per unit (optional)
-          <InputText
-            v-model="openingLotForm.price"
-            inputmode="decimal"
-            :disabled="openingLotForm.costBasisUnknown"
-          />
-        </label>
+        <template v-if="!isMultiLot">
+          <label>
+            Acquisition date
+            <InputText v-model="openingLotForm.date" type="date" />
+          </label>
+          <label>
+            Cost per unit (optional)
+            <InputText
+              v-model="openingLotForm.price"
+              inputmode="decimal"
+              :disabled="openingLotForm.costBasisUnknown"
+            />
+          </label>
+        </template>
+        <template v-else>
+          <p class="dialog-copy">
+            Enter one row per lot from your broker's holding breakdown — the inherited
+            acquisition date, quantity, and allocated cost per unit.
+          </p>
+          <div v-for="(lot, i) in openingLotForm.lots" :key="i" class="lot-row">
+            <InputText v-model="lot.date" type="date" :disabled="false" />
+            <InputText v-model="lot.units" inputmode="decimal" placeholder="qty" />
+            <InputText
+              v-model="lot.price"
+              inputmode="decimal"
+              placeholder="cost/unit"
+              :disabled="openingLotForm.costBasisUnknown"
+            />
+            <Button
+              icon="pi pi-times"
+              text
+              rounded
+              :disabled="openingLotForm.lots.length === 1"
+              @click="removeOpeningLot(i)"
+            />
+          </div>
+          <div class="lot-foot">
+            <Button label="Add lot" icon="pi pi-plus" text size="small" @click="addOpeningLot" />
+            <span class="lot-total">Total: {{ openingLotUnitsTotal }} units</span>
+          </div>
+        </template>
         <label class="check-row">
           <Checkbox v-model="openingLotForm.costBasisUnknown" :binary="true" />
           Cost basis unknown
@@ -672,7 +745,7 @@ function back(): void {
         <Button
           label="Save"
           :loading="integrity.recordingOpeningLot"
-          :disabled="!openingLotForm.date"
+          :disabled="!openingLotValid"
           @click="submitOpeningLot"
         />
       </template>
@@ -996,5 +1069,20 @@ function back(): void {
   flex-direction: row !important;
   align-items: center;
   gap: 0.5rem !important;
+}
+.lot-row {
+  display: grid;
+  grid-template-columns: 1fr 0.7fr 0.9fr auto;
+  gap: 0.4rem;
+  align-items: center;
+}
+.lot-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.lot-total {
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
 }
 </style>
