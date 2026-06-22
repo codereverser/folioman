@@ -298,7 +298,13 @@ async function submitOpeningLot(): Promise<void> {
   if (ok) {
     openingLotVisible.value = false
     openingLotRow.value = null
-    ui.notify({ severity: 'success', summary: 'Opening lot recorded' })
+    const parent = integrity.suggestedParent
+    ui.notify({
+      severity: 'success',
+      summary: 'Opening lot recorded',
+      // Close the loop on a demerger: tell the user the parent's cost basis was adjusted.
+      detail: parent ? `Linked to ${parent.name} — its cost basis was reduced.` : undefined,
+    })
   } else {
     ui.notify({
       severity: 'error',

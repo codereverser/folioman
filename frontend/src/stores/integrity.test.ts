@@ -187,6 +187,7 @@ describe('integrity store', () => {
         created: 4,
         net_units: '0',
         integrity: statusRow({ status: 'reconciled', tax_safe: true, issues: [] }),
+        suggested_parent: { id: 42, name: 'Hindustan Unilever', isin: 'INE030A01027' },
       },
     } as never)
 
@@ -194,6 +195,7 @@ describe('integrity store', () => {
     await store.load(10)
     const ok = await store.recordOpeningLots(10, 1, 7, {
       classification: 'demerger_result',
+      demerger_date: '2025-12-01',
       lots: [
         { date: '2021-11-10', units: '15', price: '45.84' },
         { date: '2022-03-04', units: '10', price: '37.82' },
@@ -202,11 +204,14 @@ describe('integrity store', () => {
     expect(ok).toBe(true)
     const body = (
       mockPost.mock.calls[0][1] as {
-        body: { lots: { date: string; units: number; price?: number }[] }
+        body: { lots: { date: string; units: number; price?: number }[]; demerger_date?: string }
       }
     ).body
     expect(body.lots).toHaveLength(2)
     expect(body.lots[0]).toEqual({ date: '2021-11-10', units: 15, price: 45.84 })
+    expect(body.demerger_date).toBe('2025-12-01')
     expect(store.rowsFor(10)[0].status).toBe('reconciled')
+    // The matched parent is surfaced so the UI can report the cost-basis adjustment.
+    expect(store.suggestedParent?.name).toBe('Hindustan Unilever')
   })
 })

@@ -80,6 +80,9 @@ export const useIntegrityStore = defineStore('integrity', () => {
   const recordingOpeningLot = ref(false)
   const applyingIdentityRemap = ref(false)
   const error = ref<string | null>(null)
+  // The parent a demerger receipt was just linked to (its cost basis was reduced),
+  // surfaced so the UI can confirm what happened to the parent. Null when none matched.
+  const suggestedParent = ref<{ id: number; name: string; isin: string } | null>(null)
 
   function rowsFor(investorId: number): IntegrityRow[] {
     return byInvestor.value[investorId] ?? []
@@ -301,6 +304,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
   ): Promise<boolean> {
     recordingOpeningLot.value = true
     error.value = null
+    suggestedParent.value = null
     try {
       const { data, error: apiError } = await api.POST(
         '/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lots',
@@ -321,6 +325,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
         },
       )
       if (apiError) throw new Error('record opening lots failed')
+      suggestedParent.value = data?.suggested_parent ?? null
       // A fully-sold child reconciles to net 0 and may drop its status row — refetch
       // rather than patch. A still-held child returns the updated row.
       if (data?.integrity) patchRow(investorId, data.integrity)
@@ -425,6 +430,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
     recordingOpeningLot,
     applyingIdentityRemap,
     error,
+    suggestedParent,
     rowsFor,
     rollupFor,
     securitiesFor,
