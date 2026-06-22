@@ -7,7 +7,9 @@ from decimal import Decimal
 
 import pytest
 from folioman_app.models import (
+    AppliedCorporateAction,
     CorporateActionReference,
+    Folio,
     NAVHistory,
     PartialBlock,
     Security,
@@ -19,13 +21,16 @@ from folioman_app.services.corporate_actions import (
     apply_corporate_actions_to_folio,
     apply_manual_corporate_action,
 )
-from folioman_app.services.opening_lots import record_opening_lot
+from folioman_app.services.opening_lots import record_opening_lot, record_opening_lots
+from folioman_app.services.projected_ledger import compute_ledger, demerger_reductions
+from folioman_app.services.tax_export import build_capital_gains
 from folioman_app.tasks import valuation_jobs
 from folioman_app.tasks.import_csv import process_csv
 from folioman_app.tasks.import_ecas import persist_ecas_statement
 from folioman_app.tasks.reconcile import reconcile_security_folio
 from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.corporate_actions import CorporateActionApplyEvent
+from folioman_core.fifo import apply_fifo
 from folioman_core.models import SecurityType
 from folioman_core.models.cas import Depository, EcasAccountBlock, EcasHoldingLine, EcasStatement
 from folioman_core.models.investor import Folio as CoreFolio
@@ -625,3 +630,68 @@ def test_tradebook_import_enters_day_wise_trend(make_investor):
     # 50 HDFC @ 2200 on 2022-06-27
     assert vals[dt.date(2022, 6, 27)] == Decimal("110000")
     assert vals[dt.date(2022, 6, 28)] == Decimal("110500")  # 50 * 2210
+
+
+_DEMERGER_HEADER = (
+    "security_type,name,symbol,isin,date,transaction_type,units,price,folio_number,broker\n"
+)
+
+
+def test_demerger_end_to_end_through_event_path(make_investor):
+    """Import parent (with a pre-demerger sale) + a sold-off child, resolve the demerger
+    receipt, and confirm — through the event path, no trade row rewritten — that the
+    parent's pre-demerger sale keeps full basis, the held lot sheds the child's cost, and
+    the child's orphan sale becomes taxable on the inherited basis."""
+    inv = make_investor()
+    parent_isin = "INE111A01011"
+    child_isin = "INE222B01012"
+    demat = _DEFAULT_DEMAT
+    rows = (
+        # Parent: 100 bought, 60 sold pre-demerger (FY21-22), 40 left held.
+        f"equity,Parent Co,PARENT,{parent_isin},2018-06-01,buy,100,100,{demat},ZERODHA\n"
+        f"equity,Parent Co,PARENT,{parent_isin},2021-06-01,sell,60,200,{demat},ZERODHA\n"
+        # Child: received at the demerger, later sold (FY23-24) — only an orphan sell on import.
+        f"equity,Child Co,CHILD,{child_isin},2023-06-01,sell,40,50,{demat},ZERODHA\n"
+    )
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_DEMERGER_HEADER + rows).encode(), "")
+
+    parent = Security.objects.get(isin=parent_isin)
+    child = Security.objects.get(isin=child_isin)
+    folio = Folio.objects.get(investor=inv, number=demat)
+
+    # Resolve the child receipt: 40 units inherited from the 2018-06-01 parent lot at an
+    # allocated 10/unit; demerger ex-date 2022-06-01. Auto-matches the parent (open 40 on
+    # that date) and records the link + cost reduction as events.
+    summary = record_opening_lots(
+        inv,
+        folio,
+        child,
+        kind=OpeningLotKind.DEMERGER_RESULT,
+        lots=[{"lot_date": dt.date(2018, 6, 1), "units": Decimal("40"), "price": Decimal("10")}],
+        demerger_date=dt.date(2022, 6, 1),
+    )
+    assert summary["suggested_parent"]["isin"] == parent_isin
+
+    # The reduction is an event; no trade row was rewritten (parent still has exactly its
+    # two imported rows).
+    assert AppliedCorporateAction.objects.filter(
+        investor=inv, security=parent, kind="demerger"
+    ).exists()
+    assert inv.transactions.filter(security=parent, folio=folio).count() == 2
+
+    # Pre-demerger parent sale (FY21-22) keeps FULL basis: 60 * (200 - 100) = 6000.
+    cg_2122 = build_capital_gains(inv, "2021-22", include_unreconciled=True)
+    parent_rows = [r for r in cg_2122["rows"] if r["isin"] == parent_isin]
+    assert sum(r["gain"] for r in parent_rows) == Decimal("6000.00")
+
+    # Child orphan sale (FY23-24) now taxable on the inherited basis: 40 * (50 - 10) = 1600.
+    cg_2324 = build_capital_gains(inv, "2023-24", include_unreconciled=True)
+    child_rows = [r for r in cg_2324["rows"] if r["isin"] == child_isin]
+    assert sum(r["gain"] for r in child_rows) == Decimal("1600.00")
+
+    # Parent's held 40 shed the child's cost at the ex-date (a FIFO-time reduction, so the
+    # projected rows are unchanged): 40*100 - 40*10 = 3600 (was 4000).
+    reductions = demerger_reductions(inv).get(parent_isin, ())
+    fifo = apply_fifo(compute_ledger(inv, parent, folio=folio), demerger_reductions=reductions)
+    assert fifo.invested == Decimal("3600")
