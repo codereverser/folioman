@@ -2167,6 +2167,29 @@
         "title": "RecordOpeningLotsOut",
         "type": "object"
       },
+      "RemoveOpeningLotOut": {
+        "properties": {
+          "integrity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntegrityStatusOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "title": "RemoveOpeningLotOut",
+        "type": "object"
+      },
       "RosterAggregateOut": {
         "description": "Advisor-wide roster header (net worth + counts + integrity roll-up) plus a\nlean per-investor row for the list \u2014 one request for the whole landing page.",
         "properties": {
@@ -4896,6 +4919,57 @@
           }
         },
         "summary": "Record Opening Lots Entry",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/remove-opening-lot": {
+      "post": {
+        "description": "Undo a recorded opening lot (and any demerger link it carried) and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_remove_opening_lot_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveOpeningLotOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Remove Opening Lot Entry",
         "tags": [
           "integrity"
         ]

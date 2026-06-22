@@ -278,3 +278,52 @@ def record_opening_lots(
         ]
     )
     return {"created": created, "net_units": str(net), "suggested_parent": suggested_parent}
+
+
+@db_transaction.atomic
+def remove_opening_lots(investor: Investor, folio: Folio, security: Security) -> dict:
+    """Undo a recorded opening lot for ``(security, folio)`` and re-reconcile.
+
+    Deletes every opening-lot row (single or multi-lot) for the holding. If the lots were
+    a demerger receipt, the parent cost-reduction link is removed too and the parent is
+    re-reconciled, so the parent's basis returns to its pre-receipt value. Raises if there
+    is nothing to remove.
+    """
+    base_ref = _opening_lot_source_ref(folio.id, security.id)
+    lots = Transaction.objects.filter(
+        investor=investor,
+        folio=folio,
+        security=security,
+        source_ref__startswith=base_ref,
+    )
+    removed = lots.count()
+    if removed == 0:
+        msg = "no opening lot to remove"
+        raise ValueError(msg)
+    lots.delete()
+
+    # A demerger receipt also carries a parent cost-reduction link — drop it so the
+    # parent stops shedding cost for shares that are no longer on file.
+    links = AppliedCorporateAction.objects.filter(
+        investor=investor,
+        counterparty_security=security,
+        kind=CorpActionType.DEMERGER.value,
+    )
+    parent_ids = list(links.values_list("security_id", flat=True))
+    links.delete()
+
+    _reconcile_completeness_after_removal(investor, security)
+    reconcile_security_folio(investor, security, folio)
+    for parent_id in parent_ids:
+        parent = Security.objects.filter(id=parent_id).first()
+        if parent is not None:
+            reconcile_security_folio(investor, parent, folio)
+    return {"removed": removed, "parent_ids": parent_ids}
+
+
+def _reconcile_completeness_after_removal(investor: Investor, security: Security) -> None:
+    """Re-derive cost-basis completeness once an opening lot is gone (an orphan sell it
+    had made solvent must flip back to incomplete)."""
+    from folioman_app.tasks.import_csv import _reconcile_cost_basis_completeness
+
+    _reconcile_cost_basis_completeness(investor, security)

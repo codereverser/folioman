@@ -663,6 +663,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/remove-opening-lot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Opening Lot Entry
+         * @description Undo a recorded opening lot (and any demerger link it carried) and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_remove_opening_lot_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/unacknowledge": {
         parameters: {
             query?: never;
@@ -1791,6 +1811,12 @@ export interface components {
             /** Net Units */
             net_units: string;
             suggested_parent?: components["schemas"]["SuggestedParent"] | null;
+        };
+        /** RemoveOpeningLotOut */
+        RemoveOpeningLotOut: {
+            integrity?: components["schemas"]["IntegrityStatusOut"] | null;
+            /** Removed */
+            removed: number;
         };
         /**
          * RosterAggregateOut
@@ -3196,6 +3222,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecordOpeningLotsOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_remove_opening_lot_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveOpeningLotOut"];
                 };
             };
         };

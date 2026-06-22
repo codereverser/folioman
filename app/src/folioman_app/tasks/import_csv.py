@@ -34,6 +34,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import transaction as db_transaction
 from folioman_core._dates import parse_loose_date
+from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
 from folioman_core.models import SecurityType, TransactionSource, TransactionType
 from folioman_core.models.investor import Folio as CoreFolio
@@ -42,7 +43,14 @@ from folioman_core.models.security import Security as CoreSecurity
 from pydantic import ValidationError
 
 from folioman_app.mappers import to_core_transaction
-from folioman_app.models import Folio, ImportJob, PartialBlock, Security, Transaction
+from folioman_app.models import (
+    AppliedCorporateAction,
+    Folio,
+    ImportJob,
+    PartialBlock,
+    Security,
+    Transaction,
+)
 from folioman_app.models.jobs import ImportKind
 from folioman_app.services.equity_identity import resolve_equity_identity
 from folioman_app.services.imports import register_processor
@@ -258,6 +266,52 @@ def _fifo_overhang(cores) -> tuple[Decimal, Decimal]:
     return (-low if low < _ZERO else _ZERO), running
 
 
+def _supersede_opening_lots(investor, security: Security) -> list[int]:
+    """Drop a manual opening-lot placeholder once a real tradebook supplies the history.
+
+    An eCAS-only equity with no transactions can be given an opening lot (IPO /
+    transfer-in) so it reconciles. If the investor later imports the broker tradebook
+    for it, those real buys would *double-count* against the placeholder. The
+    placeholder only ever stood in for the missing history, so a tradebook supersedes
+    it: when real imported buys now exist for a (security, folio), delete the
+    placeholder there. Returns the folio ids cleared.
+
+    A demerger child's receipt lots are NOT placeholders for missing trades (they are
+    shares received without buying, and carry a parent cost-reduction link), so they are
+    left untouched.
+    """
+    is_demerger_child = AppliedCorporateAction.objects.filter(
+        investor=investor,
+        counterparty_security=security,
+        kind=CorpActionType.DEMERGER.value,
+    ).exists()
+    if is_demerger_child:
+        return []
+
+    folios_with_real_buys = set(
+        investor.transactions.filter(
+            security=security,
+            source=TransactionSource.CSV_IMPORT.value,
+            transaction_type__in=[
+                TransactionType.BUY.value,
+                TransactionType.TRANSFER_IN.value,
+            ],
+        ).values_list("folio_id", flat=True)
+    )
+    cleared: list[int] = []
+    for folio_id in folios_with_real_buys:
+        placeholder = investor.transactions.filter(
+            security=security,
+            folio_id=folio_id,
+            source=TransactionSource.MANUAL.value,
+            source_ref__startswith="opening-lot:",
+        )
+        if placeholder.exists():
+            placeholder.delete()
+            cleared.append(folio_id)
+    return cleared
+
+
 def _reconcile_cost_basis_completeness(investor, security: Security) -> list[dict]:
     """Re-derive cost-basis completeness for each of this security's folios.
 
@@ -368,6 +422,28 @@ def process_csv(
             summary["unresolved_securities"] = [
                 {"name": s.name, "isin": s.isin, "symbol": s.symbol} for s in unresolved
             ]
+
+    # A real tradebook supersedes any manual opening-lot placeholder for the same
+    # holding — drop it first so its units don't double-count and so completeness below
+    # is judged on the real history alone.
+    superseded: list[dict] = []
+    for security in affected.values():
+        if security.security_type == SecurityType.MF.value:
+            continue
+        try:
+            cleared = _supersede_opening_lots(job.investor, security)
+        except Exception as exc:  # isolate one security's failure from the rest
+            logger.exception(
+                "csv import: opening-lot supersede failed for %s (job %s)", security.isin, job.id
+            )
+            warnings.append(
+                {"stage": "supersede_opening_lot", "isin": security.isin, "error": str(exc)}
+            )
+        else:
+            if cleared:
+                superseded.append({"isin": security.isin, "folios": len(cleared)})
+    if superseded:
+        summary["superseded_opening_lots"] = superseded
 
     # Mark incomplete-history ledgers (orphan sells) before reconciling, so a
     # mid-history tradebook doesn't feed FIFO-underflowing rows into cost basis,

@@ -26,6 +26,7 @@ from folioman_app.api.schemas import (
     RecordOpeningLotOut,
     RecordOpeningLotsIn,
     RecordOpeningLotsOut,
+    RemoveOpeningLotOut,
 )
 from folioman_app.models import Folio, Investor, Security, SecurityIntegrityStatus
 from folioman_app.services.corporate_actions import (
@@ -33,7 +34,11 @@ from folioman_app.services.corporate_actions import (
     apply_suggested_corporate_actions,
 )
 from folioman_app.services.identity_remap import apply_identity_remap
-from folioman_app.services.opening_lots import record_opening_lot, record_opening_lots
+from folioman_app.services.opening_lots import (
+    record_opening_lot,
+    record_opening_lots,
+    remove_opening_lots,
+)
 from folioman_app.tasks.reconcile import (
     recompute_investor,
     reconcile_security,
@@ -263,6 +268,24 @@ def record_opening_lots_entry(
         investor=investor, security=security, folio=folio
     ).first()
     return {**summary, "integrity": status}
+
+
+@router.post(
+    "/{investor_id}/integrity/{security_id}/{folio_id}/remove-opening-lot",
+    response=RemoveOpeningLotOut,
+)
+def remove_opening_lot_entry(request, investor_id: int, security_id: int, folio_id: int):
+    """Undo a recorded opening lot (and any demerger link it carried) and re-reconcile."""
+    investor = get_owned_investor(request, investor_id)
+    security, folio = _owned_status(investor, security_id, folio_id)
+    try:
+        summary = remove_opening_lots(investor, folio, security)
+    except ValueError as exc:
+        raise HttpError(400, str(exc)) from exc
+    status = SecurityIntegrityStatus.objects.filter(
+        investor=investor, security=security, folio=folio
+    ).first()
+    return {"removed": summary["removed"], "integrity": status}
 
 
 @router.post(

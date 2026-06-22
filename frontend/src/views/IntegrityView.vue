@@ -406,6 +406,9 @@ async function runResolution(row: IntegrityRow, resolution: Resolution): Promise
     case 'opening_lot':
       openOpeningLotDialog(row, resolution.openingLotClassification ?? 'transfer_in')
       break
+    case 'remove_opening_lot':
+      confirmRemoveOpeningLot(row)
+      break
     case 'identity_remap':
       openIdentityRemapDialog(row)
       break
@@ -429,6 +432,7 @@ function resolutionLoading(resolution: Resolution): boolean {
     case 'apply_ca_suggestion':
       return integrity.applyingCorporateAction
     case 'opening_lot':
+    case 'remove_opening_lot':
       return integrity.recordingOpeningLot
     case 'identity_remap':
       return integrity.applyingIdentityRemap
@@ -516,6 +520,27 @@ async function unacknowledge(row: IntegrityRow): Promise<void> {
         }
       : { severity: 'error', summary: 'Could not undo', detail: integrity.error ?? '' },
   )
+}
+
+function confirmRemoveOpeningLot(row: IntegrityRow): void {
+  confirm.require({
+    header: 'Remove this opening lot?',
+    message:
+      `Delete the manually-recorded opening lot for "${row.name}". ` +
+      'The holding goes back to needing transaction history. ' +
+      'If it was a demerger receipt, the parent stock’s cost-basis adjustment is undone too.',
+    icon: 'pi pi-trash',
+    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
+    acceptProps: { label: 'Remove', severity: 'danger' },
+    accept: async () => {
+      const ok = await integrity.removeOpeningLot(investorId.value, row.securityId, row.folioId)
+      ui.notify(
+        ok
+          ? { severity: 'success', summary: 'Opening lot removed' }
+          : { severity: 'error', summary: 'Could not remove', detail: integrity.error ?? '' },
+      )
+    },
+  })
 }
 
 function openScheme(securityId: number): void {
@@ -695,6 +720,12 @@ function back(): void {
       <p v-if="openingLotRow && openingLotIssue(openingLotRow.issues)" class="dialog-copy">
         {{ openingLotSummary(openingLotIssue(openingLotRow.issues)!) }}
       </p>
+      <Message severity="info" :closable="false" class="dialog-hint">
+        Bought these on an exchange? Import your broker tradebook instead — it fills the full
+        buy/sell history automatically, and an opening lot you add here is replaced by it. Add an
+        opening lot only for shares received without buying: an IPO allotment, a transfer in, or a
+        demerger/bonus receipt.
+      </Message>
       <div class="dialog-form">
         <label>
           Classification

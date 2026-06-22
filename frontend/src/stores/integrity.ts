@@ -339,6 +339,34 @@ export const useIntegrityStore = defineStore('integrity', () => {
     }
   }
 
+  async function removeOpeningLot(
+    investorId: number,
+    securityId: number,
+    folioId: number,
+  ): Promise<boolean> {
+    recordingOpeningLot.value = true
+    error.value = null
+    try {
+      const { data, error: apiError } = await api.POST(
+        '/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/remove-opening-lot',
+        {
+          params: { path: { investor_id: investorId, security_id: securityId, folio_id: folioId } },
+        },
+      )
+      if (apiError) throw new Error('remove opening lot failed')
+      // The holding may revert to snapshot-only (still in eCAS) or drop its row — patch
+      // when a status comes back, else refetch.
+      if (data?.integrity) patchRow(investorId, data.integrity)
+      else await load(investorId, { force: true })
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'unknown error'
+      return false
+    } finally {
+      recordingOpeningLot.value = false
+    }
+  }
+
   async function applyIdentityRemap(
     investorId: number,
     securityId: number,
@@ -444,6 +472,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
     applyManualCorporateAction,
     recordOpeningLot,
     recordOpeningLots,
+    removeOpeningLot,
     applyIdentityRemap,
     clear,
   }

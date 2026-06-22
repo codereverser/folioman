@@ -228,20 +228,34 @@ def _annotate_opening_lot(
     security: Security,
     folio: Folio,
 ) -> ReconciliationResult:
-    """Flag eCAS-only equities that need a classified opening lot."""
+    """Flag an eCAS-only equity that needs an opening lot, or mark that one is on file.
+
+    The ``opening_lot_recorded`` marker (informational — it does not flag needs-attention)
+    lets the UI offer to remove a recorded lot, e.g. after a mis-entry.
+    """
     from folioman_core.corporate_action_detect import strip_opening_lot_issues
 
     if security.security_type != SecurityType.EQUITY.value:
         return result
+
+    base_ref = f"opening-lot:{folio.id}:{security.id}"
+    has_opening_lot = investor.transactions.filter(
+        folio=folio, security=security, source_ref__startswith=base_ref
+    ).exists()
+    if has_opening_lot:
+        # An opening lot exists (any status) — surface it so it can be removed, and clear
+        # any stale prompt. Dedup both opening-lot markers so a re-reconcile is idempotent.
+        issues = [
+            i
+            for i in result.issues
+            if i.get("type") not in ("opening_lot_needed", "opening_lot_recorded")
+        ]
+        issues.append({"type": "opening_lot_recorded"})
+        return result.model_copy(update={"issues": issues})
+
     if result.status is not IntegrityStatus.SNAPSHOT_ONLY:
         return result
     if result.units_from_holdings is None or result.units_from_holdings <= 0:
-        return result
-    if investor.transactions.filter(
-        folio=folio,
-        security=security,
-        source_ref=f"opening-lot:{folio.id}:{security.id}",
-    ).exists():
         return result
 
     issues = strip_opening_lot_issues(result.issues)

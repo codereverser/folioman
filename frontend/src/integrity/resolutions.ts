@@ -20,6 +20,7 @@ export type OpeningLotClassification = 'ipo_allotment' | 'transfer_in' | 'demerg
 export type ResolutionId =
   | 'apply_ca_suggestion'
   | 'opening_lot'
+  | 'remove_opening_lot'
   | 'identity_remap'
   | 'manual_ca'
   | 'fetch_corporate_actions'
@@ -165,6 +166,12 @@ export function applicableResolutions(ctx: ResolutionContext): Resolution[] {
   // e.g. units received in a merger). The opening lot is still actionable.
   if (openingLotIssue(issues)) {
     return OPENING_LOT_RESOLUTIONS
+  }
+
+  // An opening lot is already on file (any status, incl. reconciled) — offer to undo it,
+  // e.g. after a mis-entry or once the real tradebook is imported instead.
+  if (issues.some((i) => i.type === 'opening_lot_recorded')) {
+    return [{ id: 'remove_opening_lot', label: 'Remove opening lot', icon: 'pi pi-trash' }]
   }
 
   // Incomplete history with nothing else actionable has no in-app fix — the user

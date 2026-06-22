@@ -527,6 +527,12 @@ class RecordOpeningLotsIn(Schema):
     demerger_date: date | None = None
 
 
+class RemoveOpeningLotOut(Schema):
+    removed: int
+    # The (security, folio) status after removal — absent if the row no longer survives.
+    integrity: IntegrityStatusOut | None = None
+
+
 class SuggestedParent(Schema):
     """The parent a demerger child was fingerprint-matched to (for the user to confirm)."""
 
