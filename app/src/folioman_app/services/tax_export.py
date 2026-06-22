@@ -23,7 +23,11 @@ from folioman_core.tax.schedule_112a import SCHEDULE_112A_CSV_COLUMNS
 
 from folioman_app.models import Investor, Security
 from folioman_app.services.fmv import fmv_lookup as _default_fmv
-from folioman_app.services.projected_ledger import projected_transactions, security_key
+from folioman_app.services.projected_ledger import (
+    demerger_reductions,
+    projected_transactions,
+    security_key,
+)
 
 _Q2 = Decimal("0.01")
 
@@ -74,7 +78,12 @@ def build_capital_gains(
     fmv = fmv_lookup if fmv_lookup is not None else _default_fmv
     fy_start, fy_end = india_fy_range(fy_label)  # raises ValueError on a bad label
     transactions = _tax_ready_transactions(investor, include_unreconciled=include_unreconciled)
-    gain_lines = compute_gain_lines(transactions, get_policy("IN"), fmv_lookup=fmv)
+    gain_lines = compute_gain_lines(
+        transactions,
+        get_policy("IN"),
+        fmv_lookup=fmv,
+        demerger_reductions=demerger_reductions(investor),
+    )
 
     in_fy = [g for g in gain_lines if fy_start <= g.disposal.sold_on <= fy_end]
     # Map core securities back to Django ids so rows can deep-link to the scheme.
@@ -142,7 +151,12 @@ def build_schedule_112a(
     # Only tax-ready (security, folio) buckets reach FIFO, so disposals come only
     # from them (shared with the realised capital-gains view).
     transactions = _tax_ready_transactions(investor, include_unreconciled=include_unreconciled)
-    gain_lines = compute_gain_lines(transactions, get_policy("IN"), fmv_lookup=fmv)
+    gain_lines = compute_gain_lines(
+        transactions,
+        get_policy("IN"),
+        fmv_lookup=fmv,
+        demerger_reductions=demerger_reductions(investor),
+    )
 
     # Per-folio gating is already applied above; mark the surviving securities
     # ready so the core per-security gate (which can't see folios) lets them through.

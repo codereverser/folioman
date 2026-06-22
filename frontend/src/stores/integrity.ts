@@ -296,6 +296,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
       classification: string
       lots: { date: string; units: string; price?: string }[]
       cost_basis_unknown?: boolean
+      demerger_date?: string
     },
   ): Promise<boolean> {
     recordingOpeningLot.value = true
@@ -315,6 +316,7 @@ export const useIntegrityStore = defineStore('integrity', () => {
               price: l.price ? Number(l.price) : undefined,
             })),
             cost_basis_unknown: body.cost_basis_unknown ?? false,
+            demerger_date: body.demerger_date || undefined,
           },
         },
       )

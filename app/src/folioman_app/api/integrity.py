@@ -255,6 +255,7 @@ def record_opening_lots_entry(
                 for row in payload.lots
             ],
             cost_basis_unknown=payload.cost_basis_unknown,
+            demerger_date=payload.demerger_date,
         )
     except ValueError as exc:
         raise HttpError(400, str(exc)) from exc

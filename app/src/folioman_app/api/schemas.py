@@ -522,6 +522,9 @@ class RecordOpeningLotsIn(Schema):
     classification: str  # ipo_allotment | transfer_in | demerger_result
     lots: list[OpeningLotRow]
     cost_basis_unknown: bool = False
+    # The demerger's ex-date — links the receipt to its parent and reduces the parent's
+    # cost basis at that date. Required to link; without it the lots are recorded unlinked.
+    demerger_date: date | None = None
 
 
 class SuggestedParent(Schema):

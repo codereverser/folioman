@@ -467,3 +467,72 @@ def test_net_intraday_trims_partial_offset_keeping_the_net_delivery():
 def test_net_intraday_leaves_non_same_day_trades_untouched():
     txns = [_buy("100", "200", on=date(2020, 1, 1)), _sell("40", "250", on=date(2021, 1, 1))]
     assert net_intraday_offsets(txns) == txns
+
+
+# --- demerger parent-side cost reduction (FIFO-time, by ex-date) -------------
+
+_EQ = Security(type=SecurityType.EQUITY, name="Parent Co", isin="INE418H01029", symbol="PARENT")
+
+
+def _eq(kind, units, nav, on):
+    return Transaction(
+        security=_EQ,
+        date=on,
+        type=kind,
+        units=units,
+        nav_or_price=nav,
+        amount=str(Decimal(units) * Decimal(nav)),
+        source=TransactionSource.CSV_IMPORT,
+        folio_number="DMAT",
+    )
+
+
+def test_demerger_reduction_spares_a_pre_demerger_sale():
+    """A sale before the demerger keeps full basis; only lots open at the ex-date shed cost."""
+    from folioman_core.fifo import build_sell_disposals
+
+    txns = [
+        _eq(TransactionType.BUY, "100", "96", date(2018, 10, 9)),
+        _eq(TransactionType.SELL, "60", "150", date(2021, 8, 24)),  # pre-demerger
+        _eq(TransactionType.SELL, "40", "200", date(2023, 1, 1)),  # post-demerger
+    ]
+    # Demerger ex 2022: child carried away 292 of the held 40 lot's cost.
+    reductions = {"INE418H01029": [(date(2022, 6, 1), {date(2018, 10, 9): Decimal("292")})]}
+    disposals = build_sell_disposals(txns, demerger_reductions=reductions)
+
+    pre = next(d for d in disposals if d.sold_on == date(2021, 8, 24))
+    post = next(d for d in disposals if d.sold_on == date(2023, 1, 1))
+    # Pre-demerger sale: full basis 60 * 96 = 5760.
+    assert sum((lt.cost_total for lt in pre.lots), Decimal("0")) == Decimal("5760")
+    # Post-demerger sale: 40 * 96 - 292 = 3548.
+    assert sum((lt.cost_total for lt in post.lots), Decimal("0")) == Decimal("3548")
+
+
+def test_demerger_reductions_stack_across_ex_dates():
+    """Two demergers on the still-held lot stack; held basis sheds both children's cost."""
+    txns = [
+        _eq(TransactionType.BUY, "100", "96", date(2018, 10, 9)),
+        _eq(TransactionType.SELL, "60", "150", date(2021, 8, 24)),
+    ]
+    reductions = [
+        (date(2022, 6, 1), {date(2018, 10, 9): Decimal("292")}),  # ATL-like
+        (date(2024, 2, 2), {date(2018, 10, 9): Decimal("1795.968")}),  # TransIndia-like
+    ]
+    fifo = apply_fifo(txns, demerger_reductions=reductions)
+    # Held 40 units: 40*96 - 292 - 1795.968 = 1752.032 (cost/u 43.8008).
+    assert fifo.balance == Decimal("40")
+    assert fifo.invested == Decimal("1752.032")
+
+
+def test_demerger_reduction_apportions_across_same_date_lots():
+    """A date's reduction is shared by units across the open lots of that date."""
+    txns = [
+        _eq(TransactionType.BUY, "196", "103", date(2019, 2, 12)),
+        _eq(TransactionType.BUY, "4", "103", date(2019, 2, 12)),
+    ]
+    # 1566 over 200 open units -> 7.83/u; both lots shed pro-rata.
+    fifo = apply_fifo(
+        txns, demerger_reductions=[(date(2022, 6, 1), {date(2019, 2, 12): Decimal("1566")})]
+    )
+    # 200*103 - 1566 = 19034.
+    assert fifo.invested == Decimal("19034")

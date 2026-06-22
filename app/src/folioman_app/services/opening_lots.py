@@ -129,13 +129,15 @@ def _link_demerger_parent(
     child: Security,
     units_by_date: dict,
     cost_by_date: dict,
+    ex_date: date,
 ) -> Security | None:
     """Fingerprint-match the child's received lots to a parent and record the link.
 
     Stores one ``AppliedCorporateAction`` (kind ``demerger``) on the parent with the
-    per-acquisition-date cost the children carry away, so the read-time projection
-    reduces the parent's cost basis by exactly that. Returns the matched parent (or
-    ``None`` when no single confident match exists — the caller leaves it for the user).
+    per-acquisition-date cost the children carry away and the demerger ``ex_date``, so
+    the FIFO pass sheds that cost from the parent lots still open at the ex-date (a
+    parent sale *before* the demerger keeps its full basis). Returns the matched parent
+    (or ``None`` when no single confident match exists — the caller leaves it for the user).
     """
     match = find_demerger_parent(investor, folio, child, units_by_date)
     if match is None:
@@ -148,7 +150,7 @@ def _link_demerger_parent(
         defaults={
             "counterparty_security": child,
             "kind": CorpActionType.DEMERGER.value,
-            "ex_date": max(units_by_date),
+            "ex_date": ex_date,
             "params": {
                 "reductions": {d.isoformat(): str(cost) for d, cost in cost_by_date.items()}
             },
@@ -166,6 +168,7 @@ def record_opening_lots(
     kind: OpeningLotKind,
     lots: list[dict],
     cost_basis_unknown: bool = False,
+    demerger_date: date | None = None,
 ) -> dict:
     """Record several opening lots for one no-history equity — the per-lot acquisition
     a demerger receipt carries (the broker allocates a date + cost to each child lot).
@@ -176,6 +179,11 @@ def record_opening_lots(
     makes FIFO solvent, so the completeness re-derivation flips those sells back to
     complete and they enter capital gains. Each lot is ``{lot_date, units, price}``
     (``price`` optional / omitted when ``cost_basis_unknown``).
+
+    ``demerger_date`` is the demerger's ex-date; with it (and known cost) the receipt is
+    matched to its parent and the parent's cost basis is reduced *at that date*, so a
+    parent sale before the demerger keeps its full basis. Without it the lots are still
+    recorded but the parent is left unlinked (the ex-date can't be guessed safely).
     """
     from folioman_app.tasks.import_csv import _reconcile_cost_basis_completeness
 
@@ -237,12 +245,18 @@ def record_opening_lots(
         created += 1
 
     # A demerger receipt inherits the parent's cost basis: match it back to the parent
-    # and record the cost the parent shed. Only when every lot is priced (an unknown
-    # basis can't reduce anything) — and the link must precede the completeness pass and
-    # reconcile so they see the parent's reduced cost.
+    # and record the cost the parent shed at the demerger ex-date. Only when every lot is
+    # priced (an unknown basis can't reduce anything) and the ex-date is known (it places
+    # the reduction so a pre-demerger parent sale keeps its full basis — it can't be
+    # guessed). The ex-date must fall on/after the inherited acquisition dates.
     suggested_parent = None
-    if kind is OpeningLotKind.DEMERGER_RESULT and all_priced and units_by_date:
-        parent = _link_demerger_parent(investor, folio, security, units_by_date, cost_by_date)
+    if kind is OpeningLotKind.DEMERGER_RESULT and all_priced and units_by_date and demerger_date:
+        if demerger_date < max(units_by_date):
+            msg = "demerger date cannot precede the received lots' acquisition dates"
+            raise ValueError(msg)
+        parent = _link_demerger_parent(
+            investor, folio, security, units_by_date, cost_by_date, demerger_date
+        )
         if parent is not None:
             suggested_parent = {
                 "id": parent.id,

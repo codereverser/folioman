@@ -268,6 +268,28 @@ class FIFOUnits:
         self.disposals.append(disposal)
         return disposal
 
+    def reduce_lots(self, cost_by_acquired_on: dict[date, Decimal]) -> None:
+        """Shed cost from the open lots, by acquisition date — a demerger's parent side.
+
+        At a demerger ex-date the parent keeps its units but its cost of acquisition
+        drops by the amount allocated to the children received (s.49(2C)). Called in
+        date order *at the ex-date*, so only the lots still open then are reduced —
+        units already sold before the demerger keep their full basis. The reduction for
+        an acquisition date is shared across the open lots of that date in proportion to
+        their remaining units, so multiple same-date lots each shed their pro-rata slice.
+        """
+        for acquired_on, cost in cost_by_acquired_on.items():
+            matched = [i for i, lot in enumerate(self._lots) if lot[2] == acquired_on]
+            open_units = sum((self._lots[i][0] for i in matched), _ZERO)
+            if open_units <= _ZERO:
+                continue
+            for i in matched:
+                units, lot_cost, acq, stamp = self._lots[i]
+                share = cost * (units / open_units)
+                self._lots[i] = (units, lot_cost - share, acq, stamp)
+                self.invested -= share
+        self._refresh_average()
+
     def _refresh_average(self) -> None:
         if abs(self.balance) <= _BALANCE_EPSILON:
             # Dust long lots (e.g. fractional entitlement after a reverse split)
@@ -281,28 +303,66 @@ class FIFOUnits:
         self.average = self.invested / self.balance
 
 
-def apply_fifo(transactions: Sequence[Transaction]) -> FIFOUnits:
-    """Run FIFO over a chronologically sorted transaction sequence."""
+def _security_ident(security: Security) -> str:
+    """Stable identity for keying per-security demerger reductions to a FIFO bucket."""
+    return security.isin or security.symbol or security.name
+
+
+# A demerger's parent-side cost reduction: ``(ex_date, {acquired_on: cost_to_shed})``.
+DemergerReduction = tuple[date, dict[date, Decimal]]
+
+
+def apply_fifo(
+    transactions: Sequence[Transaction],
+    *,
+    demerger_reductions: Sequence[DemergerReduction] = (),
+) -> FIFOUnits:
+    """Run FIFO over a chronologically sorted transaction sequence.
+
+    ``demerger_reductions`` (for a single security) are applied at their ex-date,
+    interleaved with the trades, so a sale before the demerger keeps its full cost
+    basis and only the lots still open at the ex-date shed cost.
+    """
     fifo = FIFOUnits()
+    pending = sorted(demerger_reductions, key=lambda r: r[0])
+    idx = 0
     for txn in sorted(transactions, key=lambda row: row.date):
+        while idx < len(pending) and pending[idx][0] <= txn.date:
+            fifo.reduce_lots(pending[idx][1])
+            idx += 1
         fifo.add_transaction(txn)
+    while idx < len(pending):
+        fifo.reduce_lots(pending[idx][1])
+        idx += 1
     return fifo
 
 
-def build_sell_disposals(transactions: Sequence[Transaction]) -> list[SellDisposal]:
+def build_sell_disposals(
+    transactions: Sequence[Transaction],
+    *,
+    demerger_reductions: dict[str, Sequence[DemergerReduction]] | None = None,
+) -> list[SellDisposal]:
     """Per-(security, folio) FIFO over a mixed ledger; returns all disposals.
 
     Each ``(security, folio_number)`` pair is its own cost-basis bucket — a sell
     in folio A only consumes folio A's lots, never another folio's or another
     security's. ``apply_fifo`` runs one bucket at a time; this helper splits a
     multi-security/multi-folio ledger and concatenates the disposal records.
+    ``demerger_reductions`` maps a security identity (ISIN/symbol/name) to that
+    security's parent-side reductions, applied to every folio bucket of it.
     """
+    reductions = demerger_reductions or {}
     buckets: dict[tuple[Security, str], list[Transaction]] = {}
     for txn in transactions:
         buckets.setdefault((txn.security, txn.folio_number), []).append(txn)
     disposals: list[SellDisposal] = []
-    for bucket_txns in buckets.values():
-        disposals.extend(apply_fifo(bucket_txns).disposals)
+    for (security, _folio), bucket_txns in buckets.items():
+        disposals.extend(
+            apply_fifo(
+                bucket_txns,
+                demerger_reductions=reductions.get(_security_ident(security), ()),
+            ).disposals
+        )
     return disposals
 
 

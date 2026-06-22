@@ -174,25 +174,111 @@ def test_record_demerger_child_links_parent_with_allocated_cost(
             {"lot_date": dt.date(2019, 2, 12), "units": Decimal("196"), "price": Decimal("7.83")},
             {"lot_date": dt.date(2019, 2, 12), "units": Decimal("4"), "price": Decimal("7.83")},
         ],
+        demerger_date=dt.date(2022, 6, 1),
     )
 
     # Parent matched + surfaced for confirmation.
     assert result["suggested_parent"]["isin"] == _PARENT_ISIN
 
-    # Link persisted as a demerger event on the parent, child as counterparty, carrying
-    # the per-acquisition-date cost the children carry away. The cost reduction itself is
-    # a FIFO-time operation (so a pre-demerger sale keeps its full basis) applied
-    # separately — the link alone never rewrites the parent's rows.
+    # Link persisted as a demerger event on the parent, child as counterparty, at the
+    # ex-date, carrying the per-acquisition-date cost the children carry away. The cost
+    # reduction itself is a FIFO-time operation (so a pre-demerger sale keeps its full
+    # basis) — the link alone never rewrites the parent's rows.
     link = AppliedCorporateAction.objects.get(investor=inv, security=parent, kind="demerger")
     assert link.counterparty_security_id == child.id
     assert link.source_ref == f"demerger:{child.id}"
+    assert link.ex_date == dt.date(2022, 6, 1)
     assert link.params["reductions"] == {
         "2018-10-09": "292.00",  # 40 * 7.30
         "2019-02-12": "1566.00",  # 196*7.83 + 4*7.83
     }
 
-    # The link alone does not move the parent's cost basis.
+    # The link alone does not rewrite the parent's rows (the reduction is a FIFO pass).
     assert _fifo_invested(compute_ledger(inv, parent, folio=folio)) == Decimal("24440.00")
+
+
+def test_demerger_date_before_acquisition_is_rejected(make_investor, make_security, make_folio):
+    inv = make_investor()
+    folio = make_folio(investor=inv, folio_type="demat", number=_DEMAT)
+    make_security(
+        security_type=SecurityType.EQUITY.value,
+        isin=_PARENT_ISIN,
+        symbol="ALLCARGO",
+        name="Allcargo",
+    )
+    child = make_security(
+        security_type=SecurityType.EQUITY.value, isin=_CHILD_ISIN, symbol="ATL", name="ATL"
+    )
+    with pytest.raises(ValueError, match="cannot precede"):
+        record_opening_lots(
+            inv,
+            folio,
+            child,
+            kind=OpeningLotKind.DEMERGER_RESULT,
+            lots=[
+                {"lot_date": dt.date(2019, 2, 12), "units": Decimal("40"), "price": Decimal("7")}
+            ],
+            demerger_date=dt.date(2018, 1, 1),  # before the received lot's date
+        )
+
+
+def test_demerger_reduction_spares_pre_demerger_parent_sale(
+    make_investor, make_security, make_folio
+):
+    """End-to-end through the projection: a pre-demerger parent sale keeps full basis;
+    a post-demerger one sheds the child's cost — the ALLCARGO partial-sale shape. The
+    link is recorded directly here (auto-match needs the lot still partly held, which a
+    fully-sold parent isn't), so this isolates the FIFO-time reduction wiring."""
+    from folioman_app.services.projected_ledger import (
+        demerger_reductions,
+        projected_transactions,
+    )
+    from folioman_core.fifo import build_sell_disposals
+
+    inv = make_investor()
+    folio = make_folio(investor=inv, folio_type="demat", number=_DEMAT)
+    parent = make_security(
+        security_type=SecurityType.EQUITY.value,
+        isin=_PARENT_ISIN,
+        symbol="ALLCARGO",
+        name="Allcargo",
+    )
+    # Parent: 100 bought, 60 sold before the demerger, 40 held then sold after.
+    _buy(inv, parent, folio, date=dt.date(2018, 10, 9), units="100", price="96", ref="p1")
+    for ref, on, units, price in [
+        ("p-sell-pre", dt.date(2021, 8, 24), "60", "150"),
+        ("p-sell-post", dt.date(2023, 1, 1), "40", "200"),
+    ]:
+        Transaction.objects.create(
+            investor=inv,
+            security=parent,
+            folio=folio,
+            date=on,
+            transaction_type=TransactionType.SELL.value,
+            units=Decimal(units),
+            nav_or_price=Decimal(price),
+            source=TransactionSource.CSV_IMPORT.value,
+            source_ref=ref,
+            cost_basis_complete=True,
+        )
+    AppliedCorporateAction.objects.create(
+        investor=inv,
+        folio=folio,
+        security=parent,
+        kind="demerger",
+        ex_date=dt.date(2022, 6, 1),
+        source_ref="demerger:test",
+        params={"reductions": {"2018-10-09": "292.00"}},
+    )
+
+    disposals = build_sell_disposals(
+        projected_transactions(inv), demerger_reductions=demerger_reductions(inv)
+    )
+    by_date = {d.sold_on: d for d in disposals if d.security.isin == _PARENT_ISIN}
+    pre = sum((lt.cost_total for lt in by_date[dt.date(2021, 8, 24)].lots), Decimal("0"))
+    post = sum((lt.cost_total for lt in by_date[dt.date(2023, 1, 1)].lots), Decimal("0"))
+    assert pre == Decimal("5760")  # 60 * 96, full basis (sale predates the demerger)
+    assert post == Decimal("3548")  # 40 * 96 - 292, reduced by the child's cost
 
 
 def test_record_demerger_child_unknown_cost_does_not_link(make_investor, make_security, make_folio):

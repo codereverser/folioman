@@ -231,6 +231,9 @@ const openingLotForm = ref({
   costBasisUnknown: false,
   // Multi-lot entry for a demerger receipt — one row per lot on the broker's breakdown.
   lots: [] as OpeningLotEntry[],
+  // The demerger's ex-date — links the receipt to its parent and reduces the parent's
+  // cost basis at that date. Optional: without it the lots record but stay unlinked.
+  demergerDate: '',
 })
 
 // A demerger receipt arrives as several lots (the broker allocates a date + cost to
@@ -245,6 +248,7 @@ function openOpeningLotDialog(row: IntegrityRow, classification: string = 'trans
     price: '',
     costBasisUnknown: false,
     lots: classification === 'demerger_result' ? [{ date: '', units: '', price: '' }] : [],
+    demergerDate: '',
   }
   openingLotVisible.value = true
 }
@@ -283,6 +287,7 @@ async function submitOpeningLot(): Promise<void> {
           price: l.price || undefined,
         })),
         cost_basis_unknown: openingLotForm.value.costBasisUnknown,
+        demerger_date: openingLotForm.value.demergerDate || undefined,
       })
     : await integrity.recordOpeningLot(investorId.value, row.securityId, row.folioId, {
         classification: openingLotForm.value.classification,
@@ -710,8 +715,8 @@ function back(): void {
         </template>
         <template v-else>
           <p class="dialog-copy">
-            Enter one row per lot from your broker's holding breakdown — the inherited
-            acquisition date, quantity, and allocated cost per unit.
+            Enter one row per lot from your broker's holding breakdown — the inherited acquisition
+            date, quantity, and allocated cost per unit.
           </p>
           <div v-for="(lot, i) in openingLotForm.lots" :key="i" class="lot-row">
             <InputText v-model="lot.date" type="date" :disabled="false" />
@@ -734,6 +739,15 @@ function back(): void {
             <Button label="Add lot" icon="pi pi-plus" text size="small" @click="addOpeningLot" />
             <span class="lot-total">Total: {{ openingLotUnitsTotal }} units</span>
           </div>
+          <label>
+            Demerger date (optional)
+            <InputText v-model="openingLotForm.demergerDate" type="date" />
+            <small class="field-hint">
+              The demerger's ex-date. Links these lots to the parent and lowers the parent's cost
+              basis by the cost recorded here. Without it the lots are saved but the parent isn't
+              adjusted.
+            </small>
+          </label>
         </template>
         <label class="check-row">
           <Checkbox v-model="openingLotForm.costBasisUnknown" :binary="true" />

@@ -39,7 +39,11 @@ from folioman_app.models import (
 )
 from folioman_app.models.jobs import ImportJob, ImportJobStatus
 from folioman_app.services.dividends import build_equity_dividend_detail
-from folioman_app.services.projected_ledger import projected_transactions, security_key
+from folioman_app.services.projected_ledger import (
+    demerger_reductions,
+    projected_transactions,
+    security_key,
+)
 from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
 
 _ZERO = Decimal("0")
@@ -330,7 +334,7 @@ def _holding_extras(investors: list[Investor], as_of: date) -> dict[int, dict]:
     Returns ``{security_id: {invested_inr, day_change_inr, day_change_pct, xirr}}``.
     """
     txn_keys, hold_keys = _ledger_index(investors)
-    positions = _positions_asof(txn_keys, hold_keys, as_of)
+    positions = _positions_asof(txn_keys, hold_keys, as_of, _merged_reductions(investors))
     nav_idx = _nav_index(positions.keys(), as_of)
     cash_by_sec = _security_cashflows(txn_keys)
     extras: dict[int, dict] = {}
@@ -902,7 +906,18 @@ def _ledger_index(investors: list[Investor]):
     return txn_keys, hold_keys
 
 
-def _positions_asof(txn_keys: dict, hold_keys: dict, as_of: date) -> dict[int, list]:
+def _merged_reductions(investors: list[Investor]) -> dict[str, list]:
+    """Union of the investors' demerger cost reductions, keyed by security identity."""
+    merged: dict[str, list] = {}
+    for investor in investors:
+        for ident, events in demerger_reductions(investor).items():
+            merged.setdefault(ident, []).extend(events)
+    return merged
+
+
+def _positions_asof(
+    txn_keys: dict, hold_keys: dict, as_of: date, reductions: dict[str, list] | None = None
+) -> dict[int, list]:
     """Net units + invested capital per security as-of ``as_of``.
 
     Per (security, folio): the ledger wins when one exists — FIFO over the
@@ -912,13 +927,18 @@ def _positions_asof(txn_keys: dict, hold_keys: dict, as_of: date) -> dict[int, l
     observed cost basis. Aggregated per security.
     Returns ``{security_id: [django_security, units, invested_inr]}``.
     """
+    reductions = reductions or {}
     agg: dict[int, list] = {}
     for (sec_id, _folio_id), rec in txn_keys.items():
         cores = [core for (txn_date, core) in rec["core"] if txn_date <= as_of]
         if not cores:
             continue  # ledger-managed folio, but nothing acquired yet as-of date
+        sec = rec["security"]
+        ident = sec.isin or sec.symbol or sec.name
+        # Only demergers on/before the date reduce the basis of the units held then.
+        sec_reductions = [(ex, by) for (ex, by) in reductions.get(ident, []) if ex <= as_of]
         try:
-            fifo = apply_fifo(cores)
+            fifo = apply_fifo(cores, demerger_reductions=sec_reductions)
             units, invested = fifo.balance, fifo.invested
         except InsufficientUnitsError:
             # An over-sell (only reachable via malformed manual entry — CAS ledgers

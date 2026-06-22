@@ -2102,6 +2102,18 @@
             "title": "Cost Basis Unknown",
             "type": "boolean"
           },
+          "demerger_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Demerger Date"
+          },
           "lots": {
             "items": {
               "$ref": "#/components/schemas/OpeningLotRow"

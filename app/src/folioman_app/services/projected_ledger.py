@@ -12,6 +12,7 @@ and the existing rewrite are untouched until read paths are redirected onto it.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from django.db.models import Q
 from folioman_core.corporate_action_subject import CorpActionType
@@ -105,6 +106,31 @@ def projected_transactions(
         events_qs = events_qs.filter(folio=folio)
     raw = net_intraday_offsets([to_core_transaction(t) for t in raw_qs])
     return _replay(raw, events_qs, as_of)
+
+
+def demerger_reductions(investor: Investor, *, folio=None) -> dict[str, list]:
+    """Each parent security's demerger cost reductions, keyed by security identity.
+
+    ``{ident: [(ex_date, {acquired_on: cost})]}`` — the FIFO pass applies these at the
+    ex-date so the parent's lots still open then shed the cost their children carried
+    away. ``ident`` matches :func:`folioman_core.fifo._security_ident` (ISIN/symbol/name).
+    """
+    events = AppliedCorporateAction.objects.filter(
+        investor=investor, kind=CorpActionType.DEMERGER.value
+    ).select_related("security")
+    if folio is not None:
+        events = events.filter(folio=folio)
+    out: dict[str, list] = {}
+    for aca in events:
+        sec = aca.security
+        ident = sec.isin or sec.symbol or sec.name
+        by_date = {
+            date.fromisoformat(iso): Decimal(str(cost))
+            for iso, cost in (aca.params or {}).get("reductions", {}).items()
+        }
+        if by_date:
+            out.setdefault(ident, []).append((aca.ex_date, by_date))
+    return out
 
 
 def compute_ledger(

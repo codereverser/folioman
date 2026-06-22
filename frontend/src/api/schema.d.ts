@@ -1778,6 +1778,8 @@ export interface components {
              * @default false
              */
             cost_basis_unknown: boolean;
+            /** Demerger Date */
+            demerger_date?: string | null;
             /** Lots */
             lots: components["schemas"]["OpeningLotRow"][];
         };
