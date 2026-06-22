@@ -56,6 +56,7 @@ def _preserved_cost_total(txn: Transaction) -> Decimal:
 _EVENT_ORDER: dict[CorpActionType, int] = {
     CorpActionType.SPLIT: 0,
     CorpActionType.MERGER: 1,
+    CorpActionType.DEMERGER: 2,
     CorpActionType.BONUS: 3,
     CorpActionType.DIVIDEND: 4,
     CorpActionType.RIGHTS: 5,
@@ -479,7 +480,7 @@ def apply_corporate_action_events(
     transactions: list[Transaction],
     events: Sequence[CorporateActionApplyEvent],
 ) -> list[Transaction]:
-    """Apply corporate actions in ex-date order (split → merger → bonus → …)."""
+    """Apply corporate actions in ex-date order (split → merger → demerger → bonus → …)."""
     txns = list(transactions)
     for event in sorted(events, key=_event_sort_key):
         ref = event.source_ref
@@ -574,6 +575,14 @@ def apply_corporate_action_events(
                 security=event.security,
                 source_ref=ref,
             )
+        elif event.kind is CorpActionType.DEMERGER:
+            # A demerger leaves the parent's units untouched — the child shares are
+            # separate received lots recorded on their own rows. Its only effect is to
+            # reduce the parent lots' cost basis by the cost the children carry away
+            # (s.49(2C) net-worth split). That reduction targets the lots still open at
+            # the ex-date, so it belongs to the FIFO pass, not this row rewrite; here the
+            # event is a pure no-op that records the parent↔child link.
+            pass
         else:
             msg = f"unsupported corporate action kind: {event.kind}"
             raise ValueError(msg)

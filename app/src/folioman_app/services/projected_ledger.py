@@ -39,6 +39,16 @@ def security_key(sec) -> str:
 def event_from_applied(aca: AppliedCorporateAction) -> CorporateActionApplyEvent:
     """Reconstruct the core apply-event from a stored :class:`AppliedCorporateAction`."""
     kind = CorpActionType(aca.kind)
+    if kind is CorpActionType.DEMERGER:
+        # The parent↔child link only. Its cost effect — reducing the parent lots still
+        # open at the ex-date by the children's allocated cost (``params["reductions"]``)
+        # — is a FIFO-time operation, applied downstream, not in this row projection.
+        return CorporateActionApplyEvent(
+            kind=kind,
+            ex_date=aca.ex_date,
+            security=to_core_security(aca.security),
+            source_ref=aca.source_ref,
+        )
     if kind is CorpActionType.MERGER:
         # The affected security merges away into the acquirer (counterparty). The core
         # event's ``security`` is the acquirer; old/new carry the conversion.

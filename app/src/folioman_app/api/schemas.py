@@ -524,11 +524,21 @@ class RecordOpeningLotsIn(Schema):
     cost_basis_unknown: bool = False
 
 
+class SuggestedParent(Schema):
+    """The parent a demerger child was fingerprint-matched to (for the user to confirm)."""
+
+    id: int
+    name: str
+    isin: str
+
+
 class RecordOpeningLotsOut(Schema):
     created: int
     net_units: str
     # A fully-sold child reconciles to net 0 and carries no surviving status row.
     integrity: IntegrityStatusOut | None = None
+    # Set when a demerger receipt was linked to a parent whose cost basis was reduced.
+    suggested_parent: SuggestedParent | None = None
 
 
 class IdentityRemapIn(Schema):

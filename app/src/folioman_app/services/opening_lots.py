@@ -6,13 +6,21 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction as db_transaction
+from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.fifo import net_units_from_transactions
 from folioman_core.models import SecurityType, TransactionSource
 from folioman_core.opening_lot import OpeningLotKind, transaction_type_for_opening_lot
 from folioman_core.reconciliation import TOLERANCE
 
 from folioman_app.mappers import to_core_transaction
-from folioman_app.models import Folio, Investor, Security, Transaction
+from folioman_app.models import (
+    AppliedCorporateAction,
+    Folio,
+    Investor,
+    Security,
+    Transaction,
+)
+from folioman_app.services.demerger_match import find_demerger_parent
 from folioman_app.tasks.reconcile import reconcile_security_folio
 
 _ZERO = Decimal("0")
@@ -115,6 +123,40 @@ def record_opening_lot(
     }
 
 
+def _link_demerger_parent(
+    investor: Investor,
+    folio: Folio,
+    child: Security,
+    units_by_date: dict,
+    cost_by_date: dict,
+) -> Security | None:
+    """Fingerprint-match the child's received lots to a parent and record the link.
+
+    Stores one ``AppliedCorporateAction`` (kind ``demerger``) on the parent with the
+    per-acquisition-date cost the children carry away, so the read-time projection
+    reduces the parent's cost basis by exactly that. Returns the matched parent (or
+    ``None`` when no single confident match exists — the caller leaves it for the user).
+    """
+    match = find_demerger_parent(investor, folio, child, units_by_date)
+    if match is None:
+        return None
+    AppliedCorporateAction.objects.update_or_create(
+        investor=investor,
+        folio=folio,
+        security=match.security,
+        source_ref=f"demerger:{child.id}",
+        defaults={
+            "counterparty_security": child,
+            "kind": CorpActionType.DEMERGER.value,
+            "ex_date": max(units_by_date),
+            "params": {
+                "reductions": {d.isoformat(): str(cost) for d, cost in cost_by_date.items()}
+            },
+        },
+    )
+    return match.security
+
+
 @db_transaction.atomic
 def record_opening_lots(
     investor: Investor,
@@ -156,6 +198,11 @@ def record_opening_lots(
 
     txn_type = transaction_type_for_opening_lot(kind)
     created = 0
+    # Aggregate the receipt by acquisition date so a demerger child can be matched to
+    # its parent (date fingerprint) and the parent's cost reduced by what left with it.
+    units_by_date: dict[date, Decimal] = {}
+    cost_by_date: dict[date, Decimal] = {}
+    all_priced = not cost_basis_unknown
     for index, lot in enumerate(lots):
         lot_units = lot["units"]
         if lot_units <= _ZERO:
@@ -164,10 +211,14 @@ def record_opening_lots(
         price = lot.get("price")
         if cost_basis_unknown or price is None:
             nav, amount, complete = _ZERO, _ZERO, False
+            all_priced = False
         else:
             nav = price
             amount = (lot_units * price).quantize(Decimal("0.01"))
             complete = True
+            lot_date = lot["lot_date"]
+            units_by_date[lot_date] = units_by_date.get(lot_date, _ZERO) + lot_units
+            cost_by_date[lot_date] = cost_by_date.get(lot_date, _ZERO) + lot_units * price
         Transaction.objects.create(
             investor=investor,
             security=security,
@@ -185,13 +236,31 @@ def record_opening_lots(
         )
         created += 1
 
+    # A demerger receipt inherits the parent's cost basis: match it back to the parent
+    # and record the cost the parent shed. Only when every lot is priced (an unknown
+    # basis can't reduce anything) — and the link must precede the completeness pass and
+    # reconcile so they see the parent's reduced cost.
+    suggested_parent = None
+    if kind is OpeningLotKind.DEMERGER_RESULT and all_priced and units_by_date:
+        parent = _link_demerger_parent(investor, folio, security, units_by_date, cost_by_date)
+        if parent is not None:
+            suggested_parent = {
+                "id": parent.id,
+                "name": parent.name,
+                "isin": parent.isin,
+            }
+
     # Receipt lots may make a previously-orphan sell solvent → flip it back to complete.
     _reconcile_cost_basis_completeness(investor, security)
     reconcile_security_folio(investor, security, folio)
+    if suggested_parent is not None:
+        # The parent's cost basis moved; refresh its reconciliation too.
+        parent_security = Security.objects.get(id=suggested_parent["id"])
+        reconcile_security_folio(investor, parent_security, folio)
     net = net_units_from_transactions(
         [
             to_core_transaction(t)
             for t in investor.transactions.filter(security=security, folio=folio)
         ]
     )
-    return {"created": created, "net_units": str(net)}
+    return {"created": created, "net_units": str(net), "suggested_parent": suggested_parent}

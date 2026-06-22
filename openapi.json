@@ -2136,6 +2136,16 @@
           "net_units": {
             "title": "Net Units",
             "type": "string"
+          },
+          "suggested_parent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestedParent"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -2634,6 +2644,30 @@
           "token_required"
         ],
         "title": "SetupStateOut",
+        "type": "object"
+      },
+      "SuggestedParent": {
+        "description": "The parent a demerger child was fingerprint-matched to (for the user to confirm).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "isin": {
+            "title": "Isin",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "isin"
+        ],
+        "title": "SuggestedParent",
         "type": "object"
       },
       "TokenObtainIn": {

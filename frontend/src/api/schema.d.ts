@@ -1788,6 +1788,7 @@ export interface components {
             integrity?: components["schemas"]["IntegrityStatusOut"] | null;
             /** Net Units */
             net_units: string;
+            suggested_parent?: components["schemas"]["SuggestedParent"] | null;
         };
         /**
          * RosterAggregateOut
@@ -1966,6 +1967,18 @@ export interface components {
             needs_admin: boolean;
             /** Token Required */
             token_required: boolean;
+        };
+        /**
+         * SuggestedParent
+         * @description The parent a demerger child was fingerprint-matched to (for the user to confirm).
+         */
+        SuggestedParent: {
+            /** Id */
+            id: number;
+            /** Isin */
+            isin: string;
+            /** Name */
+            name: string;
         };
         /** TokenObtainIn */
         TokenObtainIn: {
