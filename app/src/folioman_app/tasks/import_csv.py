@@ -468,6 +468,24 @@ def process_csv(
     errors = reconcile_after_import(job.investor, affected.values())
     if errors:
         summary["reconcile_errors"] = errors
+
+    # Queue the day-wise valuation recompute from the earliest imported trade, so the
+    # price-history backfill (which runs inside the valuation job, not at import) covers
+    # the full equity history and the series extends back to the trades — the CAS/eCAS
+    # paths do the same via queue_recompute. Without this a tradebook import leaves the
+    # investor READY, so the scheduler never re-prices the new equities.
+    if affected:
+        from folioman_app.tasks.valuation_jobs import queue_recompute
+
+        earliest = (
+            job.investor.transactions.filter(security_id__in=affected)
+            .order_by("date")
+            .values_list("date", flat=True)
+            .first()
+        )
+        if earliest is not None:
+            queue_recompute(job.investor, earliest)
+
     return summary
 
 

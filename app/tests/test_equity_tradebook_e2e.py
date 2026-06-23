@@ -695,3 +695,22 @@ def test_demerger_end_to_end_through_event_path(make_investor):
     reductions = demerger_reductions(inv).get(parent_isin, ())
     fifo = apply_fifo(compute_ledger(inv, parent, folio=folio), demerger_reductions=reductions)
     assert fifo.invested == Decimal("3600")
+
+
+def test_tradebook_import_queues_valuation_from_earliest_trade(make_investor):
+    """A tradebook import marks the investor for day-wise recompute from the earliest
+    trade, so the valuation job backfills the full equity price history (the CAS/eCAS
+    paths do the same; without it a tradebook leaves the investor READY and unpriced)."""
+    from folioman_app.models.ledger import ValuationStatus
+
+    inv = make_investor()
+    rows = (
+        f"equity,Parent Co,PARENT,INE111A01011,2019-05-01,buy,10,100,{_DEFAULT_DEMAT},ZERODHA\n"
+        f"equity,Parent Co,PARENT,INE111A01011,2021-05-01,buy,5,200,{_DEFAULT_DEMAT},ZERODHA\n"
+    )
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_TRADEBOOK_HEADER + rows).encode(), "")
+
+    inv.refresh_from_db()
+    assert inv.valuation_recompute_from == dt.date(2019, 5, 1)
+    assert inv.valuation_status in (ValuationStatus.COMPUTING, ValuationStatus.PENDING)
