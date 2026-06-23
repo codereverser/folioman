@@ -197,7 +197,18 @@ def detect_corporate_action_issues(
         # are worth applying even when a residual gap to the eCAS anchor remains — the
         # gap is usually a second action (e.g. a merger) handled separately, and the
         # split/bonus are real published events. Suggest them, flagged partial.
-        if replay is not None and replay.steps and replay.replayed_units >= _ZERO:
+        #
+        # But only when there's a holding to reconcile toward: a fully-sold / over-sold
+        # position with no eCAS anchor (``holding_units is None``) has nothing for the
+        # action to land on, so applying it is a no-op — the user would click "Apply" and
+        # see no change. That case is missing history, not a corporate action; fall
+        # through to the incomplete-history flag below.
+        if (
+            replay is not None
+            and replay.steps
+            and replay.replayed_units >= _ZERO
+            and holding_units is not None
+        ):
             effective = _effective_steps(replay.steps)
             if effective:
                 issue = _suggestion_issue(effective)

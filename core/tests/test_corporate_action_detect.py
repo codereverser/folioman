@@ -102,6 +102,33 @@ def test_incomplete_history_replay_match_still_suggests():
     assert issues[0]["reference_ids"] == [9]
 
 
+def test_oversold_with_no_holding_flags_incomplete_not_a_suggestion():
+    """A fully-sold / over-sold position has no eCAS anchor — a cached bonus has nothing
+    to land on, so applying it would no-op. Flag incomplete history instead of offering a
+    dead-end 'Apply action' (the NTPC/WIPRO case)."""
+    bonus = CachedCorporateAction(
+        ex_date=date(2019, 3, 19),
+        subject="Bonus 1:5",
+        parsed_type=CorpActionType.BONUS.value,
+        unit_multiplier=Decimal("1.2"),
+        needs_review=False,
+        reference_id=1021,
+    )
+    issues = detect_corporate_action_issues(
+        net_units=Decimal("-3"),  # sold 3 more than the imported buys
+        holding_units=None,  # fully sold — no snapshot to reconcile to
+        incomplete_history=True,
+        cached_actions=[bonus],
+        replay=ReplayMatch(
+            replayed_units=Decimal("0"),  # the bonus lifts the orphan to net 0
+            steps=[
+                ReplayStep(action=bonus, units_before=Decimal("17"), units_after=Decimal("20")),
+            ],
+        ),
+    )
+    assert issues == [{"type": "corporate_action_manual", "reason": "incomplete_history"}]
+
+
 def test_reconciled_no_issues():
     assert (
         detect_corporate_action_issues(
