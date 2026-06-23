@@ -275,7 +275,7 @@ export interface paths {
         /**
          * Capital Gains
          * @description Realised capital gains for one FY: STCG/LTCG totals + per-disposal rows
-         *     (equity-MF only in v1). A read view to review — not a filed return.
+         *     (listed equity and equity-oriented MF). A read view to review — not a filed return.
          */
         get: operations["folioman_app_api_exports_capital_gains"];
         put?: never;
@@ -411,7 +411,16 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Import Csv */
+        /**
+         * Import Csv
+         * @description Import a canonical-CSV transaction file for an investor.
+         *
+         *     The frontend wizard maps an arbitrary broker export (e.g. an equity
+         *     tradebook) onto the canonical column shape and uploads the resulting CSV
+         *     bytes; the backend consumes them through the same content-hashed,
+         *     per-row-idempotent path as every other import. Investor is taken from the
+         *     path (the file carries no owner identity), unlike a PAN-bearing CAS.
+         */
         post: operations["folioman_app_api_imports_import_csv"];
         delete?: never;
         options?: never;
@@ -513,6 +522,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/integrity/refresh-corporate-actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh Corporate Actions Now
+         * @description Fetch NSE/BSE corporate actions for this investor's mismatched equities now,
+         *     re-reconcile, and return the updated statuses. The user-triggered counterpart to
+         *     the daily scheduler tick — so suggestions are ready right after an import without
+         *     waiting. Bounded to the actionable (mismatch) set.
+         */
+        post: operations["folioman_app_api_integrity_refresh_corporate_actions_now"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/acknowledge": {
         parameters: {
             query?: never;
@@ -524,6 +556,127 @@ export interface paths {
         put?: never;
         /** Acknowledge */
         post: operations["folioman_app_api_integrity_acknowledge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-corporate-action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Corporate Action
+         * @description Apply a cached corporate-action reference to the folio ledger and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_apply_corporate_action"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-identity-remap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Identity Remap Entry
+         * @description Re-point folio ledger rows to a new ISIN without changing units or cost.
+         */
+        post: operations["folioman_app_api_integrity_apply_identity_remap_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-manual-corporate-action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Manual Corporate Action Entry
+         * @description Author a corporate action by hand (bonus/split/merger/rights/buyback)
+         *     for the flagged (security, folio), apply it, and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_apply_manual_corporate_action_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Opening Lot Entry
+         * @description Record a classified opening lot for an eCAS-only equity and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_record_opening_lot_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Opening Lots Entry
+         * @description Record several opening lots (a demerger receipt's per-lot allocation) and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_record_opening_lots_entry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/remove-opening-lot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove Opening Lot Entry
+         * @description Undo a recorded opening lot (and any demerger link it carried) and re-reconcile.
+         */
+        post: operations["folioman_app_api_integrity_remove_opening_lot_entry"];
         delete?: never;
         options?: never;
         head?: never;
@@ -545,6 +698,29 @@ export interface paths {
          *     gap reappears as a mismatch). Lets the user take back a mis-click.
          */
         post: operations["folioman_app_api_integrity_unacknowledge"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/securities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Securities
+         * @description Securities the investor has touched (any transaction or holding), name-sorted.
+         *
+         *     Backs the merger/demerger acquirer picker — the acquiring company is almost
+         *     always already in the portfolio (e.g. HDFCBANK after the HDFC merger).
+         */
+        get: operations["folioman_app_api_investors_list_securities"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -770,6 +946,26 @@ export interface components {
             /** Version */
             version: string;
         };
+        /**
+         * ApplyCorporateActionIn
+         * @description Apply the cached corporate-action references that close a unit gap.
+         *
+         *     Usually one event, but a gap can need several applied together (e.g. two splits).
+         */
+        ApplyCorporateActionIn: {
+            /** Reference Ids */
+            reference_ids: number[];
+        };
+        /** ApplyCorporateActionOut */
+        ApplyCorporateActionOut: {
+            /** Created */
+            created: number;
+            /** Events Applied */
+            events_applied: number;
+            integrity: components["schemas"]["IntegrityStatusOut"];
+            /** Updated */
+            updated: number;
+        };
         /** AssetMixRow */
         AssetMixRow: {
             /** Security Type */
@@ -816,7 +1012,8 @@ export interface components {
         };
         /**
          * CapitalGainsOut
-         * @description Realised capital gains for one FY — STCG/LTCG split, equity-MF only in v1.
+         * @description Realised capital gains for one FY — STCG/LTCG split for listed equity and
+         *     equity-oriented mutual funds.
          */
         CapitalGainsOut: {
             /**
@@ -910,6 +1107,29 @@ export interface components {
             token: string;
             /** Username */
             username: string;
+        };
+        /**
+         * DividendTimelineRow
+         * @description One dividend event on the equity scheme-detail timeline.
+         */
+        DividendTimelineRow: {
+            /** Amount Inr */
+            amount_inr?: string | null;
+            /** Dividend Per Share */
+            dividend_per_share: string;
+            /**
+             * Ex Date
+             * Format: date
+             */
+            ex_date: string;
+            /** Kind */
+            kind: string;
+            /** Record Date */
+            record_date?: string | null;
+            /** Reference Id */
+            reference_id: number;
+            /** Units */
+            units?: string | null;
         };
         /** FamilyAggregateOut */
         FamilyAggregateOut: {
@@ -1085,6 +1305,36 @@ export interface components {
             value_inr: string | null;
             /** Xirr */
             xirr?: number | null;
+        };
+        /**
+         * IdentityRemapIn
+         * @description Re-point ledger rows from the current security to another ISIN.
+         */
+        IdentityRemapIn: {
+            /** To Isin */
+            to_isin: string;
+            /**
+             * To Name
+             * @default
+             */
+            to_name: string;
+            /**
+             * To Symbol
+             * @default
+             */
+            to_symbol: string;
+        };
+        /** IdentityRemapOut */
+        IdentityRemapOut: {
+            /** Holdings Updated */
+            holdings_updated: number;
+            integrity: components["schemas"]["IntegrityStatusOut"];
+            /** Target Isin */
+            target_isin: string;
+            /** Target Security Id */
+            target_security_id: number;
+            /** Transactions Updated */
+            transactions_updated: number;
         };
         /** ImportJobOut */
         ImportJobOut: {
@@ -1384,6 +1634,47 @@ export interface components {
             valuations: components["schemas"]["ValuationDiagnosticsOut"][];
         };
         /**
+         * ManualCorporateActionIn
+         * @description Author one corporate action by hand to resolve a flagged unit mismatch.
+         *
+         *     The path's security is the affected stock; ``kind`` selects which params apply:
+         *       - ``bonus`` / ``split`` → ``unit_multiplier`` (split < 1 = reverse split)
+         *       - ``merger`` → ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)
+         *       - ``rights`` / ``buyback`` → ``units`` + ``price``
+         */
+        ManualCorporateActionIn: {
+            /**
+             * Counterparty Isin
+             * @default
+             */
+            counterparty_isin: string;
+            /**
+             * Counterparty Name
+             * @default
+             */
+            counterparty_name: string;
+            /**
+             * Counterparty Symbol
+             * @default
+             */
+            counterparty_symbol: string;
+            /**
+             * Ex Date
+             * Format: date
+             */
+            ex_date: string;
+            /** Kind */
+            kind: string;
+            /** Merger Ratio */
+            merger_ratio?: number | string | null;
+            /** Price */
+            price?: number | string | null;
+            /** Unit Multiplier */
+            unit_multiplier?: number | string | null;
+            /** Units */
+            units?: number | string | null;
+        };
+        /**
          * NavFreshnessOut
          * @description Settings 'NAV freshness' panel: per-security currency + refresh schedule.
          *
@@ -1444,6 +1735,88 @@ export interface components {
             security_type: string;
             /** Status */
             status: string;
+        };
+        /**
+         * OpeningLotRow
+         * @description One acquisition lot — a row from the broker's per-lot demerger breakdown.
+         */
+        OpeningLotRow: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Price */
+            price?: number | string | null;
+            /** Units */
+            units: number | string;
+        };
+        /**
+         * RecordOpeningLotIn
+         * @description Classified opening lot for an eCAS-only equity holding.
+         */
+        RecordOpeningLotIn: {
+            /** Classification */
+            classification: string;
+            /**
+             * Cost Basis Unknown
+             * @default false
+             */
+            cost_basis_unknown: boolean;
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Price */
+            price?: number | string | null;
+            /** Units */
+            units?: number | string | null;
+        };
+        /** RecordOpeningLotOut */
+        RecordOpeningLotOut: {
+            /** Classification */
+            classification: string;
+            /** Cost Basis Complete */
+            cost_basis_complete: boolean;
+            /** Created */
+            created: number;
+            integrity: components["schemas"]["IntegrityStatusOut"];
+            /** Units */
+            units: string;
+        };
+        /**
+         * RecordOpeningLotsIn
+         * @description Several opening lots at once — a demerger receipt's per-lot allocation
+         *     (date, qty, allocated cost), transcribed from the broker's holding breakdown.
+         */
+        RecordOpeningLotsIn: {
+            /** Classification */
+            classification: string;
+            /**
+             * Cost Basis Unknown
+             * @default false
+             */
+            cost_basis_unknown: boolean;
+            /** Demerger Date */
+            demerger_date?: string | null;
+            /** Lots */
+            lots: components["schemas"]["OpeningLotRow"][];
+        };
+        /** RecordOpeningLotsOut */
+        RecordOpeningLotsOut: {
+            /** Created */
+            created: number;
+            integrity?: components["schemas"]["IntegrityStatusOut"] | null;
+            /** Net Units */
+            net_units: string;
+            suggested_parent?: components["schemas"]["SuggestedParent"] | null;
+        };
+        /** RemoveOpeningLotOut */
+        RemoveOpeningLotOut: {
+            integrity?: components["schemas"]["IntegrityStatusOut"] | null;
+            /** Removed */
+            removed: number;
         };
         /**
          * RosterAggregateOut
@@ -1524,6 +1897,27 @@ export interface components {
             title: string;
         };
         /**
+         * SchemeCorporateActionRow
+         * @description One applied issuer event on the scheme-detail corporate-actions timeline.
+         */
+        SchemeCorporateActionRow: {
+            /** Counterparty */
+            counterparty?: string | null;
+            /**
+             * Ex Date
+             * Format: date
+             */
+            ex_date: string;
+            /** Kind */
+            kind: string;
+            /** Ratio */
+            ratio: string;
+            /** Units Added */
+            units_added?: string | null;
+            /** Units After */
+            units_after: string;
+        };
+        /**
          * SchemeDetailOut
          * @description Everything one scheme page needs in a single call: identity, current
          *     metrics, integrity per folio, the NAV history series, and the ledger.
@@ -1534,10 +1928,18 @@ export interface components {
              * Format: date
              */
             as_of: string;
+            /** Corporate Actions */
+            corporate_actions?: components["schemas"]["SchemeCorporateActionRow"][];
             /** Day Change Inr */
             day_change_inr: string | null;
             /** Day Change Pct */
             day_change_pct: number | null;
+            /** Dividend Yield On Cost */
+            dividend_yield_on_cost?: number | null;
+            /** Dividends */
+            dividends?: components["schemas"]["DividendTimelineRow"][];
+            /** Dividends Received Inr */
+            dividends_received_inr?: string | null;
             /** Folios */
             folios: components["schemas"]["FolioBalanceOut"][];
             /** Has Transactions */
@@ -1597,6 +1999,8 @@ export interface components {
         };
         /** SecurityRef */
         SecurityRef: {
+            /** Corporate Actions Synced At */
+            corporate_actions_synced_at?: string | null;
             /** Id */
             id: number;
             /** Isin */
@@ -1614,6 +2018,18 @@ export interface components {
             needs_admin: boolean;
             /** Token Required */
             token_required: boolean;
+        };
+        /**
+         * SuggestedParent
+         * @description The parent a demerger child was fingerprint-matched to (for the user to confirm).
+         */
+        SuggestedParent: {
+            /** Id */
+            id: number;
+            /** Isin */
+            isin: string;
+            /** Name */
+            name: string;
         };
         /** TokenObtainIn */
         TokenObtainIn: {
@@ -1718,6 +2134,8 @@ export interface components {
         TransactionOut: {
             /** Amount */
             amount: string | null;
+            /** Balance */
+            balance?: string | null;
             /** Brokerage */
             brokerage: string;
             /**
@@ -1754,6 +2172,8 @@ export interface components {
             transaction_type: string;
             /** Units */
             units: string;
+            /** Via Security */
+            via_security?: string | null;
         };
         /**
          * ValuationDiagnosticsOut
@@ -2647,6 +3067,28 @@ export interface operations {
             };
         };
     };
+    folioman_app_api_integrity_refresh_corporate_actions_now: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrityStatusOut"][];
+                };
+            };
+        };
+    };
     folioman_app_api_integrity_acknowledge: {
         parameters: {
             query?: never;
@@ -2671,6 +3113,170 @@ export interface operations {
             };
         };
     };
+    folioman_app_api_integrity_apply_corporate_action: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyCorporateActionIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyCorporateActionOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_apply_identity_remap_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityRemapIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityRemapOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_apply_manual_corporate_action_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualCorporateActionIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplyCorporateActionOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_record_opening_lot_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordOpeningLotIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordOpeningLotOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_record_opening_lots_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecordOpeningLotsIn"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecordOpeningLotsOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_integrity_remove_opening_lot_entry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+                folio_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveOpeningLotOut"];
+                };
+            };
+        };
+    };
     folioman_app_api_integrity_unacknowledge: {
         parameters: {
             query?: never;
@@ -2691,6 +3297,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntegrityStatusOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_investors_list_securities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityRef"][];
                 };
             };
         };

@@ -21,6 +21,10 @@ class TransactionType(StrEnum):
     DIVIDEND = "dividend"
     BONUS = "bonus"
     SPLIT = "split"
+    # Zero-unit provenance marker recording that this holding's lots were rebased from
+    # a merged-away security (the rebasing happens on the buy/sell rows; this row just
+    # makes the event visible). Unit-neutral, like SPLIT.
+    MERGER = "merger"
     TRANSFER_IN = "transfer_in"
     TRANSFER_OUT = "transfer_out"
 
@@ -65,10 +69,20 @@ class Transaction(DomainModel):
     # (Section 48) and is folded into the lot's effective per-unit cost by FIFO.
     # Zero for CAS-sourced MF rows; populated for manual / CSV equity entries.
     brokerage: DecimalField = Field(default=Decimal("0"))
+    # Exact lot cost of acquisition preserved through a corporate action. A
+    # split/merger rewrites `units` and per-unit `nav_or_price`, but `total / units`
+    # is a repeating decimal for an indivisible ratio, so per-unit can't carry the
+    # lot cost exactly. When set, FIFO uses this as the lot's TOTAL cost (apportioned
+    # by units fraction on a sell) instead of `units * nav_or_price + brokerage`, and
+    # `nav_or_price` becomes a best-effort per-unit for display. None on ordinary
+    # rows → FIFO computes cost the usual way (no behaviour change).
+    cost_total: OptionalDecimalField = None
     source: TransactionSource
     source_ref: str = Field(default="", max_length=128)
     folio_number: str = Field(default="", max_length=64)
     broker: str = Field(default="", max_length=64)
+    # Django row pk when round-tripping through the apply engine; ignored by FIFO.
+    ledger_id: int | None = None
 
     @model_validator(mode="after")
     def validate_transaction_rules(self) -> Self:
@@ -92,6 +106,9 @@ class Transaction(DomainModel):
             raise ValueError(msg)
         if self.brokerage < 0:
             msg = "brokerage cannot be negative"
+            raise ValueError(msg)
+        if self.cost_total is not None and self.cost_total < 0:
+            msg = "cost_total cannot be negative"
             raise ValueError(msg)
         if self.fx_rate_to_inr <= 0:
             msg = "fx_rate_to_inr must be positive"

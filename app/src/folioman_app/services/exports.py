@@ -49,6 +49,9 @@ _TRANSACTION_COLUMNS = [
     "stamp_duty",
     "brokerage",
     "currency",
+    "source_ref",
+    "folio_number",
+    "broker",
 ]
 
 
@@ -122,6 +125,11 @@ def build_transactions_csv(investor: Investor) -> str:
                 "stamp_duty": txn.stamp_duty,
                 "brokerage": txn.brokerage,
                 "currency": txn.currency,
+                "source_ref": txn.source_ref,
+                # The demat account / folio so an equity export re-imports cleanly
+                # (equity import requires a real demat number) onto the same folio.
+                "folio_number": txn.folio.number if txn.folio else "",
+                "broker": txn.folio.broker if txn.folio else "",
             }
         )
     return out.getvalue()

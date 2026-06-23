@@ -24,6 +24,10 @@ GRANDFATHER_ACQUIRE_CUTOFF = date(2018, 1, 31)
 GRANDFATHER_FMV_DATE = date(2018, 1, 31)
 # Transfer regime split (112A col 1b): before vs on/after 23-Jul-2024.
 TRANSFER_REGIME_CUTOFF = date(2024, 7, 23)
+# Buyback gains are exempt under s.10(34A) up to 30-Sep-2024; from 01-Oct-2024 the
+# proceeds are taxed as a deemed dividend (s.2(22)(f)) instead — that regime is not
+# handled here yet, so a later buyback falls through to ordinary classification.
+BUYBACK_CG_EXEMPT_UNTIL = date(2024, 9, 30)
 # Fund types that *may* be equity-oriented; eligibility needs the metadata flag.
 _FUND_TYPES = frozenset({SecurityType.MF, SecurityType.ETF})
 
@@ -94,6 +98,8 @@ class IndiaTaxPolicy:
         return TaxYear(label=label, start=start, end=end)
 
     def classify_term(self, disposal: Disposal, *, asset_type: SecurityType) -> Term:
+        if disposal.is_buyback and disposal.sold_on <= BUYBACK_CG_EXEMPT_UNTIL:
+            return Term.EXEMPT  # s.10(34A): buyback gain not chargeable to capital gains
         if not is_112a_eligible(disposal.security):
             return Term.SHORT
         if is_long_term_equity(disposal.acquired_on, disposal.sold_on):

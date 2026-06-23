@@ -4,8 +4,19 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from folioman_core.corporate_actions import apply_bonus, apply_split, record_dividend
-from folioman_core.fifo import apply_fifo
+from folioman_core.corporate_action_subject import CorpActionType
+from folioman_core.corporate_actions import (
+    CorporateActionApplyEvent,
+    apply_bonus,
+    apply_bonus_from_multiplier,
+    apply_corporate_action_events,
+    apply_merger,
+    apply_reverse_split,
+    apply_split,
+    cost_basis_complete_for_acquisition,
+    record_dividend,
+)
+from folioman_core.fifo import apply_fifo, net_units_from_transactions
 from folioman_core.models import (
     Security,
     SecurityType,
@@ -19,6 +30,13 @@ _EQUITY = Security(
     name="Reliance Industries",
     isin="INE002A01018",
     symbol="RELIANCE",
+)
+# Acquirer in a merger (distinct ISIN/symbol).
+_NEWCO = Security(
+    type=SecurityType.EQUITY,
+    name="HDFC Bank",
+    isin="INE040A01034",
+    symbol="HDFCBANK",
 )
 
 
@@ -58,6 +76,89 @@ def test_apply_bonus_increases_units_without_cash_outflow():
     assert fifo.balance == Decimal("15")
     assert fifo.invested == Decimal("100.0000")
     assert fifo.average == Decimal("100.0000") / Decimal("15")
+
+
+def test_bonus_1_3_issues_integer_shares():
+    """1:3 bonus on 200 shares issues floor(200/3)=66 whole shares, not 66.67."""
+    txns = apply_bonus_from_multiplier(
+        [_buy("200", "100", on=date(2021, 1, 1))],
+        unit_multiplier=Decimal("1.333333"),
+        effective_date=date(2021, 7, 29),
+        security=_EQUITY,
+        ratio=(1, 3),
+        source_ref="b1",
+    )
+    assert net_units_from_transactions(txns) == Decimal("266")
+
+
+def test_two_1_3_bonuses_compound_on_whole_shares():
+    """POWERGRID: 200 -> +66 -> 266 -> +88 -> 354, each event floored independently."""
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.BONUS,
+            ex_date=date(2021, 7, 29),
+            security=_EQUITY,
+            unit_multiplier=Decimal("1.333333"),
+            bonus_ratio=(1, 3),
+            source_ref="b1",
+        ),
+        CorporateActionApplyEvent(
+            kind=CorpActionType.BONUS,
+            ex_date=date(2023, 9, 12),
+            security=_EQUITY,
+            unit_multiplier=Decimal("1.333333"),
+            bonus_ratio=(1, 3),
+            source_ref="b2",
+        ),
+    ]
+    txns = apply_corporate_action_events([_buy("200", "100", on=date(2021, 1, 1))], events)
+    assert net_units_from_transactions(txns) == Decimal("354")
+
+
+def test_apply_split_is_idempotent_on_source_ref():
+    """Re-applying the same split (e.g. a reconciliation replay over an applied
+    ledger) must not re-scale — it would double the factor."""
+    once = apply_split(
+        [_buy("10", "100", on=date(2024, 1, 1))],
+        ratio=Decimal("2"),
+        effective_date=date(2024, 6, 1),
+        security=_EQUITY,
+        source_ref="ca-ref:7",
+    )
+    twice = apply_split(
+        once,
+        ratio=Decimal("2"),
+        effective_date=date(2024, 6, 1),
+        security=_EQUITY,
+        source_ref="ca-ref:7",
+    )
+    assert net_units_from_transactions(twice) == net_units_from_transactions(once) == Decimal("20")
+
+
+def test_bonus_too_small_for_a_whole_share_issues_nothing():
+    """1:3 bonus on 2 shares: no whole bonus share earned, so no bonus row."""
+    txns = apply_bonus_from_multiplier(
+        [_buy("2", "100", on=date(2021, 1, 1))],
+        unit_multiplier=Decimal("1.333333"),
+        effective_date=date(2021, 7, 29),
+        security=_EQUITY,
+        ratio=(1, 3),
+        source_ref="b1",
+    )
+    assert net_units_from_transactions(txns) == Decimal("2")
+
+
+def test_bonus_exact_boundary_three_shares_issues_one():
+    """held=3, 1:3 -> exactly 1 share; a decimal multiplier would floor 0.999999 to 0."""
+    txns = apply_bonus_from_multiplier(
+        [_buy("3", "100", on=date(2021, 1, 1))],
+        unit_multiplier=Decimal("1.333333"),
+        effective_date=date(2021, 7, 29),
+        security=_EQUITY,
+        ratio=(1, 3),
+        source_ref="b1",
+    )
+    assert net_units_from_transactions(txns) == Decimal("4")
 
 
 def test_record_dividend_zero_units_positive_amount():
@@ -136,3 +237,386 @@ def test_apply_bonus_rejects_nonpositive():
 def test_record_dividend_rejects_nonpositive():
     with pytest.raises(ValueError, match="dividend amount"):
         record_dividend(amount=Decimal("0"), effective_date=date(2024, 6, 1), security=_EQUITY)
+
+
+# --- merger -----------------------------------------------------------------
+
+
+def test_apply_merger_rebases_onto_acquirer_preserving_cost():
+    # 2 old -> 1 new (ratio 0.5). 10 @100 (cost 1000) becomes 5 @200 of the acquirer.
+    txns = apply_merger(
+        [_buy("10", "100.0000", on=date(2020, 1, 1))],
+        old_security=_EQUITY,
+        new_security=_NEWCO,
+        ratio=Decimal("0.5"),
+    )
+    assert len(txns) == 1
+    assert txns[0].security == _NEWCO
+    fifo = apply_fifo(txns)
+    assert fifo.balance == Decimal("5")
+    assert fifo.invested == Decimal("1000.0000")  # cost preserved
+    assert fifo.average == Decimal("200.0000")
+
+
+def test_apply_merger_preserves_acquisition_date():
+    # Holding period must carry: the re-based lot keeps the ORIGINAL buy date.
+    txns = apply_merger(
+        [_buy("10", "100", on=date(2017, 5, 10))],
+        old_security=_EQUITY,
+        new_security=_NEWCO,
+        ratio=Decimal("3"),  # 1 old -> 3 new
+    )
+    assert txns[0].date == date(2017, 5, 10)
+    fifo = apply_fifo(txns)
+    assert fifo.balance == Decimal("30")
+    # 1:3 makes the per-share price 100/3 (non-terminating); the total cost is
+    # preserved to the paisa it's persisted at.
+    assert fifo.invested.quantize(Decimal("0.01")) == Decimal("1000.00")
+    # acquisition date on the open lot is preserved for LTCG / grandfathering
+    assert fifo.disposals == []
+
+
+def test_apply_merger_keeps_pre_merger_realised_gain_invariant():
+    # Buy 10@100, sell 4@150 (gain 200), then merge 2:1. Gain stays 200; net = 6*0.5 = 3.
+    txns = apply_merger(
+        [
+            _buy("10", "100", on=date(2020, 1, 1)),
+            _sell("4", "150", on=date(2021, 3, 1)),
+        ],
+        old_security=_EQUITY,
+        new_security=_NEWCO,
+        ratio=Decimal("0.5"),
+    )
+    fifo = apply_fifo(txns)
+    assert fifo.balance == Decimal("3")
+    assert fifo.pnl == Decimal("200.00")
+    assert all(t.security == _NEWCO for t in txns)
+
+
+def test_apply_merger_passes_through_other_securities():
+    eq_row = _buy("1", "1", on=date(2022, 1, 1))  # an _EQUITY row
+    newco_row = Transaction(
+        security=_NEWCO,
+        date=date(2022, 2, 1),
+        type=TransactionType.BUY,
+        units="7",
+        nav_or_price="50",
+        source=TransactionSource.MANUAL,
+    )
+    # Merge a THIRD security; rows of other securities are untouched.
+    third = Security(type=SecurityType.EQUITY, name="X", isin="INE999A01011", symbol="X")
+    txns = apply_merger(
+        [eq_row, newco_row], old_security=third, new_security=_NEWCO, ratio=Decimal("2")
+    )
+    assert eq_row in txns
+    assert newco_row in txns
+
+
+def test_apply_merger_rejects_bad_args():
+    with pytest.raises(ValueError, match="ratio"):
+        apply_merger([], old_security=_EQUITY, new_security=_NEWCO, ratio=Decimal("0"))
+    with pytest.raises(ValueError, match="distinct"):
+        apply_merger([], old_security=_EQUITY, new_security=_EQUITY, ratio=Decimal("1"))
+
+
+def test_apply_split_preserves_acquisition_date():
+    txns = apply_split(
+        [_buy("10", "100", on=date(2017, 1, 2))],
+        ratio=Decimal("2"),
+        effective_date=date(2024, 6, 1),
+        security=_EQUITY,
+    )
+    buy = next(t for t in txns if t.type is TransactionType.BUY)
+    assert buy.date == date(2017, 1, 2)  # split must not reset the holding period
+
+
+# --- golden fixtures ---------------------------------------------------------
+
+_ALLCARGO = Security(
+    type=SecurityType.EQUITY,
+    name="Allcargo Logistics Ltd",
+    isin="INE418H01026",
+    symbol="ALLCARGO",
+)
+_HDFC = Security(
+    type=SecurityType.EQUITY,
+    name="HDFC Ltd",
+    isin="INE001A01036",
+    symbol="HDFC",
+)
+_HDFCBANK = Security(
+    type=SecurityType.EQUITY,
+    name="HDFC Bank Ltd",
+    isin="INE040A01034",
+    symbol="HDFCBANK",
+)
+
+
+def test_allcargo_bonus_3_1_reconciles_240_to_960():
+    """Tradebook net 240 + Bonus 3:1 → 960 units, cost basis preserved."""
+    from folioman_core.corporate_action_subject import CorpActionType
+    from folioman_core.corporate_actions import (
+        CorporateActionApplyEvent,
+        apply_corporate_action_events,
+    )
+
+    buy = Transaction(
+        security=_ALLCARGO,
+        date=date(2023, 6, 1),
+        type=TransactionType.BUY,
+        units="240",
+        nav_or_price="50",
+        amount="12000",
+        source=TransactionSource.MANUAL,
+    )
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.BONUS,
+            ex_date=date(2024, 1, 2),
+            security=_ALLCARGO,
+            unit_multiplier=Decimal("4"),
+            source_ref="bonus:3:1",
+        )
+    ]
+    txns = apply_corporate_action_events([buy], events)
+    fifo = apply_fifo(txns)
+    assert fifo.balance == Decimal("960")
+    assert fifo.invested == Decimal("12000")
+
+
+def test_hdfc_merger_then_bonus_reconstructs_168_hdfcbank():
+    """50 HDFC @ ₹2200 → merger 42:25 → bonus 1:1 → 168 HDFCBANK, ₹1,10,000 cost."""
+    from folioman_core.corporate_action_subject import CorpActionType
+    from folioman_core.corporate_actions import (
+        CorporateActionApplyEvent,
+        apply_corporate_action_events,
+    )
+
+    buy = Transaction(
+        security=_HDFC,
+        date=date(2022, 6, 27),
+        type=TransactionType.BUY,
+        units="50",
+        nav_or_price="2200",
+        amount="110000",
+        source=TransactionSource.MANUAL,
+    )
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.MERGER,
+            ex_date=date(2023, 7, 13),
+            security=_HDFCBANK,
+            merger_old_security=_HDFC,
+            merger_new_security=_HDFCBANK,
+            merger_ratio=Decimal("42") / Decimal("25"),
+            source_ref="merger:hdfc",
+        ),
+        CorporateActionApplyEvent(
+            kind=CorpActionType.BONUS,
+            ex_date=date(2025, 8, 26),
+            security=_HDFCBANK,
+            unit_multiplier=Decimal("2"),
+            source_ref="bonus:1:1",
+        ),
+    ]
+    txns = apply_corporate_action_events([buy], events)
+    fifo = apply_fifo([t for t in txns if t.type is not TransactionType.SPLIT])
+    assert fifo.balance == Decimal("168")
+    assert fifo.invested.quantize(Decimal("0.01")) == Decimal("110000.00")
+    assert all(t.security == _HDFCBANK for t in txns if t.type is not TransactionType.SPLIT)
+
+
+def test_apply_corporate_action_events_orders_by_ex_date():
+    """Merger before bonus even when passed in reverse."""
+    from folioman_core.corporate_action_subject import CorpActionType
+    from folioman_core.corporate_actions import (
+        CorporateActionApplyEvent,
+        apply_corporate_action_events,
+    )
+
+    buy = Transaction(
+        security=_HDFC,
+        date=date(2022, 6, 27),
+        type=TransactionType.BUY,
+        units="50",
+        nav_or_price="2200",
+        source=TransactionSource.MANUAL,
+    )
+    bonus = CorporateActionApplyEvent(
+        kind=CorpActionType.BONUS,
+        ex_date=date(2025, 8, 26),
+        security=_HDFCBANK,
+        unit_multiplier=Decimal("2"),
+    )
+    merger = CorporateActionApplyEvent(
+        kind=CorpActionType.MERGER,
+        ex_date=date(2023, 7, 13),
+        security=_HDFCBANK,
+        merger_old_security=_HDFC,
+        merger_new_security=_HDFCBANK,
+        merger_ratio=Decimal("42") / Decimal("25"),
+    )
+    fifo = apply_fifo(
+        apply_corporate_action_events([buy], [bonus, merger]),
+    )
+    assert fifo.balance == Decimal("168")
+
+
+def test_held_units_matches_by_isin_not_symbol():
+    """Bonus entitlement after a merger must not depend on symbol/exchange drift."""
+    from folioman_core.corporate_actions import held_units_asof
+
+    drifted = Security(
+        type=SecurityType.EQUITY,
+        name="HDFC Bank",
+        isin="INE040A01034",
+        symbol="HDFCBANK",
+        exchange="NSE",
+    )
+    feed_style = Security(
+        type=SecurityType.EQUITY,
+        name="HDFC Bank Ltd",
+        isin="INE040A01034",
+        symbol="HDFCBANK",
+        exchange="",
+    )
+    buy = Transaction(
+        security=drifted,
+        date=date(2022, 6, 27),
+        type=TransactionType.BUY,
+        units="84",
+        nav_or_price="1309.52",
+        source=TransactionSource.MANUAL,
+    )
+    assert held_units_asof([buy], feed_style, date(2025, 8, 26)) == Decimal("84")
+
+
+def test_apply_bonus_from_multiplier_is_idempotent_on_source_ref():
+    from folioman_core.corporate_actions import apply_bonus_from_multiplier
+
+    buy = Transaction(
+        security=_ALLCARGO,
+        date=date(2023, 6, 1),
+        type=TransactionType.BUY,
+        units="240",
+        nav_or_price="50",
+        source=TransactionSource.MANUAL,
+    )
+    ref = "ca-ref:99"
+    first = apply_bonus_from_multiplier(
+        [buy],
+        unit_multiplier=Decimal("4"),
+        effective_date=date(2024, 1, 2),
+        security=_ALLCARGO,
+        source_ref=ref,
+    )
+    second = apply_bonus_from_multiplier(
+        first,
+        unit_multiplier=Decimal("4"),
+        effective_date=date(2024, 1, 2),
+        security=_ALLCARGO,
+        source_ref=ref,
+    )
+    assert second == first
+    assert sum(1 for t in second if t.type is TransactionType.BONUS) == 1
+
+
+# --- reverse split -----------------------------------------------------------
+
+
+def test_apply_reverse_split_floors_fractional_entitlement():
+    """1:10 reverse split on 15 shares → 1 whole share (0.5 fractional sold)."""
+    txns = apply_reverse_split(
+        [_buy("15", "100", on=date(2020, 1, 1))],
+        ratio=Decimal("0.1"),
+        effective_date=date(2024, 6, 1),
+        security=_EQUITY,
+    )
+    fifo = apply_fifo([t for t in txns if t.type is not TransactionType.SPLIT])
+    assert fifo.balance == Decimal("1")
+    assert fifo.invested == Decimal("1000")
+
+
+def test_apply_reverse_split_rejects_forward_ratio():
+    with pytest.raises(ValueError, match="less than 1"):
+        apply_reverse_split(
+            [],
+            ratio=Decimal("2"),
+            effective_date=date(2024, 6, 1),
+            security=_EQUITY,
+        )
+
+
+def test_split_event_with_ratio_below_one_uses_reverse_split():
+    from folioman_core.corporate_action_subject import CorpActionType
+    from folioman_core.corporate_actions import (
+        CorporateActionApplyEvent,
+        apply_corporate_action_events,
+    )
+
+    events = [
+        CorporateActionApplyEvent(
+            kind=CorpActionType.SPLIT,
+            ex_date=date(2024, 6, 1),
+            security=_EQUITY,
+            unit_multiplier=Decimal("0.1"),
+        )
+    ]
+    txns = apply_corporate_action_events([_buy("15", "100", on=date(2020, 1, 1))], events)
+    fifo = apply_fifo([t for t in txns if t.type is not TransactionType.SPLIT])
+    assert fifo.balance == Decimal("1")
+
+
+def test_cost_basis_complete_for_acquisition():
+    assert cost_basis_complete_for_acquisition(date(2016, 1, 1)) is True
+    assert cost_basis_complete_for_acquisition(date(2015, 12, 31)) is False
+
+
+def _sell_on(security: Security, units: str, nav: str, *, on: date) -> Transaction:
+    return Transaction(
+        security=security,
+        date=on,
+        type=TransactionType.SELL,
+        units=units,
+        nav_or_price=nav,
+        source=TransactionSource.MANUAL,
+    )
+
+
+def test_merger_indivisible_ratio_preserves_exact_cost_via_total():
+    # 30 sh @ ₹1000 = ₹30,000; merge 1 old -> 3 new. New per-unit is 333.333…
+    # (repeating), so only the carried total keeps the cost exact.
+    txns = apply_merger(
+        [_buy("30", "1000", on=date(2020, 1, 1))],
+        old_security=_EQUITY,
+        new_security=_NEWCO,
+        ratio=Decimal("3"),
+    )
+    buy = next(t for t in txns if t.type is TransactionType.BUY)
+    assert buy.units == Decimal("90")
+    assert buy.cost_total == Decimal("30000")
+
+    # Simulate the ledger's 6dp persistence of the repeating per-unit; cost_total
+    # (carried as a total) is unaffected, so the realised gain stays exact.
+    persisted = buy.model_copy(
+        update={"nav_or_price": buy.nav_or_price.quantize(Decimal("0.000001"))}
+    )
+    sell = _sell_on(_NEWCO, "90", "500", on=date(2021, 6, 1))
+    fifo = apply_fifo([persisted, sell])
+    assert fifo.pnl == Decimal("15000")  # 90*500 - 30000, no drift
+
+    # Contrast: drop the preserved total and the 6dp per-unit drifts the gain.
+    drifted = persisted.model_copy(update={"cost_total": None})
+    assert apply_fifo([drifted, sell]).pnl != Decimal("15000")
+
+
+def test_split_indivisible_ratio_carries_total():
+    txns = apply_split(
+        [_buy("10", "100", on=date(2020, 1, 1))],
+        ratio=Decimal("3"),
+        effective_date=date(2020, 6, 1),
+        security=_EQUITY,
+    )
+    buy = next(t for t in txns if t.type is TransactionType.BUY)
+    assert buy.units == Decimal("30")
+    assert buy.cost_total == Decimal("1000")  # 10 * 100, preserved exactly

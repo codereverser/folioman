@@ -419,6 +419,12 @@ class TransactionOut(Schema):
     # False for a partial-history row: shown for context but excluded from cost
     # basis / units / gains. The scheme page badges these.
     cost_basis_complete: bool = True
+    # Pre-merger scrip a rebased lot originally traded under (e.g. "HDFC" for an
+    # HDFCBANK lot that arrived through the merger); null for natively-held rows.
+    via_security: str | None = None
+    # Running unit balance after this row (server-computed over the as-traded ledger +
+    # corporate-action events); null for an incomplete row that can't carry one.
+    balance: Decimal | None = None
 
 
 class SecurityRef(Schema):
@@ -427,6 +433,10 @@ class SecurityRef(Schema):
     isin: str
     symbol: str
     security_type: str
+    # When this equity's corporate actions were last fetched (null = never). The
+    # integrity UI uses it to gate manual authoring behind "the feed has been
+    # checked", so the user doesn't guess an action before the real history lands.
+    corporate_actions_synced_at: datetime | None = None
 
 
 class FolioRef(Schema):
@@ -447,6 +457,119 @@ class IntegrityStatusOut(Schema):
     ledger_through: date | None
     snapshot_as_of: date | None
     last_reconciled_at: datetime | None
+
+
+class ApplyCorporateActionIn(Schema):
+    """Apply the cached corporate-action references that close a unit gap.
+
+    Usually one event, but a gap can need several applied together (e.g. two splits).
+    """
+
+    reference_ids: list[int]
+
+
+class ApplyCorporateActionOut(Schema):
+    updated: int
+    created: int
+    events_applied: int
+    integrity: IntegrityStatusOut
+
+
+class ManualCorporateActionIn(Schema):
+    """Author one corporate action by hand to resolve a flagged unit mismatch.
+
+    The path's security is the affected stock; ``kind`` selects which params apply:
+      - ``bonus`` / ``split`` → ``unit_multiplier`` (split < 1 = reverse split)
+      - ``merger`` → ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)
+      - ``rights`` / ``buyback`` → ``units`` + ``price``
+    """
+
+    kind: str
+    ex_date: date
+    unit_multiplier: Decimal | None = None
+    merger_ratio: Decimal | None = None
+    units: Decimal | None = None
+    price: Decimal | None = None
+    counterparty_isin: str = ""
+    counterparty_symbol: str = ""
+    counterparty_name: str = ""
+
+
+class RecordOpeningLotIn(Schema):
+    """Classified opening lot for an eCAS-only equity holding."""
+
+    classification: str  # ipo_allotment | transfer_in | demerger_result
+    date: date
+    units: Decimal | None = None
+    price: Decimal | None = None
+    cost_basis_unknown: bool = False
+
+
+class RecordOpeningLotOut(Schema):
+    created: int
+    classification: str
+    units: str
+    cost_basis_complete: bool
+    integrity: IntegrityStatusOut
+
+
+class OpeningLotRow(Schema):
+    """One acquisition lot — a row from the broker's per-lot demerger breakdown."""
+
+    date: date
+    units: Decimal
+    price: Decimal | None = None
+
+
+class RecordOpeningLotsIn(Schema):
+    """Several opening lots at once — a demerger receipt's per-lot allocation
+    (date, qty, allocated cost), transcribed from the broker's holding breakdown."""
+
+    classification: str  # ipo_allotment | transfer_in | demerger_result
+    lots: list[OpeningLotRow]
+    cost_basis_unknown: bool = False
+    # The demerger's ex-date — links the receipt to its parent and reduces the parent's
+    # cost basis at that date. Required to link; without it the lots are recorded unlinked.
+    demerger_date: date | None = None
+
+
+class RemoveOpeningLotOut(Schema):
+    removed: int
+    # The (security, folio) status after removal — absent if the row no longer survives.
+    integrity: IntegrityStatusOut | None = None
+
+
+class SuggestedParent(Schema):
+    """The parent a demerger child was fingerprint-matched to (for the user to confirm)."""
+
+    id: int
+    name: str
+    isin: str
+
+
+class RecordOpeningLotsOut(Schema):
+    created: int
+    net_units: str
+    # A fully-sold child reconciles to net 0 and carries no surviving status row.
+    integrity: IntegrityStatusOut | None = None
+    # Set when a demerger receipt was linked to a parent whose cost basis was reduced.
+    suggested_parent: SuggestedParent | None = None
+
+
+class IdentityRemapIn(Schema):
+    """Re-point ledger rows from the current security to another ISIN."""
+
+    to_isin: str
+    to_symbol: str = ""
+    to_name: str = ""
+
+
+class IdentityRemapOut(Schema):
+    transactions_updated: int
+    holdings_updated: int
+    target_security_id: int
+    target_isin: str
+    integrity: IntegrityStatusOut
 
 
 class SchemeRef(Schema):
@@ -475,6 +598,31 @@ class FolioBalanceOut(Schema):
     folio_type: str
     units: Decimal
     value_inr: Decimal | None
+
+
+class DividendTimelineRow(Schema):
+    """One dividend event on the equity scheme-detail timeline."""
+
+    reference_id: int
+    ex_date: date
+    record_date: date | None = None
+    dividend_per_share: Decimal
+    units: Decimal | None = None
+    amount_inr: Decimal | None = None
+    # schedule = feed only; attributed = on ledger; computed = ledger-eligible but
+    # not yet written; estimate = snapshot-only forward on current units.
+    kind: str
+
+
+class SchemeCorporateActionRow(Schema):
+    """One applied issuer event on the scheme-detail corporate-actions timeline."""
+
+    ex_date: date
+    kind: str  # bonus | split | merger
+    ratio: str  # human ratio, e.g. "1:1", "1:2", "1.68 new per old"
+    counterparty: str | None = None  # merged-away / acquiring scrip, for a merger
+    units_added: Decimal | None = None  # bonus shares issued (null for unit-neutral events)
+    units_after: Decimal  # running balance once the event has acted
 
 
 class SchemeDetailOut(Schema):
@@ -507,6 +655,13 @@ class SchemeDetailOut(Schema):
     # for a single-folio holding; the UI shows it only when held across >1 folio.
     folios: list[FolioBalanceOut]
     nav_history: list[NavPoint]
+    # Equity dividend schedule; empty for mutual funds.
+    dividends: list[DividendTimelineRow] = Field(default_factory=list)
+    dividends_received_inr: Decimal | None = None
+    dividend_yield_on_cost: float | None = None
+    # Applied issuer events (bonus / split / merger) with their ratio and running
+    # balance — how the holding evolved, distinct from the trade ledger below.
+    corporate_actions: list[SchemeCorporateActionRow] = Field(default_factory=list)
     transactions: list[TransactionOut]
 
 
@@ -548,7 +703,8 @@ class CapitalGainRow(Schema):
 
 
 class CapitalGainsOut(Schema):
-    """Realised capital gains for one FY — STCG/LTCG split, equity-MF only in v1."""
+    """Realised capital gains for one FY — STCG/LTCG split for listed equity and
+    equity-oriented mutual funds."""
 
     fy: str
     stcg_total: Decimal

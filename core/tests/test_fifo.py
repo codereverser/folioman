@@ -8,6 +8,7 @@ from folioman_core.fifo import (
     FIFOUnits,
     InsufficientUnitsError,
     apply_fifo,
+    net_intraday_offsets,
     net_units_from_transactions,
 )
 from folioman_core.models import (
@@ -380,3 +381,158 @@ def test_net_units_from_transactions():
         ),
     ]
     assert net_units_from_transactions(txns) == Decimal("80")
+
+
+def _buy_with_cost_total(
+    units: str, nav: str, cost_total: str, *, on: date = date(2024, 1, 1)
+) -> Transaction:
+    """A buy whose exact lot cost was preserved by a corporate action."""
+    return Transaction(
+        security=_MF,
+        date=on,
+        type=TransactionType.BUY,
+        units=units,
+        nav_or_price=nav,
+        cost_total=cost_total,
+        source=TransactionSource.CORPORATE_ACTION,
+    )
+
+
+def test_cost_total_carries_exact_lot_cost():
+    # A 1:3 split rewrote a ₹100,000 lot to 300 units; the persisted 6dp per-unit
+    # (333.333333) would lose ₹0.0001, but cost_total preserves the exact total.
+    fifo = FIFOUnits()
+    fifo.add_transaction(_buy_with_cost_total("300", "333.333333", "100000"))
+    assert fifo.invested == Decimal("100000")
+
+
+def test_cost_total_preserved_through_full_disposal():
+    fifo = apply_fifo(
+        [
+            _buy_with_cost_total("300", "333.333333", "100000", on=date(2024, 1, 1)),
+            _sell("300", "500", on=date(2024, 6, 1)),
+        ]
+    )
+    # Realised = 300*500 - 100000 = 50000 exactly (no per-unit drift).
+    assert fifo.pnl == Decimal("50000")
+    assert fifo.balance == Decimal("0")
+
+
+def test_cost_total_partial_disposals_apportion_without_residue():
+    fifo = FIFOUnits()
+    fifo.add_transaction(_buy_with_cost_total("300", "333.333333", "100000"))
+    fifo.sell(Decimal("100"), Decimal("400"), security=_MF, sold_on=date(2024, 6, 1))
+    fifo.sell(Decimal("200"), Decimal("400"), security=_MF, sold_on=date(2024, 7, 1))
+    # The full lot is consumed; apportioned costs sum back to the exact total, so
+    # invested returns to exactly zero with no rounding residue left behind.
+    assert fifo.balance == Decimal("0")
+    assert fifo.invested == Decimal("0")
+
+
+def test_without_cost_total_persisted_per_unit_drifts():
+    # Contrast: the same split without a preserved total reconstructs cost from the
+    # 6dp per-unit (300 * 333.333333 = 99999.9999), drifting the realised gain.
+    fifo = apply_fifo([_buy("300", "333.333333"), _sell("300", "500")])
+    assert fifo.pnl == Decimal("50000.0001")
+
+
+def test_net_intraday_drops_fully_offset_same_day_pair():
+    # Held 100 (2020), then a same-day sell 100 + buy 100 in 2021 — a squared-off
+    # intraday round-trip that nets at settlement. It must not touch the delivery
+    # ledger: the 2020 lot stays intact and the 2021 day vanishes from FIFO input.
+    txns = [
+        _buy("100", "200", on=date(2020, 1, 1)),
+        _sell("100", "250", on=date(2021, 1, 1)),
+        _buy("100", "230", on=date(2021, 1, 1)),
+    ]
+    netted = net_intraday_offsets(txns)
+    assert net_units_from_transactions(netted) == Decimal("100")
+    assert all(t.date == date(2020, 1, 1) for t in netted)
+
+
+def test_net_intraday_trims_partial_offset_keeping_the_net_delivery():
+    # Same day: sell 9 + buy 3 -> 3 speculative (dropped), net delivery sell 6.
+    txns = [
+        _buy("50", "100", on=date(2020, 1, 1)),
+        _sell("9", "110", on=date(2021, 1, 1)),
+        _buy("3", "108", on=date(2021, 1, 1)),
+    ]
+    netted = net_intraday_offsets(txns)
+    buys = sum((t.units for t in netted if t.type is TransactionType.BUY), Decimal("0"))
+    sells = sum((t.units for t in netted if t.type is TransactionType.SELL), Decimal("0"))
+    assert buys == Decimal("50")  # the 2021 buy of 3 is fully intraday, dropped
+    assert sells == Decimal("6")  # the 2021 sell trimmed 9 -> 6 (net delivery)
+
+
+def test_net_intraday_leaves_non_same_day_trades_untouched():
+    txns = [_buy("100", "200", on=date(2020, 1, 1)), _sell("40", "250", on=date(2021, 1, 1))]
+    assert net_intraday_offsets(txns) == txns
+
+
+# --- demerger parent-side cost reduction (FIFO-time, by ex-date) -------------
+
+_EQ = Security(type=SecurityType.EQUITY, name="Parent Co", isin="INE418H01029", symbol="PARENT")
+
+
+def _eq(kind, units, nav, on):
+    return Transaction(
+        security=_EQ,
+        date=on,
+        type=kind,
+        units=units,
+        nav_or_price=nav,
+        amount=str(Decimal(units) * Decimal(nav)),
+        source=TransactionSource.CSV_IMPORT,
+        folio_number="DMAT",
+    )
+
+
+def test_demerger_reduction_spares_a_pre_demerger_sale():
+    """A sale before the demerger keeps full basis; only lots open at the ex-date shed cost."""
+    from folioman_core.fifo import build_sell_disposals
+
+    txns = [
+        _eq(TransactionType.BUY, "100", "96", date(2018, 10, 9)),
+        _eq(TransactionType.SELL, "60", "150", date(2021, 8, 24)),  # pre-demerger
+        _eq(TransactionType.SELL, "40", "200", date(2023, 1, 1)),  # post-demerger
+    ]
+    # Demerger ex 2022: child carried away 292 of the held 40 lot's cost.
+    reductions = {"INE418H01029": [(date(2022, 6, 1), {date(2018, 10, 9): Decimal("292")})]}
+    disposals = build_sell_disposals(txns, demerger_reductions=reductions)
+
+    pre = next(d for d in disposals if d.sold_on == date(2021, 8, 24))
+    post = next(d for d in disposals if d.sold_on == date(2023, 1, 1))
+    # Pre-demerger sale: full basis 60 * 96 = 5760.
+    assert sum((lt.cost_total for lt in pre.lots), Decimal("0")) == Decimal("5760")
+    # Post-demerger sale: 40 * 96 - 292 = 3548.
+    assert sum((lt.cost_total for lt in post.lots), Decimal("0")) == Decimal("3548")
+
+
+def test_demerger_reductions_stack_across_ex_dates():
+    """Two demergers on the still-held lot stack; held basis sheds both children's cost."""
+    txns = [
+        _eq(TransactionType.BUY, "100", "96", date(2018, 10, 9)),
+        _eq(TransactionType.SELL, "60", "150", date(2021, 8, 24)),
+    ]
+    reductions = [
+        (date(2022, 6, 1), {date(2018, 10, 9): Decimal("292")}),  # ATL-like
+        (date(2024, 2, 2), {date(2018, 10, 9): Decimal("1795.968")}),  # TransIndia-like
+    ]
+    fifo = apply_fifo(txns, demerger_reductions=reductions)
+    # Held 40 units: 40*96 - 292 - 1795.968 = 1752.032 (cost/u 43.8008).
+    assert fifo.balance == Decimal("40")
+    assert fifo.invested == Decimal("1752.032")
+
+
+def test_demerger_reduction_apportions_across_same_date_lots():
+    """A date's reduction is shared by units across the open lots of that date."""
+    txns = [
+        _eq(TransactionType.BUY, "196", "103", date(2019, 2, 12)),
+        _eq(TransactionType.BUY, "4", "103", date(2019, 2, 12)),
+    ]
+    # 1566 over 200 open units -> 7.83/u; both lots shed pro-rata.
+    fifo = apply_fifo(
+        txns, demerger_reductions=[(date(2022, 6, 1), {date(2019, 2, 12): Decimal("1566")})]
+    )
+    # 200*103 - 1566 = 19034.
+    assert fifo.invested == Decimal("19034")

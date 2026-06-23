@@ -14,7 +14,9 @@ const props = defineProps<{
 const readyPct = computed(() =>
   props.rollup.total === 0 ? 0 : Math.round((props.rollup.taxReady / props.rollup.total) * 100),
 )
-const allClear = computed(() => props.rollup.total > 0 && props.rollup.needsAttention === 0 && props.rollup.snapshot === 0)
+const allClear = computed(
+  () => props.rollup.total > 0 && props.rollup.needsAttention === 0 && props.rollup.snapshot === 0,
+)
 </script>
 
 <template>
@@ -39,20 +41,40 @@ const allClear = computed(() => props.rollup.total > 0 && props.rollup.needsAtte
     </div>
 
     <div class="bar" role="img" :aria-label="`${readyPct}% of holdings are tax-ready`">
-      <span class="seg verified" :style="{ width: rollup.total ? (rollup.verified / rollup.total) * 100 + '%' : '0' }" />
-      <span class="seg snapshot" :style="{ width: rollup.total ? (rollup.snapshot / rollup.total) * 100 + '%' : '0' }" />
-      <span class="seg mismatch" :style="{ width: rollup.total ? (rollup.mismatch / rollup.total) * 100 + '%' : '0' }" />
-      <span class="seg ack" :style="{ width: rollup.total ? (rollup.acknowledged / rollup.total) * 100 + '%' : '0' }" />
+      <span
+        class="seg verified"
+        :style="{ width: rollup.total ? (rollup.verified / rollup.total) * 100 + '%' : '0' }"
+      />
+      <span
+        class="seg snapshot"
+        :style="{ width: rollup.total ? (rollup.snapshot / rollup.total) * 100 + '%' : '0' }"
+      />
+      <span
+        class="seg mismatch"
+        :style="{ width: rollup.total ? (rollup.mismatch / rollup.total) * 100 + '%' : '0' }"
+      />
+      <span
+        class="seg ack"
+        :style="{ width: rollup.total ? (rollup.acknowledged / rollup.total) * 100 + '%' : '0' }"
+      />
     </div>
 
     <ul class="legend">
       <li class="verified"><i class="pi pi-verified" /> {{ rollup.verified }} verified</li>
-      <li v-if="rollup.snapshot" class="snapshot"><i class="pi pi-exclamation-triangle" /> {{ rollup.snapshot }} snapshot</li>
-      <li v-if="rollup.mismatch" class="mismatch"><i class="pi pi-times-circle" /> {{ rollup.mismatch }} to fix</li>
-      <li v-if="rollup.acknowledged" class="ack"><i class="pi pi-minus-circle" /> {{ rollup.acknowledged }} acknowledged</li>
+      <li v-if="rollup.snapshot" class="snapshot">
+        <i class="pi pi-exclamation-triangle" /> {{ rollup.snapshot }} snapshot
+      </li>
+      <li v-if="rollup.mismatch" class="mismatch">
+        <i class="pi pi-times-circle" /> {{ rollup.mismatch }} to fix
+      </li>
+      <li v-if="rollup.acknowledged" class="ack">
+        <i class="pi pi-minus-circle" /> {{ rollup.acknowledged }} acknowledged
+      </li>
     </ul>
 
-    <p v-if="allClear" class="all-clear"><i class="pi pi-shield" /> All holdings verified — Schedule 112A ready.</p>
+    <p v-if="allClear" class="all-clear">
+      <i class="pi pi-shield" /> All holdings verified — Schedule 112A ready.
+    </p>
   </article>
 </template>
 

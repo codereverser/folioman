@@ -87,16 +87,19 @@ def test_list_jobs_for_investor(client, make_investor):
     assert {j["kind"] for j in jobs} == {"cas"}
 
 
-def test_csv_upload_is_disabled(client, make_investor):
-    # Generic CSV import is parked until the multi-asset release: the endpoint
-    # rejects the upload and creates no job.
+def test_csv_upload_creates_job(client, make_investor):
+    # A canonical-CSV upload runs through the import-job runner and records a CSV
+    # job for the investor.
     inv = make_investor()
+    header = "security_type,name,symbol,isin,date,transaction_type,units,price\n"
+    row = "equity,Reliance Industries,RELIANCE,INE002A01018,2024-01-15,buy,10,2800\n"
     resp = client.post(
         f"/api/investors/{inv.id}/imports/csv",
-        {"file": SimpleUploadedFile("txns.csv", b"date,type,units")},
+        {"file": SimpleUploadedFile("txns.csv", (header + row).encode())},
     )
-    assert resp.status_code == 503
-    assert client.get(f"/api/investors/{inv.id}/imports").json() == []
+    assert resp.status_code == 201
+    jobs = client.get(f"/api/investors/{inv.id}/imports").json()
+    assert {j["kind"] for j in jobs} == {"csv"}
 
 
 def test_preview_reports_content_stats_and_flags_snapshot(client, patch_cas, make_parsed_cas):
@@ -216,3 +219,19 @@ def test_at_cap_upload_is_accepted(client, patch_cas, make_parsed_cas, settings)
     patch_cas(make_parsed_cas(mf=MfCasStatement(schemes=[]), pan="ABCDE1234F"))
     upload = SimpleUploadedFile("cams.pdf", b"%PDF fake")  # 9 bytes
     assert client.post("/api/imports/cas", {"file": upload, "password": "s"}).status_code == 201
+
+
+def test_upload_without_content_length_is_capped(settings):
+    """A missing ``size`` must not bypass the byte cap (read limit+1)."""
+    from unittest.mock import MagicMock
+
+    from folioman_app.api.imports import _read_upload
+    from ninja.errors import HttpError
+
+    settings.MAX_UPLOAD_BYTES = 8
+    upload = MagicMock()
+    upload.size = None
+    upload.read.return_value = b"%PDF more than eight bytes"
+    with pytest.raises(HttpError) as exc:
+        _read_upload(upload)
+    assert exc.value.status_code == 413

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
@@ -16,25 +16,13 @@ import { useRosterStore } from '@/stores/roster'
 import { useIntegrityStore } from '@/stores/integrity'
 import { useWriteLock } from '@/composables/useWriteLock'
 import { formatDate } from '@/utils/format'
-import { importSummary } from '@/utils/jobs'
 import { isDesktopShell, pickCasFile } from '@/utils/desktop'
-import JobStatusBadge from '@/components/JobStatusBadge.vue'
 
 const router = useRouter()
 const ui = useUiStore()
 const roster = useRosterStore()
 const integrity = useIntegrityStore()
 const { readOnly } = useWriteLock()
-
-// Recent imports across all investors, so a past outcome / re-import is visible in
-// context on the landing step. Reuses the advisor-wide /api/jobs endpoint; the full
-// list (with valuation status) lives on the Settings → Jobs & valuation tab.
-const recentImports = ref<Schemas['ImportJobSummaryOut'][]>([])
-async function loadHistory(): Promise<void> {
-  const res = await api.GET('/api/jobs')
-  if (res.data) recentImports.value = res.data.imports.slice(0, 5)
-}
-onMounted(loadHistory)
 
 // --- result view-model ------------------------------------------------------
 // The job's `result` is an open dict on the wire; narrow it to the keys the two
@@ -167,7 +155,6 @@ async function submit(confirm = false): Promise<void> {
     job.value = await importCas(file.value, password.value, confirm)
     if (succeeded.value) {
       ui.notify({ severity: 'success', summary: 'Import complete', detail: file.value.name })
-      void loadHistory() // reflect the just-completed import in the recent list
       // An import resolves/creates an investor by PAN and changes its holdings —
       // refresh the cached roster (so the switcher + Investors list show it) and
       // drop the integrity cache (so the affected investor re-fetches on next view).
@@ -215,116 +202,106 @@ function goToDashboard(): void {
 <template>
   <section class="import-page">
     <header class="page-head">
-      <h1>Import CAS</h1>
+      <RouterLink class="back" :to="{ name: 'import' }">
+        <i class="pi pi-arrow-left" aria-hidden="true" /> Import
+      </RouterLink>
+      <h1>Consolidated statement</h1>
       <p class="muted lede">
-        Drop a CAMS/KFintech <strong>Mutual Fund CAS</strong> or an NSDL/CDSL <strong>eCAS</strong> —
-        we auto-detect the type and find the right investor by PAN.
+        Drop a CAMS/KFintech <strong>Mutual Fund CAS</strong> or an NSDL/CDSL
+        <strong>eCAS</strong> — we auto-detect the type and find the right investor by PAN.
       </p>
     </header>
 
     <!-- Step 1: pick the file (nothing is persisted until you confirm who it's for) -->
     <template v-if="!preview && !job">
-    <Message v-if="readOnly" severity="info" :closable="false">
-      Importing is disabled on this read-only demo. Explore the sample portfolios that are
-      already loaded.
-    </Message>
-    <div class="card">
-      <label
-        class="dropzone"
-        :class="{ dragging }"
-        @click="onBrowse"
-        @dragover.prevent="dragging = true"
-        @dragleave.prevent="dragging = false"
-        @drop.prevent="onDrop"
-      >
-        <input type="file" accept="application/pdf,.pdf" class="file-input" @change="pickFile" />
-        <i class="pi pi-file-pdf" aria-hidden="true" />
-        <span v-if="file" class="file-name">{{ file.name }}</span>
-        <span v-else class="dropzone-hint">Drop a CAS PDF here, or click to browse</span>
-      </label>
-
-      <label class="field">
-        <span class="field-label">PDF password <span class="muted">(if protected)</span></span>
-        <input
-          v-model="password"
-          type="password"
-          class="text-input"
-          autocomplete="off"
-          placeholder="Leave blank if none"
-        />
-      </label>
-
-      <Message v-if="errorMessage" severity="error" :closable="false">{{ errorMessage }}</Message>
-
-      <div class="actions">
-        <Button label="Continue" icon="pi pi-arrow-right" icon-pos="right" :disabled="!file || busy || readOnly" :loading="busy" @click="review" />
-      </div>
-    </div>
-
-    <details class="help">
-      <summary>
-        <i class="pi pi-question-circle" aria-hidden="true" />
-        How to get your CAS &amp; what we import
-      </summary>
-      <div class="help-body">
-        <h2>Mutual funds — consolidated CAS</h2>
-        <p>
-          Get a <strong>Consolidated Account Statement</strong> from either
-          <a
-            href="https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement"
-            target="_blank"
-            rel="noopener noreferrer"
-            >CAMS</a
-          >
-          or
-          <a
-            href="https://mfs.kfintech.com/investor/General/ConsolidatedAccountStatement"
-            target="_blank"
-            rel="noopener noreferrer"
-            >KFintech</a
-          >
-          — both cover all your fund houses, so either is fine.
-        </p>
-        <p>For complete, tax-accurate history, request it as:</p>
-        <ul class="help-list">
-          <li><strong>Since inception</strong> — the full history.</li>
-          <li><strong>Detailed</strong> — every transaction, not a summary.</li>
-          <li>
-            <strong>Including zero-balance folios</strong> — funds you've fully sold still belong in
-            a year's gains; leaving them out can make that year's capital gains wrong.
-          </li>
-        </ul>
-
-        <h2>Demat holdings — eCAS</h2>
-        <p>
-          Your monthly eCAS from
-          <a href="https://nsdl.co.in" target="_blank" rel="noopener noreferrer">NSDL</a> or
-          <a href="https://www.cdslindia.com" target="_blank" rel="noopener noreferrer">CDSL</a>
-          lists demat holdings. We use it for net worth (a snapshot) — stocks, bonds and the rest
-          show up this way until per-transaction import lands.
-        </p>
-      </div>
-    </details>
-
-    <!-- Recent imports (in context): newest first, advisor-wide. Detail in Settings. -->
-    <section v-if="recentImports.length" class="recent">
-      <header class="recent-head">
-        <h2>Recent imports</h2>
-        <RouterLink class="recent-all" :to="{ name: 'settings', params: { tab: 'jobs' } }"
-          >View all in Settings ↗</RouterLink
+      <Message v-if="readOnly" severity="info" :closable="false">
+        Importing is disabled on this read-only demo. Explore the sample portfolios that are already
+        loaded.
+      </Message>
+      <div class="card">
+        <label
+          class="dropzone"
+          :class="{ dragging }"
+          @click="onBrowse"
+          @dragover.prevent="dragging = true"
+          @dragleave.prevent="dragging = false"
+          @drop.prevent="onDrop"
         >
-      </header>
-      <ul class="recent-list">
-        <li v-for="j in recentImports" :key="j.id" class="recent-row">
-          <span class="r-main">
-            <span class="r-name">{{ j.filename || j.kind.toUpperCase() }}</span>
-            <span class="r-sub">{{ j.investor_name }} · {{ formatDate(j.created_at) }}</span>
-          </span>
-          <span class="r-detail" :class="{ 'is-error': !!j.error }">{{ importSummary(j) }}</span>
-          <JobStatusBadge :status="j.status" />
-        </li>
-      </ul>
-    </section>
+          <input type="file" accept="application/pdf,.pdf" class="file-input" @change="pickFile" />
+          <i class="pi pi-file-pdf" aria-hidden="true" />
+          <span v-if="file" class="file-name">{{ file.name }}</span>
+          <span v-else class="dropzone-hint">Drop a CAS PDF here, or click to browse</span>
+        </label>
+
+        <label class="field">
+          <span class="field-label">PDF password <span class="muted">(if protected)</span></span>
+          <input
+            v-model="password"
+            type="password"
+            class="text-input"
+            autocomplete="off"
+            placeholder="Leave blank if none"
+          />
+        </label>
+
+        <Message v-if="errorMessage" severity="error" :closable="false">{{ errorMessage }}</Message>
+
+        <div class="actions">
+          <Button
+            label="Continue"
+            icon="pi pi-arrow-right"
+            icon-pos="right"
+            :disabled="!file || busy || readOnly"
+            :loading="busy"
+            @click="review"
+          />
+        </div>
+      </div>
+
+      <details class="help">
+        <summary>
+          <i class="pi pi-question-circle" aria-hidden="true" />
+          How to get your CAS &amp; what we import
+        </summary>
+        <div class="help-body">
+          <h2>Mutual funds — consolidated CAS</h2>
+          <p>
+            Get a <strong>Consolidated Account Statement</strong> from either
+            <a
+              href="https://www.camsonline.com/Investors/Statements/Consolidated-Account-Statement"
+              target="_blank"
+              rel="noopener noreferrer"
+              >CAMS</a
+            >
+            or
+            <a
+              href="https://mfs.kfintech.com/investor/General/ConsolidatedAccountStatement"
+              target="_blank"
+              rel="noopener noreferrer"
+              >KFintech</a
+            >
+            — both cover all your fund houses, so either is fine.
+          </p>
+          <p>For complete, tax-accurate history, request it as:</p>
+          <ul class="help-list">
+            <li><strong>Since inception</strong> — the full history.</li>
+            <li><strong>Detailed</strong> — every transaction, not a summary.</li>
+            <li>
+              <strong>Including zero-balance folios</strong> — funds you've fully sold still belong
+              in a year's gains; leaving them out can make that year's capital gains wrong.
+            </li>
+          </ul>
+
+          <h2>Demat holdings — eCAS</h2>
+          <p>
+            Your monthly eCAS from
+            <a href="https://nsdl.co.in" target="_blank" rel="noopener noreferrer">NSDL</a> or
+            <a href="https://www.cdslindia.com" target="_blank" rel="noopener noreferrer">CDSL</a>
+            lists demat holdings. We use it for net worth (a snapshot) — stocks, bonds and the rest
+            show up this way until per-transaction import lands.
+          </p>
+        </div>
+      </details>
     </template>
 
     <!-- Step 2: confirm who the statement belongs to before importing -->
@@ -337,23 +314,45 @@ function goToDashboard(): void {
         <template v-else>It'll create a new investor.</template>
       </Message>
       <dl class="summary">
-        <div><dt>Statement</dt><dd>{{ kindLabel }}</dd></div>
+        <div>
+          <dt>Statement</dt>
+          <dd>{{ kindLabel }}</dd>
+        </div>
         <div>
           <dt>{{ preview?.match_investor_id ? 'Existing investor' : 'New investor' }}</dt>
           <dd>{{ preview?.match_investor_name || preview?.investor_name || '—' }}</dd>
         </div>
-        <div><dt>PAN</dt><dd class="mono">{{ preview?.pan_masked }}</dd></div>
-        <div><dt>{{ isEcas ? 'Statement date' : 'Period' }}</dt><dd>{{ period }}</dd></div>
+        <div>
+          <dt>PAN</dt>
+          <dd class="mono">{{ preview?.pan_masked }}</dd>
+        </div>
+        <div>
+          <dt>{{ isEcas ? 'Statement date' : 'Period' }}</dt>
+          <dd>{{ period }}</dd>
+        </div>
         <template v-if="isEcas">
-          <div><dt>Demat accounts</dt><dd class="mono">{{ preview?.scheme_count }}</dd></div>
-          <div v-if="preview?.mf_folio_count">
-            <dt>Mutual fund folios</dt><dd class="mono">{{ preview.mf_folio_count }}</dd>
+          <div>
+            <dt>Demat accounts</dt>
+            <dd class="mono">{{ preview?.scheme_count }}</dd>
           </div>
-          <div><dt>Holdings</dt><dd class="mono">{{ preview?.holding_count }}</dd></div>
+          <div v-if="preview?.mf_folio_count">
+            <dt>Mutual fund folios</dt>
+            <dd class="mono">{{ preview.mf_folio_count }}</dd>
+          </div>
+          <div>
+            <dt>Holdings</dt>
+            <dd class="mono">{{ preview?.holding_count }}</dd>
+          </div>
         </template>
         <template v-else>
-          <div><dt>Schemes</dt><dd class="mono">{{ preview?.scheme_count }}</dd></div>
-          <div><dt>Transactions</dt><dd class="mono">{{ preview?.transaction_count }}</dd></div>
+          <div>
+            <dt>Schemes</dt>
+            <dd class="mono">{{ preview?.scheme_count }}</dd>
+          </div>
+          <div>
+            <dt>Transactions</dt>
+            <dd class="mono">{{ preview?.transaction_count }}</dd>
+          </div>
         </template>
       </dl>
 
@@ -424,21 +423,46 @@ function goToDashboard(): void {
 
         <!-- MF CAS summary -->
         <dl v-if="result.detected === 'mf_cas'" class="summary">
-          <div><dt>Schemes</dt><dd class="mono">{{ result.schemes ?? 0 }}</dd></div>
-          <div><dt>Transactions added</dt><dd class="mono">{{ result.transactions_created ?? 0 }}</dd></div>
-          <div v-if="result.transactions_skipped"><dt>Already on file</dt><dd class="mono">{{ result.transactions_skipped }}</dd></div>
-          <div v-if="result.holdings_snapshotted"><dt>Snapshot-only schemes</dt><dd class="mono">{{ result.holdings_snapshotted }}</dd></div>
+          <div>
+            <dt>Schemes</dt>
+            <dd class="mono">{{ result.schemes ?? 0 }}</dd>
+          </div>
+          <div>
+            <dt>Transactions added</dt>
+            <dd class="mono">{{ result.transactions_created ?? 0 }}</dd>
+          </div>
+          <div v-if="result.transactions_skipped">
+            <dt>Already on file</dt>
+            <dd class="mono">{{ result.transactions_skipped }}</dd>
+          </div>
+          <div v-if="result.holdings_snapshotted">
+            <dt>Snapshot-only schemes</dt>
+            <dd class="mono">{{ result.holdings_snapshotted }}</dd>
+          </div>
         </dl>
 
         <!-- eCAS summary -->
         <dl v-else class="summary">
-          <div><dt>Demat accounts</dt><dd class="mono">{{ result.accounts ?? 0 }}</dd></div>
-          <div v-if="result.mf_folios">
-            <dt>Mutual fund folios</dt><dd class="mono">{{ result.mf_folios }}</dd>
+          <div>
+            <dt>Demat accounts</dt>
+            <dd class="mono">{{ result.accounts ?? 0 }}</dd>
           </div>
-          <div><dt>Holdings added</dt><dd class="mono">{{ result.holdings_created ?? 0 }}</dd></div>
-          <div v-if="result.holdings_updated"><dt>Holdings updated</dt><dd class="mono">{{ result.holdings_updated }}</dd></div>
-          <div v-if="result.holdings_removed"><dt>Holdings removed</dt><dd class="mono">{{ result.holdings_removed }}</dd></div>
+          <div v-if="result.mf_folios">
+            <dt>Mutual fund folios</dt>
+            <dd class="mono">{{ result.mf_folios }}</dd>
+          </div>
+          <div>
+            <dt>Holdings added</dt>
+            <dd class="mono">{{ result.holdings_created ?? 0 }}</dd>
+          </div>
+          <div v-if="result.holdings_updated">
+            <dt>Holdings updated</dt>
+            <dd class="mono">{{ result.holdings_updated }}</dd>
+          </div>
+          <div v-if="result.holdings_removed">
+            <dt>Holdings removed</dt>
+            <dd class="mono">{{ result.holdings_removed }}</dd>
+          </div>
         </dl>
 
         <!-- Incomplete-history schemes: snapshotted, no cost-basis worksheet -->
@@ -459,8 +483,8 @@ function goToDashboard(): void {
         </div>
 
         <Message v-if="result.reconcile_errors" severity="warn" :closable="false">
-          Imported, but some securities couldn’t be reconciled — they may show as needing
-          attention until the next import.
+          Imported, but some securities couldn’t be reconciled — they may show as needing attention
+          until the next import.
         </Message>
 
         <!-- Quarantine: rows the import couldn't persist, set aside so the rest still
@@ -468,9 +492,9 @@ function goToDashboard(): void {
         <div v-if="quarantine.length" class="warn-block">
           <h2>Couldn’t import ({{ quarantine.length }})</h2>
           <p class="muted">
-            These rows couldn’t be imported, so they were set aside — the rest of your
-            statement still imported. Re-import a corrected statement to add them, or dismiss
-            ones you don’t need.
+            These rows couldn’t be imported, so they were set aside — the rest of your statement
+            still imported. Re-import a corrected statement to add them, or dismiss ones you don’t
+            need.
           </p>
           <ul class="incomplete">
             <li v-for="q in quarantine" :key="q.id">
@@ -491,8 +515,20 @@ function goToDashboard(): void {
       </template>
 
       <div class="actions">
-        <Button label="Import another" severity="secondary" outlined icon="pi pi-replay" @click="reset" />
-        <Button v-if="succeeded" label="View dashboard" icon="pi pi-arrow-right" icon-pos="right" @click="goToDashboard" />
+        <Button
+          label="Import another"
+          severity="secondary"
+          outlined
+          icon="pi pi-replay"
+          @click="reset"
+        />
+        <Button
+          v-if="succeeded"
+          label="View dashboard"
+          icon="pi pi-arrow-right"
+          icon-pos="right"
+          @click="goToDashboard"
+        />
       </div>
     </div>
   </section>
@@ -518,6 +554,21 @@ function goToDashboard(): void {
 .lede {
   margin: 0;
   max-width: 38rem;
+}
+
+/* Back-to-hub crumb above the page title. */
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: var(--fm-space-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--fm-text-muted);
+  text-decoration: none;
+}
+.back:hover {
+  color: var(--p-primary-color);
 }
 
 /* Collapsed by default so the top stays light; expands to the how-to + scope. */
@@ -615,7 +666,9 @@ function goToDashboard(): void {
   border: 1.5px dashed var(--fm-border);
   border-radius: var(--fm-radius-md);
   cursor: pointer;
-  transition: border-color var(--fm-dur) var(--fm-ease), background var(--fm-dur) var(--fm-ease);
+  transition:
+    border-color var(--fm-dur) var(--fm-ease),
+    background var(--fm-dur) var(--fm-ease);
 }
 .dropzone:hover,
 .dropzone.dragging {
@@ -723,78 +776,5 @@ function goToDashboard(): void {
   flex-basis: 100%;
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
-}
-
-/* Recent imports list (landing step) */
-.recent {
-  margin-top: var(--fm-space-5);
-}
-.recent-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--fm-space-3);
-  margin-bottom: var(--fm-space-2);
-}
-.recent-head h2 {
-  margin: 0;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--fm-text-muted);
-}
-.recent-all {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--p-primary-color);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.recent-all:hover {
-  text-decoration: underline;
-}
-.recent-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-.recent-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--fm-space-3);
-  padding: 0.55rem 0;
-  border-top: 1px solid var(--fm-border-subtle);
-}
-.recent-row:first-child {
-  border-top: none;
-}
-.r-main {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1 1 12rem;
-}
-.r-name {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--fm-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.r-sub {
-  font-size: 0.75rem;
-  color: var(--fm-text-muted);
-}
-.r-detail {
-  flex: 1 1 8rem;
-  font-size: 0.8125rem;
-  color: var(--fm-text-muted);
-  text-align: right;
-}
-.r-detail.is-error {
-  color: var(--p-red-500, #ef4444);
 }
 </style>

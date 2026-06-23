@@ -33,6 +33,7 @@ def disposal_from_lot(sell: SellDisposal, lot_index: int) -> Disposal:
         cost_per_unit=lot.cost_per_unit,
         fees_allocated=lot.stamp_allocated,
         currency=sell.security.currency,
+        is_buyback=sell.is_buyback,
     )
 
 
@@ -81,9 +82,14 @@ def compute_gain_lines(
     policy: TaxPolicy,
     *,
     fmv_lookup: FmvLookup | None = None,
+    demerger_reductions: dict | None = None,
 ) -> list[GainLine]:
-    """FIFO ledger → per-lot disposals → policy-classified gain lines."""
-    sells = build_sell_disposals(transactions)
+    """FIFO ledger → per-lot disposals → policy-classified gain lines.
+
+    ``demerger_reductions`` carries each parent security's ex-date cost reductions so a
+    post-demerger disposal uses the reduced basis (a pre-demerger sale keeps its full one).
+    """
+    sells = build_sell_disposals(transactions, demerger_reductions=demerger_reductions)
     return [
         classify_disposal(disposal, policy, fmv_lookup=fmv_lookup)
         for disposal in disposals_from_sells(sells)

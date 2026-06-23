@@ -25,10 +25,9 @@ export function useScheme(investorId: Ref<number>, securityId: Ref<number>) {
     loading.value = true
     notFound.value = false
     try {
-      const { data, error } = await api.GET(
-        '/api/investors/{investor_id}/holdings/{security_id}',
-        { params: { path: { investor_id: investorId.value, security_id: securityId.value } } },
-      )
+      const { data, error } = await api.GET('/api/investors/{investor_id}/holdings/{security_id}', {
+        params: { path: { investor_id: investorId.value, security_id: securityId.value } },
+      })
       if (error || !data) {
         notFound.value = true
         detail.value = null

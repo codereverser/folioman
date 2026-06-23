@@ -5,8 +5,9 @@ FIFO, so disposals (and the resulting 112A rows) can only come from buckets whos
 integrity status is tax-ready. This is done in the app by pre-filtering the
 ledger, which keeps the core tax engine folio-agnostic. India-only in v1.
 
-FMV-as-of-31-Jan-2018 (grandfathering) comes from casparser-isin via
-``casparser_fmv.fmv_lookup`` — injectable so tests stay deterministic.
+FMV-as-of-31-Jan-2018 (grandfathering) comes from the layered ``services.fmv``
+lookup (MF via casparser's NAV dataset, listed equity via backfilled price
+history) — injectable so tests stay deterministic.
 """
 
 from __future__ import annotations
@@ -14,15 +15,19 @@ from __future__ import annotations
 from collections.abc import Callable
 from decimal import ROUND_HALF_EVEN, Decimal
 
-from folioman_core.price_feeds.casparser_fmv import fmv_lookup as _default_fmv
 from folioman_core.reconciliation import IntegrityStatus
 from folioman_core.tax import compute_gain_lines, compute_schedule_112a, get_policy
 from folioman_core.tax.india import india_fy_range
 from folioman_core.tax.models import Term
 from folioman_core.tax.schedule_112a import SCHEDULE_112A_CSV_COLUMNS
 
-from folioman_app.mappers import to_core_transaction
 from folioman_app.models import Investor, Security
+from folioman_app.services.fmv import fmv_lookup as _default_fmv
+from folioman_app.services.projected_ledger import (
+    demerger_reductions,
+    projected_transactions,
+    security_key,
+)
 
 _Q2 = Decimal("0.01")
 
@@ -44,16 +49,18 @@ def _tax_ready_transactions(investor: Investor, *, include_unreconciled: bool) -
     is simply absent from the ready set.
     """
     ready_keys = {
-        (st.security_id, st.folio.number)
-        for st in investor.integrity_statuses.select_related("folio").all()
+        (security_key(st.security), st.folio.number)
+        for st in investor.integrity_statuses.select_related("security", "folio").all()
         if _folio_tax_ready(IntegrityStatus(st.status), include_unreconciled=include_unreconciled)
     }
+    # Corporate-action-adjusted ledger (split-scaled units, merged lots, bonus shares):
+    # FIFO over the projection gives the right cost basis and proceeds without rewriting
+    # rows. Keyed by stable security identity + folio so a merged disposal is gated by —
+    # and attributed to — the acquirer's tax-ready bucket.
     return [
-        to_core_transaction(t)
-        # Cost-basis rows only — a partial-history bucket is SNAPSHOT_ONLY (never
-        # tax-ready) anyway, but exclude its rows explicitly so they can't reach FIFO.
-        for t in investor.transactions.cost_basis().select_related("security", "folio").all()
-        if (t.security_id, t.folio.number if t.folio else "") in ready_keys
+        core
+        for core in projected_transactions(investor)
+        if (security_key(core.security), core.folio_number or "") in ready_keys
     ]
 
 
@@ -65,13 +72,18 @@ def build_capital_gains(
     fmv_lookup: Callable | None = None,
 ) -> dict:
     """Realised capital gains for one India FY: per-disposal rows split into
-    short-/long-term, plus STCG/LTCG totals. Equity-MF only in v1 (the only asset
-    class with full transaction history); same tax-ready gating as the 112A export.
+    short-/long-term, plus STCG/LTCG totals. Listed equity and equity-oriented
+    mutual funds with tax-ready folios; same gating as the 112A export.
     """
     fmv = fmv_lookup if fmv_lookup is not None else _default_fmv
     fy_start, fy_end = india_fy_range(fy_label)  # raises ValueError on a bad label
     transactions = _tax_ready_transactions(investor, include_unreconciled=include_unreconciled)
-    gain_lines = compute_gain_lines(transactions, get_policy("IN"), fmv_lookup=fmv)
+    gain_lines = compute_gain_lines(
+        transactions,
+        get_policy("IN"),
+        fmv_lookup=fmv,
+        demerger_reductions=demerger_reductions(investor),
+    )
 
     in_fy = [g for g in gain_lines if fy_start <= g.disposal.sold_on <= fy_end]
     # Map core securities back to Django ids so rows can deep-link to the scheme.
@@ -84,13 +96,16 @@ def build_capital_gains(
     rows: list[dict] = []
     stcg = Decimal("0")
     ltcg = Decimal("0")
+    exempt = Decimal("0")
     for line in in_fy:
         d = line.disposal
         sale_value = (d.units * d.sale_price_per_unit).quantize(_Q2, rounding=ROUND_HALF_EVEN)
         if line.term is Term.SHORT:
             stcg += line.gain
-        else:
+        elif line.term is Term.LONG:
             ltcg += line.gain
+        else:  # Term.EXEMPT — e.g. a buyback (s.10(34A)); not chargeable to CG
+            exempt += line.gain
         rows.append(
             {
                 "security_id": isin_to_id.get(d.security.isin),
@@ -119,6 +134,7 @@ def build_capital_gains(
         "fy": fy_label,
         "stcg_total": stcg.quantize(_Q2, rounding=ROUND_HALF_EVEN),
         "ltcg_total": ltcg.quantize(_Q2, rounding=ROUND_HALF_EVEN),
+        "exempt_total": exempt.quantize(_Q2, rounding=ROUND_HALF_EVEN),
         "rows": rows,
     }
 
@@ -135,7 +151,12 @@ def build_schedule_112a(
     # Only tax-ready (security, folio) buckets reach FIFO, so disposals come only
     # from them (shared with the realised capital-gains view).
     transactions = _tax_ready_transactions(investor, include_unreconciled=include_unreconciled)
-    gain_lines = compute_gain_lines(transactions, get_policy("IN"), fmv_lookup=fmv)
+    gain_lines = compute_gain_lines(
+        transactions,
+        get_policy("IN"),
+        fmv_lookup=fmv,
+        demerger_reductions=demerger_reductions(investor),
+    )
 
     # Per-folio gating is already applied above; mark the surviving securities
     # ready so the core per-security gate (which can't see folios) lets them through.

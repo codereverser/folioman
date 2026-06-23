@@ -43,20 +43,17 @@ async function submit(): Promise<void> {
         <Message severity="error" :closable="false">{{ error }}</Message>
         <p class="hint">
           Forgot your password? Reset it from the server shell:
-          <code>docker compose -f server/docker-compose.yml exec app django-admin changepassword
-          &lt;username&gt;</code>
+          <code
+            >docker compose -f server/docker-compose.yml exec app django-admin changepassword
+            &lt;username&gt;</code
+          >
           See the install guide for details.
         </p>
       </template>
 
       <label class="field">
         <span>Username</span>
-        <InputText
-          v-model="username"
-          autocomplete="username"
-          autofocus
-          :disabled="submitting"
-        />
+        <InputText v-model="username" autocomplete="username" autofocus :disabled="submitting" />
       </label>
 
       <label class="field">

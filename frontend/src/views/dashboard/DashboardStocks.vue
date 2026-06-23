@@ -31,8 +31,8 @@ function ticker(s: StockRow): string {
     </div>
 
     <p v-if="empty" class="empty">
-      No priced stocks yet. Equities from an eCAS snapshot price once their symbol
-      resolves and price history backfills.
+      No priced stocks yet. Equities from an eCAS snapshot price once their symbol resolves and
+      price history backfills.
     </p>
     <article v-else class="card stock-list">
       <DataTable
@@ -64,13 +64,13 @@ function ticker(s: StockRow): string {
             </div>
           </template>
         </Column>
-        <Column header="Value" class="num">
+        <Column header="Value" class="num" header-class="num">
           <template #body="{ data }">{{ formatInr(data.value) }}</template>
         </Column>
-        <Column header="Shares" class="num">
+        <Column header="Shares" class="num" header-class="num">
           <template #body="{ data }">{{ formatUnits(data.units) }}</template>
         </Column>
-        <Column header="Return" class="num">
+        <Column header="Return" class="num" header-class="num">
           <template #body="{ data }">
             <DeltaChip
               v-if="data.returnPct !== null"

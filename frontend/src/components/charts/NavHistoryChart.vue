@@ -45,7 +45,13 @@ const option = computed<EChartsOption>(() => {
           icon: 'circle',
         }
       : undefined,
-    grid: { left: 8, right: 8, top: props.markers?.length ? 28 : 16, bottom: 8, containLabel: true },
+    grid: {
+      left: 8,
+      right: 8,
+      top: props.markers?.length ? 28 : 16,
+      bottom: 8,
+      containLabel: true,
+    },
     xAxis: {
       type: 'time',
       axisLine: { lineStyle: { color: tokens.value.border } },
@@ -57,7 +63,8 @@ const option = computed<EChartsOption>(() => {
       splitLine: { lineStyle: { color: tokens.value.border } },
       axisLabel: {
         color: tokens.value.muted,
-        formatter: (v: number) => `₹${Intl.NumberFormat('en-IN', { notation: 'compact' }).format(v)}`,
+        formatter: (v: number) =>
+          `₹${Intl.NumberFormat('en-IN', { notation: 'compact' }).format(v)}`,
       },
     },
     series: [

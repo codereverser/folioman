@@ -50,10 +50,14 @@ const DETAIL = {
       last_reconciled_at: null,
     },
   ],
+  folios: [],
   nav_history: [
     { date: '2025-05-30', nav: '18' },
     { date: '2025-06-01', nav: '20' },
   ],
+  dividends: [],
+  dividends_received_inr: null,
+  dividend_yield_on_cost: null,
   transactions: [],
 }
 

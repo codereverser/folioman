@@ -67,6 +67,50 @@
         "title": "AppMetaOut",
         "type": "object"
       },
+      "ApplyCorporateActionIn": {
+        "description": "Apply the cached corporate-action references that close a unit gap.\n\nUsually one event, but a gap can need several applied together (e.g. two splits).",
+        "properties": {
+          "reference_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Reference Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "reference_ids"
+        ],
+        "title": "ApplyCorporateActionIn",
+        "type": "object"
+      },
+      "ApplyCorporateActionOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "events_applied": {
+            "title": "Events Applied",
+            "type": "integer"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/IntegrityStatusOut"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "updated",
+          "created",
+          "events_applied",
+          "integrity"
+        ],
+        "title": "ApplyCorporateActionOut",
+        "type": "object"
+      },
       "AssetMixRow": {
         "properties": {
           "security_type": {
@@ -164,7 +208,7 @@
         "type": "object"
       },
       "CapitalGainsOut": {
-        "description": "Realised capital gains for one FY \u2014 STCG/LTCG split, equity-MF only in v1.",
+        "description": "Realised capital gains for one FY \u2014 STCG/LTCG split for listed equity and\nequity-oriented mutual funds.",
         "properties": {
           "disclaimer": {
             "default": "Heads up \u2014 this isn't tax advice. folioman builds a capital-gains worksheet from the transactions you import, so you and your tax professional have a starting point. It doesn't file anything, it's no substitute for a qualified tax professional, and we can't promise the numbers are right or complete \u2014 a misparsed or incomplete statement can throw them off. Always check every figure with a qualified tax professional before you file. Provided as-is, no warranty; we're not liable for any filing, penalty, or loss that comes from using it.",
@@ -337,6 +381,73 @@
           "password"
         ],
         "title": "CreateAdminIn",
+        "type": "object"
+      },
+      "DividendTimelineRow": {
+        "description": "One dividend event on the equity scheme-detail timeline.",
+        "properties": {
+          "amount_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Inr"
+          },
+          "dividend_per_share": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Dividend Per Share",
+            "type": "string"
+          },
+          "ex_date": {
+            "format": "date",
+            "title": "Ex Date",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "record_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Date"
+          },
+          "reference_id": {
+            "title": "Reference Id",
+            "type": "integer"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          }
+        },
+        "required": [
+          "reference_id",
+          "ex_date",
+          "dividend_per_share",
+          "kind"
+        ],
+        "title": "DividendTimelineRow",
         "type": "object"
       },
       "FamilyAggregateOut": {
@@ -780,6 +891,62 @@
           "value_inr"
         ],
         "title": "HoldingValueRow",
+        "type": "object"
+      },
+      "IdentityRemapIn": {
+        "description": "Re-point ledger rows from the current security to another ISIN.",
+        "properties": {
+          "to_isin": {
+            "title": "To Isin",
+            "type": "string"
+          },
+          "to_name": {
+            "default": "",
+            "title": "To Name",
+            "type": "string"
+          },
+          "to_symbol": {
+            "default": "",
+            "title": "To Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_isin"
+        ],
+        "title": "IdentityRemapIn",
+        "type": "object"
+      },
+      "IdentityRemapOut": {
+        "properties": {
+          "holdings_updated": {
+            "title": "Holdings Updated",
+            "type": "integer"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/IntegrityStatusOut"
+          },
+          "target_isin": {
+            "title": "Target Isin",
+            "type": "string"
+          },
+          "target_security_id": {
+            "title": "Target Security Id",
+            "type": "integer"
+          },
+          "transactions_updated": {
+            "title": "Transactions Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "transactions_updated",
+          "holdings_updated",
+          "target_security_id",
+          "target_isin",
+          "integrity"
+        ],
+        "title": "IdentityRemapOut",
         "type": "object"
       },
       "ImportJobOut": {
@@ -1558,6 +1725,101 @@
         "title": "JobsOverviewOut",
         "type": "object"
       },
+      "ManualCorporateActionIn": {
+        "description": "Author one corporate action by hand to resolve a flagged unit mismatch.\n\nThe path's security is the affected stock; ``kind`` selects which params apply:\n  - ``bonus`` / ``split`` \u2192 ``unit_multiplier`` (split < 1 = reverse split)\n  - ``merger`` \u2192 ``counterparty_*`` (acquirer) + ``merger_ratio`` (new per old)\n  - ``rights`` / ``buyback`` \u2192 ``units`` + ``price``",
+        "properties": {
+          "counterparty_isin": {
+            "default": "",
+            "title": "Counterparty Isin",
+            "type": "string"
+          },
+          "counterparty_name": {
+            "default": "",
+            "title": "Counterparty Name",
+            "type": "string"
+          },
+          "counterparty_symbol": {
+            "default": "",
+            "title": "Counterparty Symbol",
+            "type": "string"
+          },
+          "ex_date": {
+            "format": "date",
+            "title": "Ex Date",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "merger_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merger Ratio"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "unit_multiplier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Multiplier"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          }
+        },
+        "required": [
+          "kind",
+          "ex_date"
+        ],
+        "title": "ManualCorporateActionIn",
+        "type": "object"
+      },
       "NavFreshnessOut": {
         "description": "Settings 'NAV freshness' panel: per-security currency + refresh schedule.\n\nRead-only \u2014 refreshes run on the scheduler (or ``manage.py refresh_navs``);\nthe panel shows when prices were last written and when the next pass runs.",
         "properties": {
@@ -1696,6 +1958,236 @@
           "status"
         ],
         "title": "NavSecurityFreshnessOut",
+        "type": "object"
+      },
+      "OpeningLotRow": {
+        "description": "One acquisition lot \u2014 a row from the broker's per-lot demerger breakdown.",
+        "properties": {
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Units"
+          }
+        },
+        "required": [
+          "date",
+          "units"
+        ],
+        "title": "OpeningLotRow",
+        "type": "object"
+      },
+      "RecordOpeningLotIn": {
+        "description": "Classified opening lot for an eCAS-only equity holding.",
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "cost_basis_unknown": {
+            "default": false,
+            "title": "Cost Basis Unknown",
+            "type": "boolean"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          }
+        },
+        "required": [
+          "classification",
+          "date"
+        ],
+        "title": "RecordOpeningLotIn",
+        "type": "object"
+      },
+      "RecordOpeningLotOut": {
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "cost_basis_complete": {
+            "title": "Cost Basis Complete",
+            "type": "boolean"
+          },
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/IntegrityStatusOut"
+          },
+          "units": {
+            "title": "Units",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created",
+          "classification",
+          "units",
+          "cost_basis_complete",
+          "integrity"
+        ],
+        "title": "RecordOpeningLotOut",
+        "type": "object"
+      },
+      "RecordOpeningLotsIn": {
+        "description": "Several opening lots at once \u2014 a demerger receipt's per-lot allocation\n(date, qty, allocated cost), transcribed from the broker's holding breakdown.",
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "cost_basis_unknown": {
+            "default": false,
+            "title": "Cost Basis Unknown",
+            "type": "boolean"
+          },
+          "demerger_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Demerger Date"
+          },
+          "lots": {
+            "items": {
+              "$ref": "#/components/schemas/OpeningLotRow"
+            },
+            "title": "Lots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "classification",
+          "lots"
+        ],
+        "title": "RecordOpeningLotsIn",
+        "type": "object"
+      },
+      "RecordOpeningLotsOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "integrity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntegrityStatusOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "net_units": {
+            "title": "Net Units",
+            "type": "string"
+          },
+          "suggested_parent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestedParent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "created",
+          "net_units"
+        ],
+        "title": "RecordOpeningLotsOut",
+        "type": "object"
+      },
+      "RemoveOpeningLotOut": {
+        "properties": {
+          "integrity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntegrityStatusOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "removed": {
+            "title": "Removed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "removed"
+        ],
+        "title": "RemoveOpeningLotOut",
         "type": "object"
       },
       "RosterAggregateOut": {
@@ -1850,6 +2342,60 @@
         "title": "Schedule112AResponse",
         "type": "object"
       },
+      "SchemeCorporateActionRow": {
+        "description": "One applied issuer event on the scheme-detail corporate-actions timeline.",
+        "properties": {
+          "counterparty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counterparty"
+          },
+          "ex_date": {
+            "format": "date",
+            "title": "Ex Date",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "ratio": {
+            "title": "Ratio",
+            "type": "string"
+          },
+          "units_added": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units Added"
+          },
+          "units_after": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Units After",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ex_date",
+          "kind",
+          "ratio",
+          "units_after"
+        ],
+        "title": "SchemeCorporateActionRow",
+        "type": "object"
+      },
       "SchemeDetailOut": {
         "description": "Everything one scheme page needs in a single call: identity, current\nmetrics, integrity per folio, the NAV history series, and the ledger.",
         "properties": {
@@ -1857,6 +2403,13 @@
             "format": "date",
             "title": "As Of",
             "type": "string"
+          },
+          "corporate_actions": {
+            "items": {
+              "$ref": "#/components/schemas/SchemeCorporateActionRow"
+            },
+            "title": "Corporate Actions",
+            "type": "array"
           },
           "day_change_inr": {
             "anyOf": [
@@ -1880,6 +2433,36 @@
               }
             ],
             "title": "Day Change Pct"
+          },
+          "dividend_yield_on_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield On Cost"
+          },
+          "dividends": {
+            "items": {
+              "$ref": "#/components/schemas/DividendTimelineRow"
+            },
+            "title": "Dividends",
+            "type": "array"
+          },
+          "dividends_received_inr": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividends Received Inr"
           },
           "folios": {
             "items": {
@@ -2098,6 +2681,18 @@
       },
       "SecurityRef": {
         "properties": {
+          "corporate_actions_synced_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Corporate Actions Synced At"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -2145,6 +2740,30 @@
           "token_required"
         ],
         "title": "SetupStateOut",
+        "type": "object"
+      },
+      "SuggestedParent": {
+        "description": "The parent a demerger child was fingerprint-matched to (for the user to confirm).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "isin": {
+            "title": "Isin",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "isin"
+        ],
+        "title": "SuggestedParent",
         "type": "object"
       },
       "TokenObtainIn": {
@@ -2365,6 +2984,18 @@
             ],
             "title": "Amount"
           },
+          "balance": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Balance"
+          },
           "brokerage": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Brokerage",
@@ -2438,6 +3069,17 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Units",
             "type": "string"
+          },
+          "via_security": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Via Security"
           }
         },
         "required": [
@@ -3459,7 +4101,7 @@
     },
     "/api/investors/{investor_id}/exports/capital-gains": {
       "get": {
-        "description": "Realised capital gains for one FY: STCG/LTCG totals + per-disposal rows\n(equity-MF only in v1). A read view to review \u2014 not a filed return.",
+        "description": "Realised capital gains for one FY: STCG/LTCG totals + per-disposal rows\n(listed equity and equity-oriented MF). A read view to review \u2014 not a filed return.",
         "operationId": "folioman_app_api_exports_capital_gains",
         "parameters": [
           {
@@ -3737,6 +4379,7 @@
     },
     "/api/investors/{investor_id}/imports/csv": {
       "post": {
+        "description": "Import a canonical-CSV transaction file for an investor.\n\nThe frontend wizard maps an arbitrary broker export (e.g. an equity\ntradebook) onto the canonical column shape and uploads the resulting CSV\nbytes; the backend consumes them through the same content-hashed,\nper-row-idempotent path as every other import. Investor is taken from the\npath (the file carries no owner identity), unlike a PAN-bearing CAS.",
         "operationId": "folioman_app_api_imports_import_csv",
         "parameters": [
           {
@@ -3973,6 +4616,43 @@
         ]
       }
     },
+    "/api/investors/{investor_id}/integrity/refresh-corporate-actions": {
+      "post": {
+        "description": "Fetch NSE/BSE corporate actions for this investor's mismatched equities now,\nre-reconcile, and return the updated statuses. The user-triggered counterpart to\nthe daily scheduler tick \u2014 so suggestions are ready right after an import without\nwaiting. Bounded to the actionable (mismatch) set.",
+        "operationId": "folioman_app_api_integrity_refresh_corporate_actions_now",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrityStatusOut"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Refresh Corporate Actions Now",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
     "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/acknowledge": {
       "post": {
         "operationId": "folioman_app_api_integrity_acknowledge",
@@ -4018,6 +4698,362 @@
           }
         },
         "summary": "Acknowledge",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-corporate-action": {
+      "post": {
+        "description": "Apply a cached corporate-action reference to the folio ledger and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_apply_corporate_action",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyCorporateActionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyCorporateActionOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Apply Corporate Action",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-identity-remap": {
+      "post": {
+        "description": "Re-point folio ledger rows to a new ISIN without changing units or cost.",
+        "operationId": "folioman_app_api_integrity_apply_identity_remap_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityRemapIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityRemapOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Apply Identity Remap Entry",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/apply-manual-corporate-action": {
+      "post": {
+        "description": "Author a corporate action by hand (bonus/split/merger/rights/buyback)\nfor the flagged (security, folio), apply it, and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_apply_manual_corporate_action_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualCorporateActionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplyCorporateActionOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Apply Manual Corporate Action Entry",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lot": {
+      "post": {
+        "description": "Record a classified opening lot for an eCAS-only equity and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_record_opening_lot_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordOpeningLotIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordOpeningLotOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Record Opening Lot Entry",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/record-opening-lots": {
+      "post": {
+        "description": "Record several opening lots (a demerger receipt's per-lot allocation) and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_record_opening_lots_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordOpeningLotsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordOpeningLotsOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Record Opening Lots Entry",
+        "tags": [
+          "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/integrity/{security_id}/{folio_id}/remove-opening-lot": {
+      "post": {
+        "description": "Undo a recorded opening lot (and any demerger link it carried) and re-reconcile.",
+        "operationId": "folioman_app_api_integrity_remove_opening_lot_entry",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "folio_id",
+            "required": true,
+            "schema": {
+              "title": "Folio Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveOpeningLotOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Remove Opening Lot Entry",
         "tags": [
           "integrity"
         ]
@@ -4071,6 +5107,43 @@
         "summary": "Unacknowledge",
         "tags": [
           "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/securities": {
+      "get": {
+        "description": "Securities the investor has touched (any transaction or holding), name-sorted.\n\nBacks the merger/demerger acquirer picker \u2014 the acquiring company is almost\nalways already in the portfolio (e.g. HDFCBANK after the HDFC merger).",
+        "operationId": "folioman_app_api_investors_list_securities",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SecurityRef"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "List Securities",
+        "tags": [
+          "investors"
         ]
       }
     },

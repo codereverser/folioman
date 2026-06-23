@@ -7,6 +7,7 @@ from decimal import Decimal
 import httpx
 import pytest
 from folioman_core.price_feeds import nse_history
+from folioman_core.price_feeds.nse_bse_client import NSE_BASE_URL
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
 # Header mirrors NSE's real CSV: BOM on the first cell, trailing spaces on names.
@@ -19,7 +20,7 @@ def _no_sleep(monkeypatch):
 
 
 def _client(handler) -> httpx.Client:
-    return httpx.Client(transport=httpx.MockTransport(handler), base_url=nse_history.BASE_URL)
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url=NSE_BASE_URL)
 
 
 def _csv(*rows: tuple[str, str]) -> str:

@@ -10,8 +10,10 @@ from decimal import Decimal
 import pytest
 from django.utils import timezone
 from folioman_app.models import InvestorValue, NAVHistory, ValuationStatus
+from folioman_app.services.valuation import build_investor_summary
 from folioman_app.tasks import valuation_jobs
-from folioman_core.models import SecurityType
+from folioman_core.models import SecurityType, TransactionType
+from folioman_core.models.investor import FolioType
 
 pytestmark = pytest.mark.django_db
 
@@ -441,11 +443,11 @@ def test_queue_recompute_seeds_provisional_and_marks_computing(make_investor):
 # --- equities in net worth ----------------------------------------------------
 
 
-def test_recompute_prices_equity_snapshot_into_networth(
+def test_recompute_series_ledger_only_excludes_snapshot_equity(
     make_investor, make_security, make_folio, make_transaction, make_holding
 ):
-    """A mixed portfolio (full-history MF + an eCAS equity snapshot) must value
-    BOTH — the equity priced from its (now-populated) NAVHistory."""
+    """Two-tier valuation: snapshot-only equities price into headline net worth but
+    not the day-wise trend — only the MF ledger enters the persisted series."""
     inv = make_investor()
     mf = make_security(security_type=SecurityType.MF.value)
     folio = make_folio(investor=inv)
@@ -471,15 +473,133 @@ def test_recompute_prices_equity_snapshot_into_networth(
 
     status = valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
     assert status == ValuationStatus.READY
-    # 100 MF * 10  +  10 shares * 1400  = 1000 + 14000 = 15000.
-    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("15000")
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("1000")  # MF ledger only
+    summary = build_investor_summary(inv, dt.date(2025, 1, 1))
+    assert summary["total_inr"] == Decimal("15000")  # MF + snapshot equity headline
+
+
+def test_recompute_series_includes_ledger_backed_equity(
+    make_investor, make_security, make_folio, make_transaction, make_holding
+):
+    """A full-history equity tradebook ledger enters the day-wise trend."""
+    inv = make_investor()
+    demat = make_folio(investor=inv, folio_type=FolioType.DEMAT.value, number="1234567890123456")
+    equity = make_security(
+        security_type=SecurityType.EQUITY.value,
+        name="Reliance",
+        isin="INE002A01018",
+        symbol="RELIANCE",
+        exchange="NSE",
+    )
+    make_transaction(
+        investor=inv,
+        security=equity,
+        folio=demat,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("10"),
+        nav_or_price=Decimal("1000"),
+    )
+    make_transaction(
+        investor=inv,
+        security=equity,
+        folio=demat,
+        date=dt.date(2025, 2, 1),
+        transaction_type=TransactionType.SELL.value,
+        units=Decimal("5"),
+        nav_or_price=Decimal("1100"),
+    )
+    NAVHistory.objects.create(security=equity, date=dt.date(2025, 1, 1), nav=Decimal("1000"))
+    NAVHistory.objects.create(security=equity, date=dt.date(2025, 2, 1), nav=Decimal("1100"))
+
+    status = valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+    assert status == ValuationStatus.READY
+    vals = _values(inv)
+    assert vals[dt.date(2025, 1, 1)] == Decimal("10000")  # 10 * 1000
+    assert vals[dt.date(2025, 2, 1)] == Decimal("5500")  # 5 * 1100 after the sell
+
+
+def test_ledger_equity_wins_over_ecas_snapshot_no_double_count(
+    make_investor, make_security, make_folio, make_transaction, make_holding
+):
+    """When a demat folio has both a tradebook ledger and an eCAS holding, the
+    ledger is authoritative for units — headline and trend must not double-count."""
+    inv = make_investor()
+    demat = make_folio(investor=inv, folio_type=FolioType.DEMAT.value, number="1234567890123456")
+    equity = make_security(
+        security_type=SecurityType.EQUITY.value,
+        name="Reliance",
+        isin="INE002A01018",
+        symbol="RELIANCE",
+        exchange="NSE",
+    )
+    make_transaction(
+        investor=inv,
+        security=equity,
+        folio=demat,
+        date=dt.date(2025, 1, 1),
+        units=Decimal("10"),
+        nav_or_price=Decimal("1000"),
+    )
+    make_holding(
+        investor=inv,
+        security=equity,
+        folio=demat,
+        as_of_date=dt.date(2025, 6, 1),
+        units=Decimal("15"),
+    )
+    NAVHistory.objects.create(security=equity, date=dt.date(2025, 1, 1), nav=Decimal("1000"))
+
+    valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("10000")  # 10 ledger, not 25
+    summary = build_investor_summary(inv, dt.date(2025, 1, 1))
+    assert summary["total_inr"] == Decimal("10000")
+
+
+def test_partial_equity_excluded_from_series_but_snapshot_counts_headline(
+    make_investor, make_security, make_folio, make_transaction, make_holding
+):
+    """Incomplete-history equity (cost_basis_complete=False) is excluded from the
+    trend; an eCAS snapshot on the same folio still prices into headline net worth."""
+    inv = make_investor()
+    demat = make_folio(investor=inv, folio_type=FolioType.DEMAT.value, number="1234567890123456")
+    equity = make_security(
+        security_type=SecurityType.EQUITY.value,
+        name="Reliance",
+        isin="INE002A01018",
+        symbol="RELIANCE",
+        exchange="NSE",
+    )
+    make_transaction(
+        investor=inv,
+        security=equity,
+        folio=demat,
+        date=dt.date(2025, 1, 1),
+        transaction_type=TransactionType.SELL.value,
+        units=Decimal("5"),
+        nav_or_price=Decimal("1100"),
+        cost_basis_complete=False,
+    )
+    make_holding(
+        investor=inv,
+        security=equity,
+        folio=demat,
+        as_of_date=dt.date(2025, 6, 1),
+        units=Decimal("10"),
+    )
+    NAVHistory.objects.create(security=equity, date=dt.date(2025, 1, 1), nav=Decimal("1100"))
+
+    valuation_jobs.recompute_investor_valuation(inv.id, dt.date(2025, 1, 1))
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("0")
+    summary = build_investor_summary(inv, dt.date(2025, 1, 1))
+    assert summary["total_inr"] == Decimal("11000")  # 10 snapshot units * 1100
 
 
 def test_unpriced_equity_with_symbol_errors_then_recovers(
     make_investor, make_security, make_holding
 ):
     """An equity with a symbol but no price yet is feed-pending — error + retry,
-    like an unpriced MF, until the price arrives."""
+    like an unpriced MF, until the price arrives. A snapshot-only equity then
+    prices into headline net worth but not the day-wise series."""
     inv = make_investor()
     equity = make_security(
         security_type=SecurityType.EQUITY.value,
@@ -503,7 +623,8 @@ def test_unpriced_equity_with_symbol_errors_then_recovers(
     assert valuation_jobs.process_pending_valuations() == 1
     inv.refresh_from_db()
     assert inv.valuation_status == ValuationStatus.READY
-    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("14000")
+    assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("0")  # snapshot-only: no trend
+    assert build_investor_summary(inv, dt.date(2025, 1, 1))["total_inr"] == Decimal("14000")
 
 
 def test_symbolless_equity_degrades_not_blocks(

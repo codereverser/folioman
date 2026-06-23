@@ -21,11 +21,17 @@ from decimal import Decimal
 
 from django.db import transaction as db_transaction
 from django.db.models import Max
-from folioman_core.models import HoldingSource
+from folioman_core.models import HoldingSource, TransactionSource
 from folioman_core.models.cas import EcasStatement
 from folioman_core.models.investor import normalize_folio_number
 
-from folioman_app.models import Holding, Security
+from folioman_app.models import (
+    Folio,
+    Holding,
+    PartialBlock,
+    Security,
+    SecurityIntegrityStatus,
+)
 from folioman_app.tasks._upsert import upsert_folio, upsert_security
 from folioman_app.tasks.reconcile import reconcile_after_import
 
@@ -61,6 +67,98 @@ def _statement_isins(statement: EcasStatement) -> set[str]:
         for line in account.holdings
         if line.security.isin
     }
+
+
+def _repoint_folio(investor, src: Folio, target: Folio) -> set[int]:
+    """Move a dangling folio's ledger onto the real demat folio, then delete it.
+
+    Re-FKs the folio's transactions, holdings, partial blocks, and drops its stale
+    integrity rows (the post-call reconcile rebuilds them for the target). Folio
+    isn't part of the equity dedup key, so a later re-import of the same tradebook
+    stays idempotent against the moved rows. Returns the affected security ids."""
+    sec_ids = set(investor.transactions.filter(folio=src).values_list("security_id", flat=True))
+    investor.transactions.filter(folio=src).update(folio=target)
+    investor.holdings.filter(folio=src).update(folio=target)
+    for pb in PartialBlock.objects.filter(investor=investor, folio=src):
+        # (investor, security, folio) is unique; if the target already has a block
+        # for this security the moved one is redundant — drop it.
+        if PartialBlock.objects.filter(
+            investor=investor, security_id=pb.security_id, folio=target
+        ).exists():
+            pb.delete()
+        else:
+            pb.folio = target
+            pb.save(update_fields=["folio"])
+    SecurityIntegrityStatus.objects.filter(investor=investor, folio=src).delete()
+    src.delete()
+    return sec_ids
+
+
+def _reassociate_dangling_folios(investor) -> tuple[set[int], list[dict]]:
+    """Re-link broker-tradebook ledgers stranded on a non-matching demat folio.
+
+    A demat folio carrying CSV-import transactions but no eCAS-sourced holding is
+    *dangling*: its number never matched a real depository account — a mistyped BO
+    ID, or an account this eCAS didn't list. When a freshly-imported eCAS demat
+    folio holds the same securities, the ledger almost certainly belongs there.
+    Re-point only when unambiguous (exactly one dangling folio + exactly one
+    eCAS folio overlapping its securities); otherwise raise a link-suggestion for
+    the user to resolve, never guessing. Returns (re-pointed security ids,
+    link-suggestion entries).
+    """
+    ecas_by_folio: dict[int, dict] = {}
+    for h in investor.holdings.filter(
+        source=HoldingSource.ECAS.value, folio__folio_type="demat"
+    ).select_related("folio", "security"):
+        rec = ecas_by_folio.setdefault(h.folio_id, {"folio": h.folio, "isins": set()})
+        if h.security.isin:
+            rec["isins"].add(h.security.isin)
+
+    csv_folio_ids = {
+        fid
+        for fid in investor.transactions.filter(
+            source=TransactionSource.CSV_IMPORT.value, folio__folio_type="demat"
+        ).values_list("folio_id", flat=True)
+        if fid is not None and fid not in ecas_by_folio
+    }
+    dangling = []
+    for folio in Folio.objects.filter(id__in=csv_folio_ids):
+        isins = {
+            isin
+            for isin in investor.transactions.filter(folio=folio).values_list(
+                "security__isin", flat=True
+            )
+            if isin
+        }
+        dangling.append({"folio": folio, "isins": isins})
+
+    repointed: set[int] = set()
+    suggestions: list[dict] = []
+    for d in dangling:
+        candidates = [rec for rec in ecas_by_folio.values() if d["isins"] & rec["isins"]]
+        if len(dangling) == 1 and len(candidates) == 1:
+            repointed |= _repoint_folio(investor, d["folio"], candidates[0]["folio"])
+        elif candidates:
+            suggestions.append(
+                {
+                    "kind": "folio_link",
+                    "security": "",
+                    "isin": "",
+                    # Blank so the (isin, folio_number) auto-resolver never fires on a
+                    # link suggestion — it's resolved by the user picking a target.
+                    "folio": "",
+                    "reason": (
+                        f"Tradebook folio {d['folio'].number!r} matches no eCAS demat "
+                        f"account but overlaps {len(candidates)} of them — pick which "
+                        "demat account this ledger belongs to."
+                    ),
+                    "raw": {
+                        "dangling_folio": d["folio"].number,
+                        "candidate_folios": [rec["folio"].number for rec in candidates],
+                    },
+                }
+            )
+    return repointed, suggestions
 
 
 def persist_ecas_statement(
@@ -183,9 +281,18 @@ def persist_ecas_statement(
             for h in removed
         ]
 
-    # Reconcile the union of new + removed securities, so a removed security's
-    # stale integrity status is cleared (it no longer has a holding).
-    affected_ids = set(securities_by_id) | removed_security_ids
+    # A tradebook imported before this eCAS may sit on a dangling demat folio (a
+    # number that never matched a real account — invented or mistyped). Now that the
+    # real demat folios exist, re-link an unambiguous one onto its account so its
+    # ledger reconciles; flag the ambiguous case for the user.
+    repointed_ids, link_suggestions = _reassociate_dangling_folios(investor)
+    if link_suggestions:
+        summary["quarantined"] = summary.get("quarantined", []) + link_suggestions
+
+    # Reconcile the union of new + removed + re-pointed securities, so a removed
+    # security's stale integrity status is cleared (it no longer has a holding) and
+    # a re-pointed ledger reconciles against its newly-matched eCAS holding.
+    affected_ids = set(securities_by_id) | removed_security_ids | repointed_ids
     affected = list(Security.objects.filter(id__in=affected_ids))
     errors = reconcile_after_import(investor, affected)
     if errors:

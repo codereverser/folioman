@@ -20,9 +20,8 @@ function goBack(): void {
     <i class="pi pi-desktop" aria-hidden="true" />
     <h1>Open on desktop to import or edit</h1>
     <p class="muted">
-      Importing statements and editing data needs the full desktop layout. On your
-      phone you can view dashboards, holdings and integrity — switch to Folioman on
-      a computer to make changes.
+      Importing statements and editing data needs the full desktop layout. On your phone you can
+      view dashboards, holdings and integrity — switch to Folioman on a computer to make changes.
     </p>
     <Button label="Back to dashboard" icon="pi pi-arrow-left" @click="goBack" />
   </section>

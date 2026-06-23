@@ -11,8 +11,12 @@ intentional, so an identical second entry is allowed.
 
 Expected CSV columns (header row): security_type, name, date, transaction_type,
 units, price (required); symbol, isin, amfi_code, coin_id, principal, amount,
-fees, stamp_duty, brokerage, currency (optional). The frontend maps arbitrary
-CSVs onto these; the backend consumes this canonical shape.
+fees, stamp_duty, brokerage, currency, source_ref (optional). The frontend maps
+arbitrary CSVs onto these; the backend consumes this canonical shape.
+
+``source_ref`` carries the broker's per-fill id (e.g. a tradebook trade_id). It
+enters the dedup key so two genuine fills with otherwise-identical fields stay
+distinct, and is stored as the row's audit ref.
 
 Charge semantics: ``brokerage`` is buy-side and enters cost basis; ``fees`` is
 sell-side STT and ``stamp_duty`` a transfer expense — neither enters cost basis.
@@ -23,25 +27,41 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import logging
+import re
 from datetime import date as date_cls
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction as db_transaction
 from folioman_core._dates import parse_loose_date
+from folioman_core.corporate_action_subject import CorpActionType
+from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
 from folioman_core.models import SecurityType, TransactionSource, TransactionType
 from folioman_core.models.investor import Folio as CoreFolio
-from folioman_core.models.investor import FolioType
+from folioman_core.models.investor import FolioType, normalize_folio_number
 from folioman_core.models.security import Security as CoreSecurity
 from pydantic import ValidationError
 
-from folioman_app.models import ImportJob, Security, Transaction
+from folioman_app.mappers import to_core_transaction
+from folioman_app.models import (
+    AppliedCorporateAction,
+    Folio,
+    ImportJob,
+    PartialBlock,
+    Security,
+    Transaction,
+)
 from folioman_app.models.jobs import ImportKind
+from folioman_app.services.equity_identity import resolve_equity_identity
 from folioman_app.services.imports import register_processor
 from folioman_app.tasks._upsert import upsert_folio, upsert_security
 from folioman_app.tasks.reconcile import reconcile_after_import, reconcile_security_folio
 
+logger = logging.getLogger(__name__)
+
 _REQUIRED_COLUMNS = ("security_type", "name", "date", "transaction_type", "units", "price")
 _METADATA_COLUMNS = ("coin_id", "principal", "rate", "account_ref")
+_ZERO = Decimal("0")
 
 
 def _core_security(
@@ -70,11 +90,20 @@ def _dedup_key(
     stamp_duty,
     brokerage,
     currency,
+    source_ref="",
 ) -> str:
     # Hash every field that distinguishes one ledger row from another. Omitting a
     # field collapses genuinely distinct rows (e.g. two sells differing only in
     # fees/STT) into one, under-reporting. Re-importing the same row stays
     # idempotent because identical content yields the same hash — no row index.
+    #
+    # ``source_ref`` is the broker's per-fill id (e.g. a tradebook trade_id). A
+    # broker can report two genuine fills with identical
+    # (security, date, type, units, price) — without the id in the key they would
+    # collapse into one row. With it, distinct fills stay distinct and a re-import
+    # of the same fill (same id) still hashes the same, so it stays idempotent.
+    # Blank when the source carries no per-row id — the key reduces to the
+    # content-only form unchanged.
     identity = security.amfi_code or security.isin or security.symbol or security.name
     parts = [
         identity,
@@ -87,6 +116,7 @@ def _dedup_key(
         str(stamp_duty),
         str(brokerage),
         currency,
+        source_ref,
     ]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()
 
@@ -96,7 +126,60 @@ def _cell_decimal(row: dict, key: str, default):
     return Decimal(raw) if raw else default
 
 
-def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
+# A demat account number (BO ID) is either a 16-digit CDSL beneficiary id or an
+# NSDL id rendered as "IN" + 14 digits. Validating the shape rejects an obvious
+# mistype on entry; a *well-formed but wrong* number can't be caught here — it
+# surfaces later as a dangling folio the eCAS re-point reconciles (see import_ecas).
+_DEMAT_NUMBER_RE = re.compile(r"^(?:\d{16}|IN\d{14})$")
+
+
+def _resolve_folio(investor, row: dict, security: Security) -> Folio | None:
+    """The folio (demat account / MF folio) a row belongs to, or None.
+
+    Equity (and any other demat-held security) **requires** a real demat account
+    number — the BO ID a later eCAS ``upsert_folio`` matches by ``(investor,
+    number)``, so the ledger reconciles directly. We never invent a placeholder:
+    a missing or mis-shaped number is a per-row error (caught, row skipped). A
+    crypto/other row with no demat number stays folio-less, as before.
+    """
+    number = (row.get("folio_number") or "").strip().upper()
+    broker = (row.get("broker") or "").strip()
+    if security.security_type == SecurityType.MF.value:
+        if not number:
+            return None
+        return upsert_folio(investor, CoreFolio(folio_type=FolioType.MF, number=number))
+    if security.security_type == SecurityType.EQUITY.value:
+        if not number:
+            msg = "equity import requires a demat account number (folio_number)"
+            raise ValueError(msg)
+        # An existing demat folio is authoritative for its own number: a CDSL eCAS
+        # renders the BO ID shorter than 16 digits (e.g. an 8-digit client id), so a
+        # tradebook attaching to that already-imported folio must match it as-is
+        # rather than be rejected by the strict-format gate. Only validate the format
+        # when minting a brand-new folio from a user-typed number.
+        existing = Folio.objects.filter(
+            investor=investor,
+            folio_type=FolioType.DEMAT.value,
+            number=normalize_folio_number(number),
+        ).first()
+        if existing is not None:
+            return existing
+        if not _DEMAT_NUMBER_RE.match(number):
+            msg = (
+                f"invalid demat account number {number!r}: expected a 16-digit CDSL "
+                "BO ID or an NSDL id like 'IN' + 14 digits"
+            )
+            raise ValueError(msg)
+        # CoreFolio validation requires a broker for a demat folio; a missing
+        # broker surfaces as a per-row error too — the wizard always injects it.
+        return upsert_folio(
+            investor, CoreFolio(folio_type=FolioType.DEMAT, number=number, broker=broker)
+        )
+    # Other types (e.g. crypto) carry no demat account — folio-less, as before.
+    return None
+
+
+def _process_row(investor, row: dict, file_ref: str) -> tuple[Security, bool]:
     missing = [c for c in _REQUIRED_COLUMNS if not (row.get(c) or "").strip()]
     if missing:
         msg = f"missing required column(s): {', '.join(missing)}"
@@ -115,6 +198,8 @@ def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
         )
     )
 
+    folio = _resolve_folio(investor, row, security)
+
     on = parse_loose_date(row["date"])
     if on is None:
         msg = f"unparseable date: {row['date']!r}"
@@ -127,6 +212,10 @@ def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
     stamp = _cell_decimal(row, "stamp_duty", Decimal("0"))
     brokerage = _cell_decimal(row, "brokerage", Decimal("0"))
     currency = (row.get("currency") or "INR").strip().upper()
+    # Per-fill broker id (e.g. tradebook trade_id) when the source supplies one;
+    # it both disambiguates the dedup key and is the audit ref worth keeping. Fall
+    # back to the file hash so a folio-less CSV row still carries a provenance ref.
+    row_ref = (row.get("source_ref") or "").strip()
 
     _, created = Transaction.objects.get_or_create(
         investor=investor,
@@ -141,9 +230,11 @@ def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
             stamp_duty=stamp,
             brokerage=brokerage,
             currency=currency,
+            source_ref=row_ref,
         ),
         defaults={
             "security": security,
+            "folio": folio,
             "date": on,
             "transaction_type": txn_type,
             "units": units,
@@ -154,13 +245,159 @@ def _process_row(investor, row: dict, source_ref: str) -> tuple[Security, bool]:
             "brokerage": brokerage,
             "currency": currency,
             "source": TransactionSource.CSV_IMPORT.value,
-            "source_ref": source_ref,
+            "source_ref": row_ref or file_ref,
         },
     )
     return security, created
 
 
-def process_csv(job: ImportJob, content: bytes, password: str) -> dict:
+def _fifo_overhang(cores) -> tuple[Decimal, Decimal]:
+    """Implied missing prior units + net units for a chronological ledger.
+
+    Tracks the running balance over the bucket; its lowest point below zero is the
+    quantity that *must* have been acquired before the import window for the sells
+    to be valid (the overhang). ``net`` is the bucket's final net units.
+    """
+    running = _ZERO
+    low = _ZERO
+    for txn in sorted(cores, key=lambda t: t.date):
+        running += net_units_from_transactions([txn])
+        low = min(low, running)
+    return (-low if low < _ZERO else _ZERO), running
+
+
+def _supersede_opening_lots(investor, security: Security) -> list[int]:
+    """Drop a manual opening-lot placeholder once a real tradebook supplies the history.
+
+    An eCAS-only equity with no transactions can be given an opening lot (IPO /
+    transfer-in) so it reconciles. If the investor later imports the broker tradebook
+    for it, those real buys would *double-count* against the placeholder. The
+    placeholder only ever stood in for the missing history, so a tradebook supersedes
+    it: when real imported buys now exist for a (security, folio), delete the
+    placeholder there. Returns the folio ids cleared.
+
+    A demerger child's receipt lots are NOT placeholders for missing trades (they are
+    shares received without buying, and carry a parent cost-reduction link), so they are
+    left untouched.
+    """
+    is_demerger_child = AppliedCorporateAction.objects.filter(
+        investor=investor,
+        counterparty_security=security,
+        kind=CorpActionType.DEMERGER.value,
+    ).exists()
+    if is_demerger_child:
+        return []
+
+    folios_with_real_buys = set(
+        investor.transactions.filter(
+            security=security,
+            source=TransactionSource.CSV_IMPORT.value,
+            transaction_type__in=[
+                TransactionType.BUY.value,
+                TransactionType.TRANSFER_IN.value,
+            ],
+        ).values_list("folio_id", flat=True)
+    )
+    cleared: list[int] = []
+    for folio_id in folios_with_real_buys:
+        placeholder = investor.transactions.filter(
+            security=security,
+            folio_id=folio_id,
+            source=TransactionSource.MANUAL.value,
+            source_ref__startswith="opening-lot:",
+        )
+        if placeholder.exists():
+            placeholder.delete()
+            cleared.append(folio_id)
+    return cleared
+
+
+def _reconcile_cost_basis_completeness(investor, security: Security) -> list[dict]:
+    """Re-derive cost-basis completeness for each of this security's folios.
+
+    A tradebook that begins mid-history carries sells with no matching buy, so a
+    chronological FIFO replay underflows (``InsufficientUnitsError``). Such a
+    (security, folio) ledger has no usable cost basis: flag all its rows
+    ``cost_basis_complete=False`` and record a ``PartialBlock`` so a later
+    earlier-period import can upgrade it — mirroring the MF ``opening_nonzero``
+    handling, but keyed on FIFO solvency rather than a stated opening balance.
+
+    When a replay now balances (the missing buys arrived in a subsequent import),
+    flip the bucket's rows back to complete and drop the block. FIFO buckets are
+    independent per (security, folio), so re-evaluating just the imported security
+    is sufficient and order-independent — completeness here is a property of the
+    ledger, re-derived on every import that touches it (no separate upgrade pass).
+
+    Returns one entry per folio that is incomplete (for the job's warnings).
+    """
+    # Solvency is judged on the corporate-action-adjusted ledger, not the raw rows: a
+    # split (or bonus) on this security scales the holding, so an apparent over-sell
+    # (e.g. sold 2 against a pre-split 1) is squared off once the action applies. Replay
+    # only the events on this security itself — a merger that injects another scrip's
+    # lots must not paper over genuinely missing history here.
+    from folioman_core.corporate_actions import apply_corporate_action_events
+
+    from folioman_app.services.projected_ledger import event_from_applied
+
+    ca_events = [
+        event_from_applied(a)
+        for a in AppliedCorporateAction.objects.filter(investor=investor, security=security)
+    ]
+
+    incomplete: list[dict] = []
+    folio_ids = set(
+        investor.transactions.filter(security=security).values_list("folio_id", flat=True)
+    )
+    for folio_id in folio_ids:
+        bucket = investor.transactions.filter(security=security, folio_id=folio_id)
+        raw = [to_core_transaction(t) for t in bucket.select_related("security", "folio")]
+        cores = apply_corporate_action_events(raw, ca_events) if ca_events else raw
+        try:
+            apply_fifo(cores)
+        except InsufficientUnitsError:
+            pass
+        else:
+            # Solvent: ensure the bucket is complete and clear any stale partial block.
+            bucket.filter(cost_basis_complete=False).update(cost_basis_complete=True)
+            PartialBlock.objects.filter(
+                investor=investor, security=security, folio_id=folio_id
+            ).delete()
+            continue
+
+        # Underflow: the whole bucket's cost basis is unusable (the unseen earlier
+        # buys would, by FIFO, be the first lots consumed). Flag every row and
+        # record the overhang so a later earlier-period import can upgrade it.
+        bucket.filter(cost_basis_complete=True).update(cost_basis_complete=False)
+        overhang, net = _fifo_overhang(cores)
+        statement_from = bucket.order_by("date").values_list("date", flat=True).first()
+        PartialBlock.objects.update_or_create(
+            investor=investor,
+            security=security,
+            folio_id=folio_id,
+            defaults={
+                "opening_units": overhang,
+                "closing_units": net,
+                "statement_from": statement_from,
+            },
+        )
+        incomplete.append(
+            {
+                "security": security.name,
+                "isin": security.isin,
+                "reason": "orphan_sell",
+                "missing_prior_units": str(overhang),
+                "net_units": str(net),
+            }
+        )
+    return incomplete
+
+
+def process_csv(
+    job: ImportJob, content: bytes, password: str = "", *, confirm: bool = False, parsed=None
+) -> dict:
+    # ``confirm``/``parsed`` are part of the processor contract (the runner passes
+    # them to every processor); a CSV is non-destructive and pre-parsed by the
+    # frontend into the canonical shape, so neither applies here.
     reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
     if not reader.fieldnames:
         msg = "CSV has no header row"
@@ -180,9 +417,90 @@ def process_csv(job: ImportJob, content: bytes, password: str) -> dict:
         affected[security.id] = security
         summary["created" if created else "skipped"] += 1
 
+    # The row loop has already committed; the post-import passes below run outside
+    # those atomic blocks, so an exception here must not propagate as a 500 that
+    # leaves committed rows unresolved/unreconciled with no record. Each pass is
+    # isolated and any failure is surfaced as a warning (mirrors
+    # ``reconcile_after_import``'s per-security isolation).
+    warnings: list[dict] = []
+
+    # Trust the ISIN, not the import-supplied name: resolve each equity's
+    # authoritative name + trading symbol + exchange from the ISIN DB (also makes
+    # it priceable). A miss keeps the provisional name and is reported, not fatal.
+    try:
+        unresolved = resolve_equity_identity(affected.values())
+    except Exception as exc:  # don't 500 after rows are committed
+        logger.exception("csv import: equity identity resolution failed (job %s)", job.id)
+        warnings.append({"stage": "identity_resolution", "error": str(exc)})
+    else:
+        if unresolved:
+            summary["unresolved_securities"] = [
+                {"name": s.name, "isin": s.isin, "symbol": s.symbol} for s in unresolved
+            ]
+
+    # A real tradebook supersedes any manual opening-lot placeholder for the same
+    # holding — drop it first so its units don't double-count and so completeness below
+    # is judged on the real history alone.
+    superseded: list[dict] = []
+    for security in affected.values():
+        if security.security_type == SecurityType.MF.value:
+            continue
+        try:
+            cleared = _supersede_opening_lots(job.investor, security)
+        except Exception as exc:  # isolate one security's failure from the rest
+            logger.exception(
+                "csv import: opening-lot supersede failed for %s (job %s)", security.isin, job.id
+            )
+            warnings.append(
+                {"stage": "supersede_opening_lot", "isin": security.isin, "error": str(exc)}
+            )
+        else:
+            if cleared:
+                superseded.append({"isin": security.isin, "folios": len(cleared)})
+    if superseded:
+        summary["superseded_opening_lots"] = superseded
+
+    # Mark incomplete-history ledgers (orphan sells) before reconciling, so a
+    # mid-history tradebook doesn't feed FIFO-underflowing rows into cost basis,
+    # realized P&L, or tax. MF keeps its CAS opening-balance partial mechanism.
+    incomplete: list[dict] = []
+    for security in affected.values():
+        if security.security_type == SecurityType.MF.value:
+            continue
+        try:
+            incomplete.extend(_reconcile_cost_basis_completeness(job.investor, security))
+        except Exception as exc:  # isolate one security's failure from the rest
+            logger.exception(
+                "csv import: completeness check failed for %s (job %s)", security.isin, job.id
+            )
+            warnings.append({"stage": "completeness", "isin": security.isin, "error": str(exc)})
+    if incomplete:
+        summary["incomplete_history"] = incomplete
+
+    if warnings:
+        summary["post_import_warnings"] = warnings
+
     errors = reconcile_after_import(job.investor, affected.values())
     if errors:
         summary["reconcile_errors"] = errors
+
+    # Queue the day-wise valuation recompute from the earliest imported trade, so the
+    # price-history backfill (which runs inside the valuation job, not at import) covers
+    # the full equity history and the series extends back to the trades — the CAS/eCAS
+    # paths do the same via queue_recompute. Without this a tradebook import leaves the
+    # investor READY, so the scheduler never re-prices the new equities.
+    if affected:
+        from folioman_app.tasks.valuation_jobs import queue_recompute
+
+        earliest = (
+            job.investor.transactions.filter(security_id__in=affected)
+            .order_by("date")
+            .values_list("date", flat=True)
+            .first()
+        )
+        if earliest is not None:
+            queue_recompute(job.investor, earliest)
+
     return summary
 
 
@@ -238,18 +556,4 @@ def create_manual_transaction(investor, data: dict) -> Transaction:
     return txn
 
 
-def _csv_disabled(job: ImportJob, content: bytes, password: str, *, confirm: bool = False) -> dict:
-    """Guard: the generic CSV importer is parked for the multi-asset release.
-
-    Imports are security-specific now — mutual funds via CAS PDF, equities via
-    eCAS or per-broker templated CSV (with completeness checks). `process_csv`
-    above is kept intact; re-enable by registering it again in place of this
-    guard. The HTTP endpoint (`api/imports.py`) is also gated, so a user can't
-    reach this path; the guard is defense-in-depth for any internal caller.
-    """
-    msg = "CSV import isn't available yet (mutual funds import via CAS PDF)."
-    raise NotImplementedError(msg)
-
-
-# Disabled — see _csv_disabled. Re-enable: register `process_csv` here instead.
-register_processor(ImportKind.CSV.value, _csv_disabled)
+register_processor(ImportKind.CSV.value, process_csv)

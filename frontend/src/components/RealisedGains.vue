@@ -8,7 +8,13 @@ import Message from 'primevue/message'
 import Row from 'primevue/row'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import type { CapitalGainRow, CapitalGains } from '@/composables/useCapitalGains'
-import { integrityMeta, remediation } from '@/integrity/status'
+import {
+  integrityMeta,
+  hasIncompleteHistory,
+  incompleteHistoryFix,
+  incompleteHistoryReason,
+  remediation,
+} from '@/integrity/status'
 import type { IntegrityRow } from '@/stores/integrity'
 import { formatDate, formatInr, formatUnits } from '@/utils/format'
 
@@ -86,7 +92,10 @@ const totalGain = computed(() => rows.value.reduce((s, r) => s + Number(r.gain),
 // Disposals whose pre-2018 grandfathering FMV is missing — gain may be overstated.
 const grandfatheringGaps = computed(() => rows.value.filter((r) => r.grandfathering_unavailable))
 
-const integrityTo = computed(() => ({ name: 'integrity', params: { investorId: props.investorId } }))
+const integrityTo = computed(() => ({
+  name: 'integrity',
+  params: { investorId: props.investorId },
+}))
 
 const computedAt = computed(() =>
   props.builtAt
@@ -133,9 +142,10 @@ function holdingPeriod(acquired: string, sold: string): string {
 // "Left out" rows reuse the shared integrity vocabulary so the wording matches
 // the Data integrity screen exactly (incl. demat-inherent vs fixable snapshot).
 function excludedReason(row: IntegrityRow): string {
-  return integrityMeta(row.status).tooltip
+  return incompleteHistoryReason(row.issues) ?? integrityMeta(row.status).tooltip
 }
 function excludedFix(row: IntegrityRow): string | null {
+  if (hasIncompleteHistory(row.issues)) return incompleteHistoryFix()
   return remediation(row.status, { folioType: row.folioType })
 }
 </script>
@@ -155,13 +165,15 @@ function excludedFix(row: IntegrityRow): string | null {
 
     <Message v-if="grandfatheringGaps.length" severity="warn" :closable="false" class="gf-note">
       {{ grandfatheringGaps.length }} long-term
-      {{ grandfatheringGaps.length === 1 ? 'disposal is' : 'disposals are' }} missing the
-      31 Jan 2018 fair market value used for grandfathering, so their cost is understated and the
-      gain (and any tax) may be <strong>overstated</strong>. Verify these before relying on the figure.
+      {{ grandfatheringGaps.length === 1 ? 'disposal is' : 'disposals are' }} missing the 31 Jan
+      2018 fair market value used for grandfathering, so their cost is understated and the gain (and
+      any tax) may be <strong>overstated</strong>. Verify these before relying on the figure.
     </Message>
 
     <section class="included">
-      <h2>Realised gains <span class="count">{{ summaries.length }}</span></h2>
+      <h2>
+        Realised gains <span class="count">{{ summaries.length }}</span>
+      </h2>
       <DataTable
         v-if="summaries.length"
         v-model:expanded-rows="expandedRows"
@@ -176,7 +188,10 @@ function excludedFix(row: IntegrityRow): string | null {
           <template #body="{ data }">
             <button class="holding-name" type="button" @click="openScheme(data.securityId)">
               <span>{{ data.name }}</span>
-              <small>{{ data.isin }} · {{ data.lots.length }} {{ data.lots.length === 1 ? 'lot' : 'lots' }}</small>
+              <small
+                >{{ data.isin }} · {{ data.lots.length }}
+                {{ data.lots.length === 1 ? 'lot' : 'lots' }}</small
+              >
             </button>
           </template>
         </Column>
@@ -185,16 +200,16 @@ function excludedFix(row: IntegrityRow): string | null {
             <span class="term" :class="termClass(data)">{{ termLabel(data) }}</span>
           </template>
         </Column>
-        <Column header="Units" class="num">
+        <Column header="Units" class="num" header-class="num">
           <template #body="{ data }">{{ formatUnits(data.units) }}</template>
         </Column>
-        <Column header="Sale value" class="num">
+        <Column header="Sale value" class="num" header-class="num">
           <template #body="{ data }">{{ formatInr(data.saleValue) }}</template>
         </Column>
-        <Column header="Cost" class="num">
+        <Column header="Cost" class="num" header-class="num">
           <template #body="{ data }">{{ formatInr(data.cost) }}</template>
         </Column>
-        <Column header="Gain" class="num">
+        <Column header="Gain" class="num" header-class="num">
           <template #body="{ data }">
             <span class="gain-cell">
               <i
@@ -212,7 +227,9 @@ function excludedFix(row: IntegrityRow): string | null {
             <DataTable :value="data.lots" size="small" class="lots-table">
               <Column header="Term">
                 <template #body="{ data: lot }">
-                  <span class="term" :class="lot.term">{{ lot.term === 'long' ? 'LTCG' : 'STCG' }}</span>
+                  <span class="term" :class="lot.term">{{
+                    lot.term === 'long' ? 'LTCG' : 'STCG'
+                  }}</span>
                 </template>
               </Column>
               <Column header="Held">
@@ -223,16 +240,16 @@ function excludedFix(row: IntegrityRow): string | null {
                   </div>
                 </template>
               </Column>
-              <Column header="Units" class="num">
+              <Column header="Units" class="num" header-class="num">
                 <template #body="{ data: lot }">{{ formatUnits(lot.units) }}</template>
               </Column>
-              <Column header="Sale value" class="num">
+              <Column header="Sale value" class="num" header-class="num">
                 <template #body="{ data: lot }">{{ formatInr(lot.sale_value) }}</template>
               </Column>
-              <Column header="Cost" class="num">
+              <Column header="Cost" class="num" header-class="num">
                 <template #body="{ data: lot }">{{ formatInr(lot.cost) }}</template>
               </Column>
-              <Column header="Gain" class="num">
+              <Column header="Gain" class="num" header-class="num">
                 <template #body="{ data: lot }">
                   <span class="gain-cell">
                     <i
@@ -258,8 +275,8 @@ function excludedFix(row: IntegrityRow): string | null {
         </ColumnGroup>
       </DataTable>
       <p v-else class="empty">
-        No realised gains in this year. Redeem a fully-reconciled holding (or pick another
-        year) and they’ll appear here.
+        No realised gains in this year. Redeem a fully-reconciled holding (or pick another year) and
+        they’ll appear here.
       </p>
       <p v-if="computedAt && summaries.length" class="freshness">
         Computed {{ computedAt }} from tax-ready folios.
@@ -268,7 +285,9 @@ function excludedFix(row: IntegrityRow): string | null {
 
     <section v-if="excluded.length" class="excluded">
       <header class="ex-head-row">
-        <h2>Left out <span class="count">{{ excluded.length }}</span></h2>
+        <h2>
+          Left out <span class="count">{{ excluded.length }}</span>
+        </h2>
         <RouterLink :to="integrityTo" class="review-link">Review in Data integrity →</RouterLink>
       </header>
       <ul class="excluded-list">

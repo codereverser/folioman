@@ -381,7 +381,7 @@ def test_partial_rows_visible_but_excluded_from_cost_basis_units_and_gap(make_in
     detail = build_scheme_detail(inv, sec, dt.date(2025, 1, 31))
     # Visible + badged, with the "history before <date>" marker set...
     assert len(detail["transactions"]) == 1
-    assert detail["transactions"][0].cost_basis_complete is False
+    assert detail["transactions"][0]["cost_basis_complete"] is False
     assert detail["partial_history"] is True
     assert detail["partial_history_from"] == dt.date(2024, 6, 1)
     # ...but units come from the snapshot (70), not the partial row's net (20).

@@ -45,10 +45,13 @@ const empty = computed(() => props.funds.length === 0)
 // Per-fund list grouped by the active dimension. Group totals drive both the
 // subheader value and the group ordering (largest group first; largest fund
 // first within a group) — the order PrimeVue's subheader grouping renders.
-const groupField = computed<'amc' | 'category'>(() => (grouping.value === 'amc' ? 'amc' : 'category'))
+const groupField = computed<'amc' | 'category'>(() =>
+  grouping.value === 'amc' ? 'amc' : 'category',
+)
 const groupTotals = computed(() => {
   const totals = new Map<string, number>()
-  for (const f of props.funds) totals.set(f[groupField.value], (totals.get(f[groupField.value]) ?? 0) + f.value)
+  for (const f of props.funds)
+    totals.set(f[groupField.value], (totals.get(f[groupField.value]) ?? 0) + f.value)
   return totals
 })
 const sortedFunds = computed(() => {
@@ -115,7 +118,9 @@ const sortedFunds = computed(() => {
         >
           <template #groupheader="{ data }">
             <span class="grp">{{ data[groupField] }}</span>
-            <span class="grp-total">{{ formatInrCompact(groupTotals.get(data[groupField]) ?? 0) }}</span>
+            <span class="grp-total">{{
+              formatInrCompact(groupTotals.get(data[groupField]) ?? 0)
+            }}</span>
           </template>
           <Column field="name" header="Fund">
             <template #body="{ data }">
@@ -138,10 +143,10 @@ const sortedFunds = computed(() => {
               </div>
             </template>
           </Column>
-          <Column header="Value" class="num">
+          <Column header="Value" class="num" header-class="num">
             <template #body="{ data }">{{ formatInr(data.value) }}</template>
           </Column>
-          <Column header="Return" class="num">
+          <Column header="Return" class="num" header-class="num">
             <template #body="{ data }">
               <DeltaChip
                 v-if="data.returnPct !== null"
@@ -152,7 +157,7 @@ const sortedFunds = computed(() => {
               <span v-else class="muted">—</span>
             </template>
           </Column>
-          <Column header="XIRR" class="num">
+          <Column header="XIRR" class="num" header-class="num">
             <template #body="{ data }">
               <span v-if="data.xirr !== null" class="xirr">{{ formatPercent(data.xirr) }}</span>
               <span v-else class="muted">—</span>

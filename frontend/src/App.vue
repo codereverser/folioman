@@ -47,11 +47,11 @@ watch(
 
 // Nav matches the page list; scoped links appear once a scope is selected.
 const navLinks = computed<NavLink[]>(() => {
-  // Import is advisor-level (the CAS identifies its own investor by PAN), so it's
-  // always available — it's the primary way to onboard an investor.
+  // Import is always available (the primary way to onboard an investor); the hub
+  // routes to each source — CAS/eCAS PDF, stock tradebook, …
   const links: NavLink[] = [
     { label: 'Investors', icon: 'pi pi-users', to: { name: 'investors' } },
-    { label: 'Import CAS', icon: 'pi pi-file-pdf', to: { name: 'import' } },
+    { label: 'Import', icon: 'pi pi-download', to: { name: 'import' } },
   ]
   if (ui.selectedInvestorId !== null) {
     const investorId = ui.selectedInvestorId
@@ -85,7 +85,14 @@ const navLinks = computed<NavLink[]>(() => {
 
 // Mobile bottom tab bar: primary destinations only. Import is desktop-only; any
 // other link (e.g. nothing extra today) is reachable via the scope switcher.
-const MOBILE_TABS = new Set(['Investors', 'Dashboard', 'Integrity', 'Capital Gains', 'Family', 'Settings'])
+const MOBILE_TABS = new Set([
+  'Investors',
+  'Dashboard',
+  'Integrity',
+  'Capital Gains',
+  'Family',
+  'Settings',
+])
 const mobileTabs = computed<NavLink[]>(() => navLinks.value.filter((l) => MOBILE_TABS.has(l.label)))
 
 // In the collapsed icon rail, the label lives in a hover tooltip; an empty string
@@ -100,7 +107,12 @@ watch(
   (len) => {
     if (len === 0) return
     for (const t of ui.drainToasts()) {
-      toast.add({ severity: t.severity, summary: t.summary, detail: t.detail, life: t.life ?? 4000 })
+      toast.add({
+        severity: t.severity,
+        summary: t.summary,
+        detail: t.detail,
+        life: t.life ?? 4000,
+      })
     }
   },
 )
@@ -124,10 +136,14 @@ onBeforeUnmount(() => {
   <template v-if="bare">
     <RouterView />
     <Toast />
-    <ConfirmDialog />
+    <ConfirmDialog :style="{ width: 'min(30rem, 92vw)' }" />
   </template>
 
-  <div v-else class="app-shell" :class="{ 'is-mobile': ui.isMobile, 'is-collapsed': ui.sidebarCollapsed && !ui.isMobile }">
+  <div
+    v-else
+    class="app-shell"
+    :class="{ 'is-mobile': ui.isMobile, 'is-collapsed': ui.sidebarCollapsed && !ui.isMobile }"
+  >
     <aside class="app-nav">
       <div class="brand">
         <img src="/logo.svg" alt="" width="28" height="28" />
@@ -140,7 +156,9 @@ onBeforeUnmount(() => {
           :aria-pressed="ui.sidebarCollapsed"
           @click="ui.toggleSidebar()"
         >
-          <i :class="ui.sidebarCollapsed ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'" />
+          <i
+            :class="ui.sidebarCollapsed ? 'pi pi-angle-double-right' : 'pi pi-angle-double-left'"
+          />
         </button>
       </div>
       <nav class="side-nav">
@@ -154,7 +172,9 @@ onBeforeUnmount(() => {
         >
           <i :class="link.icon" />
           <span class="nav-label">{{ link.label }}</span>
-          <span v-if="link.badge" class="nav-badge" :title="`${link.badge} need attention`">{{ link.badge }}</span>
+          <span v-if="link.badge" class="nav-badge" :title="`${link.badge} need attention`">{{
+            link.badge
+          }}</span>
         </RouterLink>
       </nav>
     </aside>
@@ -225,14 +245,16 @@ onBeforeUnmount(() => {
       >
         <span class="tab-icon">
           <i :class="tab.icon" />
-          <span v-if="tab.badge" class="tab-badge" :aria-label="`${tab.badge} need attention`">{{ tab.badge }}</span>
+          <span v-if="tab.badge" class="tab-badge" :aria-label="`${tab.badge} need attention`">{{
+            tab.badge
+          }}</span>
         </span>
         <span class="tab-label">{{ tab.label }}</span>
       </RouterLink>
     </nav>
 
     <Toast />
-    <ConfirmDialog />
+    <ConfirmDialog :style="{ width: 'min(30rem, 92vw)' }" />
   </div>
 </template>
 
@@ -277,6 +299,7 @@ nav {
 }
 
 .nav-link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -291,10 +314,26 @@ nav {
   background: var(--fm-surface-raised);
 }
 
+/* Selected route reads as a tinted teal pill with a leading accent rail — the
+   pale highlight token alone didn't separate from the white sidebar. */
 .nav-link.is-active {
-  background: var(--p-highlight-background);
+  background: color-mix(in oklab, var(--p-primary-color) 14%, var(--fm-surface));
   color: var(--p-primary-color);
   font-weight: 600;
+}
+.nav-link.is-active:hover {
+  background: color-mix(in oklab, var(--p-primary-color) 20%, var(--fm-surface));
+}
+.nav-link.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 1.25rem;
+  width: 3px;
+  transform: translateY(-50%);
+  border-radius: 0 var(--fm-radius-pill) var(--fm-radius-pill) 0;
+  background: var(--p-primary-color);
 }
 .nav-label {
   flex: 1;
@@ -304,9 +343,9 @@ nav {
   min-width: 1.1rem;
   padding: 0 0.35rem;
   border-radius: var(--fm-radius-pill);
-  background: var(--fm-critical);
+  background: var(--fm-ack);
   color: #fff;
-  font-size: 0.6875rem;
+  font-size: 0.6rem;
   font-weight: 700;
   line-height: 1.1rem;
   text-align: center;
@@ -441,7 +480,12 @@ nav {
   display: block;
   border-radius: var(--fm-radius-sm);
   background:
-    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
     var(--fm-surface-raised);
   /* Shared branded shimmer (keyframe in style.css). */
   background-size:

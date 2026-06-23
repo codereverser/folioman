@@ -16,8 +16,12 @@ import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { formatInr, formatInrCompact, formatUnits } from '@/utils/format'
 
-const AllocationDonut = defineAsyncComponent(() => import('@/components/charts/AllocationDonut.vue'))
-const PortfolioValueChart = defineAsyncComponent(() => import('@/components/charts/PortfolioValueChart.vue'))
+const AllocationDonut = defineAsyncComponent(
+  () => import('@/components/charts/AllocationDonut.vue'),
+)
+const PortfolioValueChart = defineAsyncComponent(
+  () => import('@/components/charts/PortfolioValueChart.vue'),
+)
 const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
 const route = useRoute()
@@ -166,7 +170,8 @@ function openScheme(securityId: number): void {
             :to="{ name: 'settings', params: { tab: 'navs' } }"
             title="Prices haven't refreshed recently — see per-security freshness"
           >
-            <i class="pi pi-exclamation-triangle" aria-hidden="true" /> NAVs as of {{ summary.navsAsOf }}
+            <i class="pi pi-exclamation-triangle" aria-hidden="true" /> NAVs as of
+            {{ summary.navsAsOf }}
           </RouterLink>
           <template v-else>{{ summary.asOf }}</template>
         </p>
@@ -230,7 +235,10 @@ function openScheme(securityId: number): void {
       <RouterLink class="asset-tab" :class="{ active: activeTab === 'mf' }" :to="tabTo('mf')"
         >Mutual funds</RouterLink
       >
-      <RouterLink class="asset-tab" :class="{ active: activeTab === 'stocks' }" :to="tabTo('stocks')"
+      <RouterLink
+        class="asset-tab"
+        :class="{ active: activeTab === 'stocks' }"
+        :to="tabTo('stocks')"
         >Stocks</RouterLink
       >
       <button
@@ -302,13 +310,18 @@ function openScheme(securityId: number): void {
         <template v-if="!valuationReady">
           <div class="chart-placeholder value-placeholder" aria-hidden="true" />
           <p class="chart-progress">
-            Portfolio valuation in progress — refresh in a bit. Showing values as of
-            your latest statement meanwhile.
+            Portfolio valuation in progress — refresh in a bit. Showing values as of your latest
+            statement meanwhile.
             <RouterLink class="navs-link" :to="{ name: 'settings', params: { tab: 'navs' } }"
               >Check NAV freshness →</RouterLink
             >
           </p>
         </template>
+        <p v-else-if="loadCharts && !summary.valueSeries?.length" class="chart-progress">
+          No day-wise history yet — snapshot holdings (a demat eCAS) count toward net worth but not
+          the trend. Import a transaction statement (a CAS or a broker tradebook) to build the
+          history.
+        </p>
         <PortfolioValueChart
           v-else-if="loadCharts"
           :data="summary.valueSeries"
@@ -377,15 +390,20 @@ function openScheme(securityId: number): void {
               </div>
             </template>
           </Column>
-          <Column header="Value" class="num">
+          <Column header="Value" class="num" header-class="num">
             <template #body="{ data }">{{ formatInr(data.value) }}</template>
           </Column>
-          <Column header="Units" class="num">
+          <Column header="Units" class="num" header-class="num">
             <template #body="{ data }">{{ formatUnits(data.units) }}</template>
           </Column>
-          <Column header="Return" class="num">
+          <Column header="Return" class="num" header-class="num">
             <template #body="{ data }">
-              <DeltaChip v-if="data.returnPct !== null" :percent="data.returnPct" :value="data.returnPct" size="sm" />
+              <DeltaChip
+                v-if="data.returnPct !== null"
+                :percent="data.returnPct"
+                :value="data.returnPct"
+                size="sm"
+              />
               <span v-else class="muted">—</span>
             </template>
           </Column>
@@ -458,11 +476,21 @@ function openScheme(securityId: number): void {
   gap: var(--fm-space-5);
 }
 
-.span-3 { grid-column: span 3; }
-.span-4 { grid-column: span 4; }
-.span-6 { grid-column: span 6; }
-.span-8 { grid-column: span 8; }
-.span-12 { grid-column: span 12; }
+.span-3 {
+  grid-column: span 3;
+}
+.span-4 {
+  grid-column: span 4;
+}
+.span-6 {
+  grid-column: span 6;
+}
+.span-8 {
+  grid-column: span 8;
+}
+.span-12 {
+  grid-column: span 12;
+}
 
 /* Every grid item must also opt out of the auto min-width floor. */
 .bento > * {
@@ -563,7 +591,12 @@ function openScheme(securityId: number): void {
   width: 100%;
   border-radius: var(--fm-radius-sm);
   background:
-    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
     var(--fm-surface-raised);
 }
 .donut-placeholder {
@@ -590,7 +623,12 @@ function openScheme(securityId: number): void {
   height: 12rem;
   border-radius: var(--fm-radius-sm);
   background:
-    linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%, transparent 100%),
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
     var(--fm-surface-raised);
 }
 
@@ -793,15 +831,32 @@ function openScheme(securityId: number): void {
 
 /* Re-flow to a single column on narrow viewports. */
 @media (max-width: 1024px) {
-  .span-3, .span-4, .span-6, .span-8 { grid-column: span 6; }
+  .span-3,
+  .span-4,
+  .span-6,
+  .span-8 {
+    grid-column: span 6;
+  }
 }
 @media (max-width: 768px) {
-  .span-3, .span-4, .span-6, .span-8, .span-12 { grid-column: span 12; }
+  .span-3,
+  .span-4,
+  .span-6,
+  .span-8,
+  .span-12 {
+    grid-column: span 12;
+  }
 }
 /* Phone: trim the chrome so content keeps the width. */
 @media (max-width: 640px) {
-  .dashboard { padding: var(--fm-space-4); }
-  .bento { gap: var(--fm-space-4); }
-  .card { padding: var(--fm-space-4); }
+  .dashboard {
+    padding: var(--fm-space-4);
+  }
+  .bento {
+    gap: var(--fm-space-4);
+  }
+  .card {
+    padding: var(--fm-space-4);
+  }
 }
 </style>

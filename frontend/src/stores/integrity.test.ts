@@ -14,7 +14,13 @@ const mockPost = vi.mocked(api.POST)
 
 function statusRow(overrides: Record<string, unknown> = {}) {
   return {
-    security: { id: 1, name: 'Acme Flexi Cap', isin: 'INF000A01234', symbol: '', security_type: 'mf' },
+    security: {
+      id: 1,
+      name: 'Acme Flexi Cap',
+      isin: 'INF000A01234',
+      symbol: '',
+      security_type: 'mf',
+    },
     folio: { id: 7, number: 'F-001', broker: '', folio_type: 'mf' },
     status: 'reconciled',
     tax_safe: true,
@@ -68,9 +74,32 @@ describe('integrity store', () => {
     expect(rollup.needsAttention).toBe(1)
   })
 
+  it('counts snapshot opening-lot rows in needsAttention', async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        statusRow({ status: 'snapshot_only', tax_safe: false }),
+        statusRow({
+          status: 'snapshot_only',
+          tax_safe: false,
+          issues: [{ type: 'opening_lot_needed', holding_units: '50' }],
+        }),
+      ],
+    } as never)
+    const store = useIntegrityStore()
+    await store.load(10)
+    expect(store.rollupFor(10).needsAttention).toBe(1)
+  })
+
   it('acknowledge updates the matching row in place to user_acknowledged', async () => {
     mockGet.mockResolvedValue({
-      data: [statusRow({ security: { id: 1, name: 'A', isin: 'X', symbol: '', security_type: 'mf' }, folio: { id: 7, number: 'F-001', broker: '', folio_type: 'mf' }, status: 'mismatch', tax_safe: false })],
+      data: [
+        statusRow({
+          security: { id: 1, name: 'A', isin: 'X', symbol: '', security_type: 'mf' },
+          folio: { id: 7, number: 'F-001', broker: '', folio_type: 'mf' },
+          status: 'mismatch',
+          tax_safe: false,
+        }),
+      ],
     } as never)
     mockPost.mockResolvedValue({
       data: statusRow({ status: 'user_acknowledged', tax_safe: false }),
@@ -89,8 +118,12 @@ describe('integrity store', () => {
   })
 
   it('recompute replaces the cached rows', async () => {
-    mockGet.mockResolvedValue({ data: [statusRow({ status: 'mismatch', tax_safe: false })] } as never)
-    mockPost.mockResolvedValue({ data: [statusRow({ status: 'reconciled', tax_safe: true })] } as never)
+    mockGet.mockResolvedValue({
+      data: [statusRow({ status: 'mismatch', tax_safe: false })],
+    } as never)
+    mockPost.mockResolvedValue({
+      data: [statusRow({ status: 'reconciled', tax_safe: true })],
+    } as never)
 
     const store = useIntegrityStore()
     await store.load(10)
@@ -107,5 +140,78 @@ describe('integrity store', () => {
 
     expect(store.rowsFor(10)).toEqual([])
     expect(store.error).not.toBeNull()
+  })
+
+  it('applyCorporateAction patches the row from the response integrity payload', async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        statusRow({
+          status: 'mismatch',
+          tax_safe: false,
+          issues: [
+            {
+              type: 'corporate_action_suggestion',
+              reference_id: 99,
+              subject: 'Bonus 3:1',
+              ex_date: '2024-06-15',
+              unit_multiplier: '4',
+              action_type: 'bonus',
+            },
+          ],
+        }),
+      ],
+    } as never)
+    mockPost.mockResolvedValue({
+      data: {
+        updated: 0,
+        created: 1,
+        events_applied: 1,
+        integrity: statusRow({ status: 'reconciled', tax_safe: true, issues: [] }),
+      },
+    } as never)
+
+    const store = useIntegrityStore()
+    await store.load(10)
+    const ok = await store.applyCorporateAction(10, 1, 7, [99])
+    expect(ok).toBe(true)
+    expect(store.rowsFor(10)[0].status).toBe('reconciled')
+    expect(store.rowsFor(10)[0].issues).toEqual([])
+  })
+
+  it('records multiple opening lots (demerger receipt) and updates the row', async () => {
+    mockGet.mockResolvedValue({
+      data: [statusRow({ status: 'snapshot_only', tax_safe: false })],
+    } as never)
+    mockPost.mockResolvedValue({
+      data: {
+        created: 4,
+        net_units: '0',
+        integrity: statusRow({ status: 'reconciled', tax_safe: true, issues: [] }),
+        suggested_parent: { id: 42, name: 'Hindustan Unilever', isin: 'INE030A01027' },
+      },
+    } as never)
+
+    const store = useIntegrityStore()
+    await store.load(10)
+    const ok = await store.recordOpeningLots(10, 1, 7, {
+      classification: 'demerger_result',
+      demerger_date: '2025-12-01',
+      lots: [
+        { date: '2021-11-10', units: '15', price: '45.84' },
+        { date: '2022-03-04', units: '10', price: '37.82' },
+      ],
+    })
+    expect(ok).toBe(true)
+    const body = (
+      mockPost.mock.calls[0][1] as {
+        body: { lots: { date: string; units: number; price?: number }[]; demerger_date?: string }
+      }
+    ).body
+    expect(body.lots).toHaveLength(2)
+    expect(body.lots[0]).toEqual({ date: '2021-11-10', units: 15, price: 45.84 })
+    expect(body.demerger_date).toBe('2025-12-01')
+    expect(store.rowsFor(10)[0].status).toBe('reconciled')
+    // The matched parent is surfaced so the UI can report the cost-basis adjustment.
+    expect(store.suggestedParent?.name).toBe('Hindustan Unilever')
   })
 })

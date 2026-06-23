@@ -1,0 +1,3 @@
+symbol,isin,trade_date,exchange,segment,series,trade_type,auction,quantity,price,trade_id,order_id,order_execution_time
+HDFC,INE001A01036,2022-06-27,NSE,EQ,EQ,buy,false,26.000000,2200.000000,T2022062701,O2022062701,2022-06-27T12:33:59
+HDFC,INE001A01036,2022-06-27,NSE,EQ,EQ,buy,false,24.000000,2200.000000,T2022062702,O2022062701,2022-06-27T12:48:02

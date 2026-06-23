@@ -84,9 +84,19 @@ async function copyPath(text: string | null | undefined): Promise<void> {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
-    ui.notify({ severity: 'success', summary: 'Copied', detail: 'Path copied to clipboard.', life: 3000 })
+    ui.notify({
+      severity: 'success',
+      summary: 'Copied',
+      detail: 'Path copied to clipboard.',
+      life: 3000,
+    })
   } catch {
-    ui.notify({ severity: 'error', summary: 'Copy failed', detail: 'Could not copy path to clipboard.', life: 3000 })
+    ui.notify({
+      severity: 'error',
+      summary: 'Copy failed',
+      detail: 'Could not copy path to clipboard.',
+      life: 3000,
+    })
   }
 }
 
@@ -114,7 +124,11 @@ async function exportHoldings(): Promise<void> {
       const saved = await downloadText(`holdings_${id}.csv`, res.data)
       if (saved !== false) ui.notify({ severity: 'success', summary: 'Holdings exported' })
     } else
-      ui.notify({ severity: 'error', summary: 'Export failed', detail: 'Could not build the holdings CSV.' })
+      ui.notify({
+        severity: 'error',
+        summary: 'Export failed',
+        detail: 'Could not build the holdings CSV.',
+      })
   } finally {
     exporting.value = null
   }
@@ -202,9 +216,9 @@ async function exportTransactions(): Promise<void> {
         <div class="setting-text">
           <h2><i class="pi pi-lock" /> Privacy</h2>
           <p>
-            Folioman is local-first. Your CAS statements and portfolio data live only where this
-            app runs — there's no account, no cloud sync, and no analytics or tracking. PAN numbers
-            are encrypted at rest and are never shown in full.
+            Folioman is local-first. Your CAS statements and portfolio data live only where this app
+            runs — there's no account, no cloud sync, and no analytics or tracking. PAN numbers are
+            encrypted at rest and are never shown in full.
           </p>
         </div>
       </article>
@@ -225,7 +239,8 @@ async function exportTransactions(): Promise<void> {
               class="path copyable"
               title="Click to copy path"
               @click="copyPath(meta.data_location)"
-            >{{ meta.data_location }}</code>
+              >{{ meta.data_location }}</code
+            >
             <p v-if="isLocal" class="hint">
               <strong>Backup:</strong> copy that file somewhere safe. To restore, put it back before
               launching Folioman. That one file is your whole portfolio.
@@ -239,7 +254,8 @@ async function exportTransactions(): Promise<void> {
                 class="path copyable"
                 title="Click to copy path"
                 @click="copyPath(meta.key_location)"
-              >{{ meta.key_location }}</code>
+                >{{ meta.key_location }}</code
+              >
               <p class="hint">
                 Back this up too — without it, encrypted PANs can't be recovered. Keep it somewhere
                 different from the database file.
@@ -308,7 +324,9 @@ async function exportTransactions(): Promise<void> {
       <article class="card setting block">
         <div class="setting-text">
           <h2><i class="pi pi-info-circle" /> About</h2>
-          <p class="kv"><span>Version</span><strong>{{ meta?.version ?? '—' }}</strong></p>
+          <p class="kv">
+            <span>Version</span><strong>{{ meta?.version ?? '—' }}</strong>
+          </p>
           <p v-if="SUPPORT_URL" class="kv">
             <span>Help &amp; issues</span>
             <a :href="SUPPORT_URL" target="_blank" rel="noopener noreferrer">GitHub repository ↗</a>

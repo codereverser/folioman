@@ -43,16 +43,14 @@ export const useInvestorStore = defineStore('investor', () => {
 
   function createInvestor(payload: InvestorIn): Promise<InvestorOut | null> {
     return guard(
-      async () => unwrap(await api.POST('/api/investors/', { body: payload }), 'create investor failed'),
+      async () =>
+        unwrap(await api.POST('/api/investors/', { body: payload }), 'create investor failed'),
       'Could not create investor',
       { invalidateRoster: true },
     )
   }
 
-  function updateInvestor(
-    investorId: number,
-    patch: InvestorUpdate,
-  ): Promise<InvestorOut | null> {
+  function updateInvestor(investorId: number, patch: InvestorUpdate): Promise<InvestorOut | null> {
     return guard(
       async () =>
         unwrap(

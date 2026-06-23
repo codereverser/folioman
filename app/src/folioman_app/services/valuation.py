@@ -15,30 +15,42 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
-from django.db.models import Max
+from django.db.models import Max, Q
 from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
 from folioman_core.models import Holding as CoreHolding
 from folioman_core.models import HoldingSource, Quote, SecurityType, TransactionType
-from folioman_core.reconciliation import IntegrityStatus
+from folioman_core.reconciliation import TOLERANCE, IntegrityStatus
 from folioman_core.valuation import value_holdings
 from folioman_core.xirr import cashflows_from_transactions, compute_xirr
 
 from folioman_app.mappers import to_core_security, to_core_transaction
 from folioman_app.models import (
+    AppliedCorporateAction,
     Family,
     Folio,
     Holding,
     Investor,
     InvestorValue,
     NAVHistory,
+    Security,
     SecurityIntegrityStatus,
     Transaction,
     ValuationStatus,
 )
 from folioman_app.models.jobs import ImportJob, ImportJobStatus
+from folioman_app.services.dividends import build_equity_dividend_detail
+from folioman_app.services.projected_ledger import (
+    compute_ledger,
+    demerger_reductions,
+    projected_transactions,
+    security_key,
+)
 from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
 
 _ZERO = Decimal("0")
+_ONE = Decimal("1")
+_security_key = security_key
+
 
 # Transaction types that deploy / return capital, for the invested baseline and
 # XIRR cashflows. Bonus/split/dividend-reinvest move units without fresh cash.
@@ -106,26 +118,45 @@ def _current_positions(investor: Investor):
     swap this body for DB-side signed aggregation (or a materialized
     current-units table updated on import) with no change to callers.
     """
-    txns_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
-    # Cost-basis rows only — a partial scheme then has no ledger here and falls back
-    # to its holding snapshot below (units/value unchanged from the pre-V7 behaviour).
-    for txn in investor.transactions.cost_basis().select_related(
-        "security", "security__amc", "folio"
-    ):
-        txns_by_key[(txn.security_id, txn.folio_id)].append(txn)
-    holdings_by_key: dict[tuple[int, int | None], list] = defaultdict(list)
-    for holding in investor.holdings.select_related("security", "security__amc", "folio"):
-        holdings_by_key[(holding.security_id, holding.folio_id)].append(holding)
+    # Ledger units come from the corporate-action-adjusted projection (split-scaled,
+    # merged, bonus shares) over the immutable rows — keyed by a stable security
+    # identity + folio so a merger that rebases lots onto the acquirer is counted under
+    # the acquirer, not the merged-away scrip. (Cost-basis rows only; a partial scheme
+    # has none and falls back to its holding snapshot below.)
+    txns_by_key: dict[tuple[str, str], list] = defaultdict(list)
+    for core in projected_transactions(investor):
+        txns_by_key[(_security_key(core.security), core.folio_number or "")].append(core)
 
-    # security_id -> [django_security, units, latest_as_of, source]
-    agg: dict[int, list] = {}
+    holdings_by_key: dict[tuple[str, str], list] = defaultdict(list)
+    sec_by_key: dict[str, Security] = {}
+    for holding in investor.holdings.select_related("security", "security__amc", "folio"):
+        skey = _security_key(holding.security)
+        holdings_by_key[(skey, holding.folio.number if holding.folio else "")].append(holding)
+        sec_by_key.setdefault(skey, holding.security)
+
+    # Django securities for ledger-only keys (incl. a merger acquirer the investor never
+    # traded directly — its lots arrive via the event, so resolve counterparties too).
+    cp_ids = list(
+        AppliedCorporateAction.objects.filter(investor=investor)
+        .exclude(counterparty_security=None)
+        .values_list("counterparty_security_id", flat=True)
+    )
+    for sec in (
+        Security.objects.filter(Q(transactions__investor=investor) | Q(pk__in=cp_ids))
+        .select_related("amc")
+        .distinct()
+    ):
+        sec_by_key.setdefault(_security_key(sec), sec)
+
+    # security_key -> [django_security, units, latest_as_of, source]
+    agg: dict[str, list] = {}
     for key in set(txns_by_key) | set(holdings_by_key):
-        sec_id = key[0]
+        skey = key[0]
         if key in txns_by_key:
-            txns = txns_by_key[key]
-            units = net_units_from_transactions([to_core_transaction(t) for t in txns])
-            security = txns[0].security
-            as_of = max(t.date for t in txns)
+            cores = txns_by_key[key]
+            units = net_units_from_transactions(cores)
+            security = sec_by_key.get(skey)
+            as_of = max(c.date for c in cores)
             source = HoldingSource.LEDGER.value
         else:
             rows = holdings_by_key[key]
@@ -134,7 +165,9 @@ def _current_positions(investor: Investor):
             security = rows[0].security
             as_of = latest
             source = rows[0].source
-        slot = agg.setdefault(sec_id, [security, _ZERO, as_of, source])
+        if security is None:
+            continue  # projected key with no Django security (defensive; shouldn't happen)
+        slot = agg.setdefault(skey, [security, _ZERO, as_of, source])
         slot[0] = security
         slot[1] += units
         slot[2] = max(slot[2], as_of)
@@ -303,7 +336,7 @@ def _holding_extras(investors: list[Investor], as_of: date) -> dict[int, dict]:
     Returns ``{security_id: {invested_inr, day_change_inr, day_change_pct, xirr}}``.
     """
     txn_keys, hold_keys = _ledger_index(investors)
-    positions = _positions_asof(txn_keys, hold_keys, as_of)
+    positions = _positions_asof(txn_keys, hold_keys, as_of, _merged_reductions(investors))
     nav_idx = _nav_index(positions.keys(), as_of)
     cash_by_sec = _security_cashflows(txn_keys)
     extras: dict[int, dict] = {}
@@ -706,6 +739,222 @@ def _folio_balances(investor: Investor, security, txns, price, as_of: date) -> l
     return rows
 
 
+# Synthetic ids for the engine-emitted marker rows (bonus / split / merger) that have
+# no Django pk. Kept above any real pk so the table's (date, id) tie-break renders a
+# marker after the trade it acts on, and never collides with a ledger row's id.
+_MARKER_ID_BASE = 2_000_000_000
+
+
+def _holdings_anchor(investor: Investor, security, as_of: date) -> Decimal | None:
+    """eCAS-confirmed units for ``security`` as-of the date: latest snapshot per folio,
+    summed. ``None`` when no snapshot exists — nothing to reconcile the ledger against."""
+    latest: dict[int | None, tuple[date, Decimal]] = {}
+    for h in investor.holdings.filter(security=security, as_of_date__lte=as_of):
+        cur = latest.get(h.folio_id)
+        if cur is None or h.as_of_date > cur[0]:
+            latest[h.folio_id] = (h.as_of_date, h.units)
+        elif h.as_of_date == cur[0]:
+            latest[h.folio_id] = (cur[0], cur[1] + h.units)
+    if not latest:
+        return None
+    return sum((u for (_d, u) in latest.values()), _ZERO)
+
+
+def _scheme_ledger(
+    investor: Investor, security, as_of: date
+) -> tuple[list[dict], list, date | None]:
+    """The as-traded ledger shown on the scheme page.
+
+    Trades render with their **original tradebook units and prices** — so the figures
+    match the contract notes and the buy/sell markers sit on the actual NAV line — and
+    each corporate action is a ``+units`` event at its ex-date: a split/bonus delta on
+    the held balance, or a merger **receipt** of the shares converted from the merged-away
+    scrip (tagged with that scrip via ``via_security``). The running ``balance`` is
+    computed here and reaches the held quantity.
+
+    Cost basis, gains and reconciliation stay on the corporate-action-adjusted projection
+    (returned as the second element for those consumers); this row view is presentation
+    only. Returns ``(rows, projected, partial_from)`` — ``projected`` the adjusted
+    cost-basis ledger, ``partial_from`` the earliest incomplete trade's date.
+    """
+    projected = compute_ledger(investor, security, as_of=as_of)
+
+    # Units converted *into* this security by each merger — the receipt amount. A
+    # rebased lot keeps the pk of its pre-merger row (on the merged-away security), so a
+    # row whose origin security isn't this one is a converted lot; net them per merger
+    # ref (the merged-away scrip's own pre-merger sells are already netted out).
+    # Keyed by the *origin* security (rebased rows keep their own trade ref, not the
+    # merger's, so source_ref can't group them): the merger event then claims the net
+    # converted from its merged-away scrip.
+    real_ids = [c.ledger_id for c in projected if c.ledger_id is not None]
+    origin_sec = dict(Transaction.objects.filter(id__in=real_ids).values_list("id", "security_id"))
+    receipts: dict[int, Decimal] = defaultdict(lambda: _ZERO)
+    for c in projected:
+        if c.ledger_id is None:
+            continue
+        osec = origin_sec.get(c.ledger_id)
+        if osec is None or osec == security.id:
+            continue
+        if c.type.value in _CA_INFLOW:
+            receipts[osec] += c.units
+        elif c.type.value in _CA_OUTFLOW:
+            receipts[osec] -= c.units
+
+    # One timeline: as-traded trades, then this security's corporate actions. Same-date
+    # ordering is trades → merger → split/bonus (a split acts on the post-trade balance).
+    trade, merger, scale = 0, 1, 2
+    timeline: list[tuple[date, int, int, str, object]] = []
+    seq = 0
+    for t in (
+        investor.transactions.filter(security=security)
+        .select_related("folio")
+        .order_by("date", "id")
+    ):
+        timeline.append((t.date, trade, seq, "trade", t))
+        seq += 1
+    for a in AppliedCorporateAction.objects.filter(
+        investor=investor, counterparty_security=security, kind="merger"
+    ).select_related("security"):
+        timeline.append((a.ex_date, merger, seq, "merger", a))
+        seq += 1
+    for a in AppliedCorporateAction.objects.filter(
+        investor=investor, security=security, kind__in=["split", "bonus"]
+    ):
+        timeline.append((a.ex_date, scale, seq, "scale", a))
+        seq += 1
+    timeline.sort(key=lambda e: (e[0], e[1], e[2]))
+
+    rows: list[dict] = []
+    marker_seq = 0
+    balance = _ZERO
+    partial_from: date | None = None
+    for _when, _order, _seq, kind, obj in timeline:
+        if kind == "trade":
+            complete = obj.cost_basis_complete
+            signed = (
+                obj.units
+                if obj.transaction_type in _CA_INFLOW
+                else -obj.units
+                if obj.transaction_type in _CA_OUTFLOW
+                else _ZERO
+            )
+            # An incomplete (missing-history) trade can't carry a meaningful running
+            # balance, so it's badged and left out of the accumulation, like the rest.
+            if complete:
+                balance += signed
+                row_balance = balance
+            else:
+                row_balance = None
+                if partial_from is None:
+                    partial_from = obj.date
+            rows.append(
+                {
+                    "id": obj.id,
+                    "investor_id": investor.id,
+                    "security_id": security.id,
+                    "folio_id": obj.folio_id,
+                    "date": obj.date,
+                    "transaction_type": obj.transaction_type,
+                    "units": obj.units,
+                    "nav_or_price": obj.nav_or_price,
+                    "amount": obj.amount,
+                    "fees": obj.fees,
+                    "stamp_duty": obj.stamp_duty,
+                    "brokerage": obj.brokerage,
+                    "currency": obj.currency,
+                    "source": obj.source,
+                    "narration": obj.narration,
+                    "cost_basis_complete": complete,
+                    "via_security": None,
+                    "balance": row_balance,
+                }
+            )
+            continue
+        # Corporate-action event rendered as a +units row at its ex-date.
+        if kind == "merger":
+            added = receipts.get(obj.security_id, _ZERO)
+            txn_type = "merger"
+            via = obj.security.symbol or obj.security.name
+        else:  # split / bonus: the increment doubling (etc.) the then-held balance
+            added = balance * ((obj.unit_multiplier or _ONE) - _ONE)
+            txn_type = obj.kind
+            via = None
+        ratio = _ratio_label(obj)
+        balance += added
+        marker_seq += 1
+        rows.append(
+            {
+                "id": _MARKER_ID_BASE + marker_seq,
+                "investor_id": investor.id,
+                "security_id": security.id,
+                "folio_id": None,
+                "date": obj.ex_date,
+                "transaction_type": txn_type,
+                "units": added,
+                "nav_or_price": _ZERO,
+                "amount": None,
+                "fees": _ZERO,
+                "stamp_duty": _ZERO,
+                "brokerage": _ZERO,
+                "currency": "INR",
+                "source": "corporate-action",
+                "narration": ratio,  # carries the ratio label for the events summary
+                "cost_basis_complete": True,
+                "via_security": via,
+                "balance": balance,
+            }
+        )
+    return rows, projected, partial_from
+
+
+# Net-units sign rule, mirroring folioman_core.fifo.net_units_from_transactions.
+_CA_INFLOW = frozenset(
+    {TransactionType.BUY.value, TransactionType.BONUS.value, TransactionType.TRANSFER_IN.value}
+)
+_CA_OUTFLOW = frozenset({TransactionType.SELL.value, TransactionType.TRANSFER_OUT.value})
+
+
+def _trim(d: Decimal) -> str:
+    """Plain decimal, trailing zeros trimmed (``1.680000`` -> ``1.68``, ``2.0`` -> ``2``)."""
+    text = f"{d:f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _ratio_label(a) -> str:
+    """A human ratio for the action: feed (a:b) when known, else the multiplier."""
+    if a is None:
+        return ""
+    if a.merger_ratio is not None:
+        return f"{_trim(a.merger_ratio)} new per old"
+    if a.bonus_ratio_a is not None and a.bonus_ratio_b is not None:
+        return f"{a.bonus_ratio_a}:{a.bonus_ratio_b}"
+    if a.unit_multiplier is not None:
+        # A face-value split records the resulting multiple (Rs 2 to Rs 1 => 1:2).
+        mult = a.unit_multiplier
+        whole = mult == mult.to_integral_value()
+        return f"1:{_trim(mult)}" if whole else f"{_trim(mult)}x"
+    return ""
+
+
+def _corporate_action_rows(ledger_rows: list[dict]) -> list[dict]:
+    """Applied issuer events for the events-summary card, drawn from the same as-traded
+    ledger as the Transactions table — so their running balance agrees with it. Each CA
+    row carries its ratio (in ``narration``), the counterparty scrip (``via_security``)
+    and the post-event balance."""
+    return [
+        {
+            "ex_date": r["date"],
+            "kind": r["transaction_type"],
+            "ratio": r["narration"],
+            "counterparty": r["via_security"],
+            "units_added": r["units"] if r["units"] > _ZERO else None,
+            "units_after": r["balance"],
+        }
+        for r in ledger_rows
+        if r["source"] == "corporate-action"
+    ]
+
+
 def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
     """Per-(investor, security) detail for the scheme page.
 
@@ -742,26 +991,48 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
     )
     latest_nav_date, latest_nav = latest if latest else (None, None)
 
-    # The scheme page shows the *whole* ledger (incl. partial-history rows, badged);
-    # cost-basis numbers (folio balances, XIRR window) use complete rows only.
-    txns = list(
-        investor.transactions.filter(security=security)
-        .select_related("folio")
-        .order_by("date", "id")
+    # The scheme page shows the corporate-action-adjusted ledger (merged lots, bonus /
+    # split / merger marker rows), so the running balance reaches the held quantity and
+    # the page explains how. Orphan partial-history rows are appended, badged.
+    txns, complete_core, partial_from = _scheme_ledger(investor, security, as_of)
+    folios = _folio_balances(
+        investor,
+        security,
+        list(investor.transactions.filter(security=security).cost_basis().select_related("folio")),
+        price,
+        as_of,
     )
-    complete_txns = [t for t in txns if t.cost_basis_complete]
-    folios = _folio_balances(investor, security, complete_txns, price, as_of)
+
+    # "Partial" should mean the held position genuinely lacks cost basis — not merely
+    # that a display-only orphan row is incomplete. A holding healed by a merger + bonus
+    # reconciles to its eCAS anchor, so it isn't partial even with orphan rows present.
+    anchor = _holdings_anchor(investor, security, as_of)
+    has_incomplete = partial_from is not None
+    complete_net = net_units_from_transactions(complete_core)
+    if anchor is not None:
+        partial_history = has_incomplete and abs(complete_net - anchor) > TOLERANCE
+    else:
+        partial_history = has_incomplete
+
     # Why the XIRR reads the way it does — so the UI can flag a provisional number
     # instead of presenting it as gospel.
     xirr = ex.get("xirr")
-    if not complete_txns:
+    if not complete_core:
         xirr_status = "estimated"  # snapshot-only (or partial-history): value is observed
     elif xirr is None:
         xirr_status = "estimated"  # held but unpriced — can't value the terminal leg
-    elif (as_of - complete_txns[0].date).days < 365:
+    elif (as_of - min(c.date for c in complete_core)).days < 365:
         xirr_status = "less_than_1_year"  # annualized over a short period — indicative
     else:
         xirr_status = "valid"
+
+    dividend_detail = build_equity_dividend_detail(
+        investor,
+        security,
+        as_of=as_of,
+        current_units=units,
+        invested_inr=invested,
+    )
 
     return {
         "security": {
@@ -786,10 +1057,8 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
         "latest_nav": latest_nav,
         "latest_nav_date": latest_nav_date,
         "has_transactions": bool(txns),
-        "partial_history": len(complete_txns) < len(txns),
-        "partial_history_from": min(
-            (t.date for t in txns if not t.cost_basis_complete), default=None
-        ),
+        "partial_history": partial_history,
+        "partial_history_from": partial_from if partial_history else None,
         "integrity": list(
             investor.integrity_statuses.filter(security=security).select_related(
                 "security", "folio"
@@ -799,14 +1068,19 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
         "nav_history": list(
             NAVHistory.objects.filter(security=security, date__lte=as_of).order_by("date")
         ),
+        **dividend_detail,
+        "corporate_actions": _corporate_action_rows(txns),
         "transactions": txns,
     }
 
 
 # ---------------------------------------------------------------------------
 # Value-series (net worth over time) + XIRR — reconstructed on demand from the
-# transaction ledger + NAVHistory. No snapshot tables: a sampled date's value is
-# the ledger's net units as-of that date, priced at the latest NAV on/before it.
+# cost-basis transaction ledger + NAVHistory. Two-tier rule: only ledger-backed
+# holdings enter the day-wise trend; snapshot-only positions (eCAS equity, MF
+# statement close, partial-history ledgers) contribute to headline net worth via
+# ``_current_positions`` but are omitted here. A sampled date's value is the
+# ledger's net units as-of that date, priced at the latest NAV on/before it.
 # ---------------------------------------------------------------------------
 
 
@@ -825,15 +1099,35 @@ def _ledger_index(investors: list[Investor]):
     single load every series/XIRR path funnels through (the perf seam: swap for
     DB-side aggregation if a long ledger makes it slow).
     """
+    # Ledger rows come from the corporate-action-adjusted projection (split-scaled,
+    # merged, bonus). The bucket key stays (security_id, folio_id) — same contract every
+    # downstream consumer relies on — by resolving the projected row's identity back to a
+    # Django security and its folio number to a folio id. Cash flows are CA-invariant
+    # (each row's amount is preserved), so XIRR is unaffected.
+    cp_ids = list(
+        AppliedCorporateAction.objects.filter(investor__in=investors)
+        .exclude(counterparty_security=None)
+        .values_list("counterparty_security_id", flat=True)
+    )
+    sec_by_key: dict[str, Security] = {}
+    for sec in (
+        Security.objects.filter(Q(transactions__investor__in=investors) | Q(pk__in=cp_ids))
+        .select_related("amc")
+        .distinct()
+    ):
+        sec_by_key.setdefault(security_key(sec), sec)
+
     txn_keys: dict[tuple[int, int | None], dict] = {}
     for investor in investors:
-        # Cost-basis rows only — partial-history rows are display-only and would skew
-        # FIFO units / invested / XIRR; a partial scheme falls back to its snapshot.
-        for txn in investor.transactions.cost_basis().select_related("security", "folio"):
-            key = (txn.security_id, txn.folio_id)
-            rec = txn_keys.setdefault(key, {"security": txn.security, "core": [], "cash": []})
-            rec["core"].append((txn.date, to_core_transaction(txn)))
-            rec["cash"].append((txn.date, txn.transaction_type, _txn_cash(txn)))
+        folio_by_num = {f.number: f.id for f in investor.folios.all()}
+        for core in projected_transactions(investor):
+            security = sec_by_key.get(security_key(core.security))
+            if security is None:
+                continue  # projected key with no Django security (defensive)
+            key = (security.id, folio_by_num.get(core.folio_number or ""))
+            rec = txn_keys.setdefault(key, {"security": security, "core": [], "cash": []})
+            rec["core"].append((core.date, core))
+            rec["cash"].append((core.date, core.type.value, _txn_cash(core)))
     hold_keys: dict[tuple[int, int | None], dict] = {}
     for investor in investors:
         for holding in investor.holdings.select_related("security", "folio"):
@@ -843,7 +1137,18 @@ def _ledger_index(investors: list[Investor]):
     return txn_keys, hold_keys
 
 
-def _positions_asof(txn_keys: dict, hold_keys: dict, as_of: date) -> dict[int, list]:
+def _merged_reductions(investors: list[Investor]) -> dict[str, list]:
+    """Union of the investors' demerger cost reductions, keyed by security identity."""
+    merged: dict[str, list] = {}
+    for investor in investors:
+        for ident, events in demerger_reductions(investor).items():
+            merged.setdefault(ident, []).extend(events)
+    return merged
+
+
+def _positions_asof(
+    txn_keys: dict, hold_keys: dict, as_of: date, reductions: dict[str, list] | None = None
+) -> dict[int, list]:
     """Net units + invested capital per security as-of ``as_of``.
 
     Per (security, folio): the ledger wins when one exists — FIFO over the
@@ -853,13 +1158,18 @@ def _positions_asof(txn_keys: dict, hold_keys: dict, as_of: date) -> dict[int, l
     observed cost basis. Aggregated per security.
     Returns ``{security_id: [django_security, units, invested_inr]}``.
     """
+    reductions = reductions or {}
     agg: dict[int, list] = {}
     for (sec_id, _folio_id), rec in txn_keys.items():
         cores = [core for (txn_date, core) in rec["core"] if txn_date <= as_of]
         if not cores:
             continue  # ledger-managed folio, but nothing acquired yet as-of date
+        sec = rec["security"]
+        ident = sec.isin or sec.symbol or sec.name
+        # Only demergers on/before the date reduce the basis of the units held then.
+        sec_reductions = [(ex, by) for (ex, by) in reductions.get(ident, []) if ex <= as_of]
         try:
-            fifo = apply_fifo(cores)
+            fifo = apply_fifo(cores, demerger_reductions=sec_reductions)
             units, invested = fifo.balance, fifo.invested
         except InsufficientUnitsError:
             # An over-sell (only reachable via malformed manual entry — CAS ledgers
@@ -950,13 +1260,14 @@ def _sample_dates(from_: date, to: date, granularity: str) -> list[date]:
 
 
 def _value_series(investors: list[Investor], from_: date, to: date, granularity: str) -> list[dict]:
-    txn_keys, hold_keys = _ledger_index(investors)
-    sec_ids = {k[0] for k in txn_keys} | {k[0] for k in hold_keys}
+    txn_keys, _hold_keys = _ledger_index(investors)
+    sec_ids = {k[0] for k in txn_keys}
     nav_idx = _nav_index(sec_ids, to)
 
     points: list[dict] = []
     for sample in _sample_dates(from_, to, granularity):
-        agg = _positions_asof(txn_keys, hold_keys, sample)
+        # Ledger-only: snapshot holdings are today-only (headline), not historical trend.
+        agg = _positions_asof(txn_keys, {}, sample)
         value = _ZERO
         invested = _ZERO
         stale = False

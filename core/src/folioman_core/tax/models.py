@@ -17,6 +17,7 @@ from folioman_core.models.security import Security
 class Term(StrEnum):
     SHORT = "short"
     LONG = "long"
+    EXEMPT = "exempt"  # not chargeable to capital gains (e.g. s.10(34A) buyback)
 
 
 class TaxYear(DomainModel):
@@ -38,6 +39,9 @@ class Disposal(DomainModel):
     cost_per_unit: DecimalField
     fees_allocated: DecimalField = Field(default=Decimal("0"))
     currency: str = Field(default="INR", min_length=3, max_length=3)
+    # The disposal was a share buyback (s.115QA) — its gain is exempt under
+    # s.10(34A) for buybacks up to 30-Sep-2024; the policy classifies it EXEMPT.
+    is_buyback: bool = False
 
 
 class GainLine(DomainModel):

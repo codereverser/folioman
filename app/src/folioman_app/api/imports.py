@@ -49,12 +49,17 @@ def _read_upload(file: UploadedFile) -> bytes:
     """Read an uploaded CAS within the size cap, else 413.
 
     The whole file is parsed in memory, so an unbounded read is the OOM/DoS
-    vector. Checked before ``read()`` so a hostile body is never materialised."""
+    vector. Checked before ``read()`` when ``size`` is known; always cap the
+    actual bytes read so a missing/forged ``Content-Length`` cannot bypass it."""
     limit = settings.MAX_UPLOAD_BYTES
     if file.size is not None and file.size > limit:
         mb = limit // (1024 * 1024)
         raise HttpError(413, f"File too large. The maximum statement size is {mb} MB.")
-    return file.read()
+    data = file.read(limit + 1)
+    if len(data) > limit:
+        mb = limit // (1024 * 1024)
+        raise HttpError(413, f"File too large. The maximum statement size is {mb} MB.")
+    return data
 
 
 def _parse_cas(content: bytes, password: str):
@@ -170,11 +175,19 @@ def import_cas(
 
 @router.post("/{investor_id}/imports/csv", response={201: ImportJobOut})
 def import_csv(request, investor_id: int, file: UploadedFile = File(...)):
-    # Disabled in the first release: imports are security-specific now (mutual
-    # funds via CAS PDF; equities via eCAS / per-broker templated CSV, which ship
-    # with multi-asset support). Endpoint kept so the contract is stable;
-    # re-enable by restoring the call.
-    raise HttpError(503, "CSV import isn't available yet — import a CAS instead.")
+    """Import a canonical-CSV transaction file for an investor.
+
+    The frontend wizard maps an arbitrary broker export (e.g. an equity
+    tradebook) onto the canonical column shape and uploads the resulting CSV
+    bytes; the backend consumes them through the same content-hashed,
+    per-row-idempotent path as every other import. Investor is taken from the
+    path (the file carries no owner identity), unlike a PAN-bearing CAS.
+    """
+    investor = get_owned_investor(request, investor_id)
+    content = _read_upload(file)
+    job = ImportJob.objects.create(investor=investor, kind=ImportKind.CSV, filename=file.name or "")
+    run_import_job(job, content=content)
+    return Status(201, job)
 
 
 @router.get("/{investor_id}/imports", response=list[ImportJobOut])

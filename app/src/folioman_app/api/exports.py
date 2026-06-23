@@ -60,7 +60,7 @@ def schedule_112a(request, investor_id: int, payload: Schedule112ARequest):
 @router.get("/{investor_id}/exports/capital-gains", response=CapitalGainsOut)
 def capital_gains(request, investor_id: int, fy: str, include_unreconciled: bool = False):
     """Realised capital gains for one FY: STCG/LTCG totals + per-disposal rows
-    (equity-MF only in v1). A read view to review — not a filed return."""
+    (listed equity and equity-oriented MF). A read view to review — not a filed return."""
     investor = get_owned_investor(request, investor_id)
     try:
         return build_capital_gains(investor, fy, include_unreconciled=include_unreconciled)

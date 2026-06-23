@@ -96,10 +96,188 @@ export function integrityMeta(status: IntegrityStatus): IntegrityMeta {
   return META[status]
 }
 
+/** A mid-history tradebook with orphan sells (PartialBlock). */
+export function hasIncompleteHistory(issues: Record<string, unknown>[]): boolean {
+  return issues.some((i) => i.type === 'incomplete_history')
+}
+
+export function incompleteHistoryReason(issues: Record<string, unknown>[]): string | null {
+  if (!hasIncompleteHistory(issues)) return null
+  return (
+    'Incomplete transaction history — sells without matching buys, so no ' +
+    'capital-gains worksheet until an earlier tradebook supplies the missing purchases.'
+  )
+}
+
+export function incompleteHistoryFix(): string {
+  return 'Import an earlier-period tradebook that includes the missing buy transactions.'
+}
+
+/** One event within a corporate-action suggestion. */
+export interface CorporateActionEvent {
+  actionType: string
+  subject: string
+  exDate: string
+  unitMultiplier: string
+  /** Shares held entering / leaving this event — for the preview table. */
+  unitsBefore: string
+  unitsAfter: string
+}
+
+/** A high-confidence corporate-action suggestion from reconciliation. A unit gap
+ * can need several events applied together (e.g. two splits), so this carries the
+ * whole ordered set. */
+export interface CorporateActionSuggestion {
+  referenceIds: number[]
+  events: CorporateActionEvent[]
+  /** True when applying these clears an orphan but a residual gap to eCAS remains
+   * (typically a separate action, e.g. a merger, handled on its own row). */
+  partial: boolean
+}
+
+function asRecord(issue: Record<string, unknown>): Record<string, unknown> {
+  return issue
+}
+
+export function corporateActionSuggestions(
+  issues: Record<string, unknown>[],
+): CorporateActionSuggestion[] {
+  return issues
+    .filter((i) => i.type === 'corporate_action_suggestion')
+    .map((raw) => {
+      const i = asRecord(raw)
+      const referenceIds = Array.isArray(i.reference_ids)
+        ? i.reference_ids.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+        : []
+      const events: CorporateActionEvent[] = Array.isArray(i.events)
+        ? i.events.map((rawEvent) => {
+            const e = asRecord(rawEvent as Record<string, unknown>)
+            return {
+              actionType: String(e.action_type ?? ''),
+              subject: String(e.subject ?? ''),
+              exDate: String(e.ex_date ?? ''),
+              unitMultiplier: String(e.unit_multiplier ?? ''),
+              unitsBefore: String(e.units_before ?? ''),
+              unitsAfter: String(e.units_after ?? ''),
+            }
+          })
+        : []
+      return { referenceIds, events, partial: i.partial === true }
+    })
+    .filter((s) => s.referenceIds.length > 0)
+}
+
+export function hasCorporateActionSuggestion(issues: Record<string, unknown>[]): boolean {
+  return corporateActionSuggestions(issues).length > 0
+}
+
+const MANUAL_CA_COPY: Record<string, string> = {
+  incomplete_history:
+    'A unit gap might be a bonus or split, but transaction history is incomplete — review the corporate action manually.',
+  snapshot_only:
+    'Holdings are snapshot-only — corporate actions cannot be matched against a tradebook ledger.',
+  ledger_position_not_in_holdings:
+    'The ledger shows units this eCAS snapshot does not list — often a pre-merger ISIN or an off-book transfer. Enter the merger or opening lot manually.',
+  holding_below_ledger:
+    'Statement holdings are below the ledger — check for an off-market transfer or a trade on another broker.',
+  non_integer_ratio:
+    'The unit gap is not a clean bonus/split ratio — review corporate actions manually.',
+  ratio_without_matching_event:
+    'The unit ratio does not match any cached corporate action — refresh the feed or enter the event manually.',
+  replay_mismatch:
+    'The cached corporate actions don’t reconcile to your holdings — the feed may be incomplete or one applies differently. Review and enter the events manually.',
+  no_matching_event:
+    'A unit gap remains but no cached corporate action explains it — refresh the feed or enter the event manually.',
+}
+
+/** User-facing copy for a manual corporate-action flag, if any. */
+export function corporateActionManualNote(issues: Record<string, unknown>[]): string | null {
+  const manual = issues.find((i) => i.type === 'corporate_action_manual')
+  if (!manual) return null
+  const reason = String(manual.reason ?? '')
+  const base = MANUAL_CA_COPY[reason]
+  if (base) return base
+  if (reason === 'ratio_without_matching_event' && manual.unit_ratio) {
+    return `${MANUAL_CA_COPY.ratio_without_matching_event} (ratio ×${manual.unit_ratio}).`
+  }
+  return 'This unit gap needs a manual corporate-action review.'
+}
+
+export function corporateActionSuggestionSummary(s: CorporateActionSuggestion): string {
+  // The per-event detail (dates, share counts) is shown in the preview table; this is
+  // just the one-line headline, so name the events without the raw multiplier.
+  const names = s.events.map((e) => e.subject).filter(Boolean)
+  if (names.length === 1) {
+    return `Suggested corporate action: ${names[0]}.`
+  }
+  return `Suggested corporate actions (${names.length}): ${names.join(', ')}.`
+}
+
+export interface OpeningLotIssue {
+  holdingUnits: string
+}
+
+export function openingLotIssue(issues: Record<string, unknown>[]): OpeningLotIssue | null {
+  const raw = issues.find((i) => i.type === 'opening_lot_needed')
+  if (!raw) return null
+  return { holdingUnits: String(raw.holding_units ?? '') }
+}
+
+export function openingLotSummary(issue: OpeningLotIssue): string {
+  return (
+    `eCAS shows ${issue.holdingUnits} units with no tradebook history — ` +
+    'record how they were acquired (IPO, transfer-in, or demerger receipt).'
+  )
+}
+
+/**
+ * Rows the user can act on now — mismatches plus non-mismatch statuses that still
+ * carry an actionable issue (e.g. eCAS-only equity needing an opening lot).
+ */
+export function rowNeedsAttention(
+  status: IntegrityStatus,
+  issues: Record<string, unknown>[],
+): boolean {
+  if (status === 'mismatch') return true
+  if (status === 'user_acknowledged') return false
+  return (
+    hasLedgerPositionNotInHoldings(issues) ||
+    hasCorporateActionSuggestion(issues) ||
+    openingLotIssue(issues) !== null
+  )
+}
+
+export const OPENING_LOT_CLASSIFICATIONS = [
+  { value: 'ipo_allotment', label: 'IPO allotment' },
+  { value: 'transfer_in', label: 'Transfer in' },
+  { value: 'demerger_result', label: 'Demerger receipt' },
+] as const
+
+/** @deprecated Prefer `resolutionsForRow` / `applicableResolutions` in `./resolutions`. */
+export function needsIdentityRemap(issues: Record<string, unknown>[]): boolean {
+  return hasLedgerPositionNotInHoldings(issues)
+}
+
+/** Ledger shows units for an ISIN the eCAS snapshot no longer lists (typical pre-merger). */
+export function hasLedgerPositionNotInHoldings(issues: Record<string, unknown>[]): boolean {
+  return issues.some(
+    (i) => i.type === 'corporate_action_manual' && i.reason === 'ledger_position_not_in_holdings',
+  )
+}
+
+/** User-facing one-liner for the merged-away ISIN scenario. */
+export function ledgerPositionSummary(name: string, ledgerUnits: string | null): string {
+  const units = ledgerUnits ?? '—'
+  return (
+    `The tradebook shows ${units} units of ${name}, but that ISIN no longer appears on the ` +
+    'eCAS holdings — often a company that merged into another listed stock. ' +
+    'Record the merger (acquirer ISIN + exchange ratio) or remap 1:1 if only the ISIN changed.'
+  )
+}
+
 // One canonical remediation for an incomplete mutual-fund ledger — the same advice
 // the Import screen gives, so guidance never contradicts itself.
-const REIMPORT_FIX =
-  'Re-import a since-inception (Detailed) CAS that includes zero-balance folios.'
+const REIMPORT_FIX = 'Re-import a since-inception (Detailed) CAS that includes zero-balance folios.'
 
 /**
  * The concrete next step for a status, or null when none is needed (already

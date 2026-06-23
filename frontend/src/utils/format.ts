@@ -77,7 +77,11 @@ export function trendGlyph(v: number | string | null | undefined): '▲' | '▼'
   return n > 0 ? '▲' : n < 0 ? '▼' : '·'
 }
 
-const dateFmt = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+const dateFmt = new Intl.DateTimeFormat('en-IN', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+})
 
 /** ISO date/datetime → "30 May 2026"; null/invalid → em dash. */
 export function formatDate(iso: string | null | undefined): string {

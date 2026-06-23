@@ -57,8 +57,8 @@ async function submit(): Promise<void> {
       <img class="logo" src="/logo.svg" alt="Folioman" height="36" />
       <h1>Create your admin account</h1>
       <p class="muted">
-        This is the first time Folioman has started on this server. Create the
-        administrator login — you'll use it to sign in from now on.
+        This is the first time Folioman has started on this server. Create the administrator login —
+        you'll use it to sign in from now on.
       </p>
 
       <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
@@ -79,7 +79,12 @@ async function submit(): Promise<void> {
 
       <label class="field">
         <span>Username</span>
-        <InputText v-model="username" :autofocus="!tokenRequired" autocomplete="username" :disabled="submitting" />
+        <InputText
+          v-model="username"
+          :autofocus="!tokenRequired"
+          autocomplete="username"
+          :disabled="submitting"
+        />
       </label>
 
       <label class="field">
@@ -121,8 +126,10 @@ async function submit(): Promise<void> {
 
       <p class="hint">
         You can change this password later from the server shell:
-        <code>docker compose -f server/docker-compose.yml exec app django-admin changepassword
-        &lt;username&gt;</code>
+        <code
+          >docker compose -f server/docker-compose.yml exec app django-admin changepassword
+          &lt;username&gt;</code
+        >
       </p>
     </form>
   </main>

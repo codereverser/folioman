@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 from decimal import Decimal
 
 import pytest
-from folioman_app.models import Folio, Security
+from folioman_app.models import Folio, Security, SecurityIntegrityStatus, Transaction
 from folioman_app.tasks.import_csv import create_manual_transaction
 from folioman_app.tasks.import_ecas import persist_ecas_statement
 from folioman_core.models import SecurityType
@@ -177,3 +178,213 @@ def test_unacknowledge_unknown_status_404(client, make_investor):
     folio = Folio.objects.create(investor=inv, number="X", folio_type="demat")
     resp = client.post(f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/unacknowledge")
     assert resp.status_code == 404
+
+
+def test_record_opening_lot_api(client, make_investor):
+    inv = make_investor()
+    isin = "INE418H01026"
+    statement = EcasStatement(
+        depository=Depository.CDSL,
+        statement_date=dt.date(2025, 6, 1),
+        accounts=[
+            EcasAccountBlock(
+                folio=CoreFolio(folio_type="demat", number=_DEMAT, broker="ZERODHA"),
+                holdings=[
+                    EcasHoldingLine(
+                        security=CoreSecurity(
+                            type=SecurityType.EQUITY, name="HDB Financial Services", isin=isin
+                        ),
+                        units="50",
+                    )
+                ],
+            )
+        ],
+    )
+    persist_ecas_statement(inv, statement, source_ref="ecas")
+    sec = Security.objects.get(isin=isin)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    resp = client.post(
+        f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/record-opening-lot",
+        {
+            "classification": "ipo_allotment",
+            "date": "2024-05-01",
+            "price": "700",
+        },
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["created"] == 1
+    assert body["integrity"]["status"] == "reconciled"
+
+
+def test_apply_identity_remap_api(client, make_investor):
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="10", price="100")
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    resp = client.post(
+        f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/apply-identity-remap",
+        {"to_isin": "INE002A01099", "to_name": "Reliance Industries Ltd", "to_symbol": "RELIANCE9"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["transactions_updated"] == 1
+    assert Transaction.objects.filter(investor=inv, security__isin="INE002A01099").count() == 1
+
+
+def _post_json(client, url, payload):
+    return client.post(url, data=json.dumps(payload), content_type="application/json")
+
+
+def test_apply_manual_bonus_resolves_mismatch(client, make_investor):
+    # Ledger net 50; eCAS shows 100 after a 1:1 bonus the auto-detect can't see
+    # (no cached feed). The user authors it by hand -> reconciles to 100.
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="50", price="100")
+    _ecas_holding(inv, isin=_ISIN, units="100")
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    assert client.get(f"/api/investors/{inv.id}/integrity").json()[0]["status"] == "mismatch"
+
+    resp = _post_json(
+        client,
+        f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/apply-manual-corporate-action",
+        {"kind": "bonus", "ex_date": "2021-01-01", "unit_multiplier": "2"},
+    )
+    assert resp.status_code == 200, resp.content
+    assert resp.json()["integrity"]["status"] == "reconciled"
+    status = SecurityIntegrityStatus.objects.get(investor=inv, security=sec, folio=folio)
+    assert status.units_from_transactions == Decimal("100")
+
+
+def test_apply_manual_merger_hdfc_rebases_onto_acquirer(client, make_investor):
+    """Manual merger API closes the HDFC→HDFCBANK ledger_position gap (42:25 → 84 units)."""
+    from folioman_app.models.jobs import ImportJob, ImportKind
+    from folioman_app.tasks.import_csv import process_csv
+
+    inv = make_investor()
+    hdfc_isin = "INE001A01036"
+    hdfcbank_isin = "INE040A01034"
+    demat = _DEMAT
+    header = (
+        "security_type,name,symbol,isin,date,transaction_type,units,price,"
+        "folio_number,broker,source_ref\n"
+    )
+    row = f"equity,HDFC Ltd,HDFC,{hdfc_isin},2022-06-27,buy,50,2200,{demat},ZERODHA,\n"
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (header + row).encode(), "")
+
+    hdfcbank = CoreSecurity(
+        type=SecurityType.EQUITY,
+        name="HDFC Bank Ltd",
+        isin=hdfcbank_isin,
+        symbol="HDFCBANK",
+    )
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2025, 9, 1),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=demat, broker="ZERODHA"),
+                    holdings=[
+                        EcasHoldingLine(security=hdfcbank, units="168", value_observed="300000")
+                    ],
+                )
+            ],
+        ),
+        source_ref="ecas-hdfc",
+    )
+
+    hdfc_sec = Security.objects.get(isin=hdfc_isin)
+    hdfcbank_sec = Security.objects.get(isin=hdfcbank_isin)
+    folio = Folio.objects.get(investor=inv, number=demat)
+
+    manual = [
+        i
+        for i in SecurityIntegrityStatus.objects.get(investor=inv, security=hdfc_sec).issues
+        if i.get("type") == "corporate_action_manual"
+    ]
+    assert manual[0]["reason"] == "ledger_position_not_in_holdings"
+
+    resp = _post_json(
+        client,
+        f"/api/investors/{inv.id}/integrity/{hdfc_sec.id}/{folio.id}/apply-manual-corporate-action",
+        {
+            "kind": "merger",
+            "ex_date": "2023-07-13",
+            "merger_ratio": "1.68",
+            "counterparty_isin": hdfcbank_isin,
+            "counterparty_symbol": "HDFCBANK",
+            "counterparty_name": "HDFC Bank Ltd",
+        },
+    )
+    assert resp.status_code == 200, resp.content
+    body = resp.json()
+    assert body["integrity"]["security"]["isin"] == hdfcbank_isin
+    # The as-traded HDFC buy stays exactly as imported; the projection rebases it onto
+    # HDFCBANK (so HDFC nets to 0), never rewriting the trade row.
+    assert Transaction.objects.filter(investor=inv, security=hdfc_sec, folio=folio).exists()
+    from folioman_app.services.projected_ledger import compute_ledger
+    from folioman_core.fifo import net_units_from_transactions
+
+    assert net_units_from_transactions(compute_ledger(inv, hdfc_sec, folio=folio)) == Decimal("0")
+
+    bank_status = SecurityIntegrityStatus.objects.get(
+        investor=inv, security=hdfcbank_sec, folio=folio
+    )
+    assert bank_status.units_from_transactions == Decimal("84")
+    assert bank_status.units_from_holdings == Decimal("168")
+
+
+def test_apply_manual_merger_requires_counterparty_isin(client, make_investor):
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="10", price="100")
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    resp = _post_json(
+        client,
+        f"/api/investors/{inv.id}/integrity/{sec.id}/{folio.id}/apply-manual-corporate-action",
+        {"kind": "merger", "ex_date": "2021-01-01", "merger_ratio": "1"},
+    )
+    assert resp.status_code == 400
+    assert "counterparty" in resp.json()["detail"].lower()
+
+
+def test_apply_manual_corporate_action_is_investor_scoped(client, make_investor):
+    a = make_investor()
+    b = make_investor()
+    _equity_txn(a, txn_type="buy", units="10", price="100")
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=a, number=_DEMAT)
+    # b cannot touch a's (security, folio).
+    resp = _post_json(
+        client,
+        f"/api/investors/{b.id}/integrity/{sec.id}/{folio.id}/apply-manual-corporate-action",
+        {"kind": "bonus", "ex_date": "2021-01-01", "unit_multiplier": "2"},
+    )
+    assert resp.status_code == 404
+
+
+def test_refresh_corporate_actions_endpoint_scopes_to_mismatches(
+    client, make_investor, monkeypatch
+):
+    import folioman_app.api.integrity as integ
+
+    calls = {}
+
+    def fake_refresh(*, securities):
+        calls["isins"] = sorted(s.isin for s in securities)
+        return {"events": 0}
+
+    monkeypatch.setattr(integ, "refresh_corporate_actions", fake_refresh)
+
+    inv = make_investor()
+    _equity_txn(inv, txn_type="buy", units="100", price="100")  # ledger 100
+    _ecas_holding(inv, isin=_ISIN, units="90")  # demat 90 -> mismatch
+    resp = client.post(f"/api/investors/{inv.id}/integrity/refresh-corporate-actions")
+    assert resp.status_code == 200
+    # the mismatched equity was the one handed to the fetch
+    assert calls["isins"] == [_ISIN]

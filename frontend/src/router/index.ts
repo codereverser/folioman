@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteLocationRaw, RouteMeta, RouteRecordRaw } from 'vue-router'
 import { useUiStore } from '@/stores/ui'
+import { useRosterStore } from '@/stores/roster'
 import { useAuthStore } from '@/stores/auth'
 import { fetchSetupNeeded } from '@/api/setup'
 import DashboardView from '@/views/DashboardView.vue'
@@ -41,6 +42,25 @@ export function authRouteTarget(
   }
   if (needsSetup) return toName === 'setup' ? true : { name: 'setup' }
   return toName === 'setup' ? { name: 'login' } : true
+}
+
+/** A scoped URL (`/investors/:id/...` or `/families/:id`) whose id isn't in the roster
+ * is stale — the investor/family was deleted, or the DB was reset while the browser kept
+ * the last scope in localStorage. Bounce such a visit to the roster (the base landing).
+ * Pure so it's unit-tested; the guard clears the persisted scope alongside it. */
+export function staleScopeRedirect(
+  investorId: string | undefined,
+  familyId: string | undefined,
+  knownInvestorIds: readonly number[],
+  knownFamilyIds: readonly number[],
+): RouteLocationRaw | null {
+  if (typeof investorId === 'string' && !knownInvestorIds.includes(Number(investorId))) {
+    return { name: 'investors' }
+  }
+  if (typeof familyId === 'string' && !knownFamilyIds.includes(Number(familyId))) {
+    return { name: 'investors' }
+  }
+  return null
 }
 
 // Scope lives in the URL: `/investors/:investorId/...` for a single investor,
@@ -101,12 +121,29 @@ const routes: RouteRecordRaw[] = [
     redirect: (to) => ({ name: 'capital-gains', params: { investorId: to.params.investorId } }),
   },
   {
-    // Single CAS import — advisor-level: the statement identifies its own
-    // investor by PAN (the server auto-detects MF CAS vs NSDL/CDSL eCAS and
-    // resolves or creates the investor). Not scoped to a pre-selected investor.
+    // Import hub: pick a source (CAS/eCAS PDF, stock tradebook, …), then route to
+    // that flow. Intent-first, because the flows differ (CAS is PAN-resolved; a
+    // tradebook is investor-chosen + column-mapped).
     path: '/import',
     name: 'import',
+    component: () => import('@/views/ImportHubView.vue'),
+    meta: { desktopOnly: true },
+  },
+  {
+    // CAS/eCAS PDF — advisor-level: the statement identifies its own investor by
+    // PAN (the server auto-detects MF CAS vs NSDL/CDSL eCAS and resolves or creates
+    // the investor). Not scoped to a pre-selected investor.
+    path: '/import/cas',
+    name: 'import-cas',
     component: () => import('@/views/ImportView.vue'),
+    meta: { desktopOnly: true },
+  },
+  {
+    // Broker stock tradebook (CSV/XLSX) → canonical transaction ledger. Unlike a
+    // CAS, a tradebook carries no owner identity, so the investor is chosen up front.
+    path: '/import/transactions',
+    name: 'import-transactions',
+    component: () => import('@/views/TradebookImportView.vue'),
     meta: { desktopOnly: true },
   },
   {
@@ -178,6 +215,24 @@ router.beforeEach(async (to) => {
   const ui = useUiStore()
   const investorId = to.params.investorId
   const familyId = to.params.familyId
+  if (typeof investorId === 'string' || typeof familyId === 'string') {
+    // The scope id comes from the URL — which, via the `/` redirect, is seeded from a
+    // localStorage scope the server knows nothing about. Validate it against the roster
+    // so a deleted investor (or an emptied DB) self-heals instead of dead-ending on a
+    // dashboard for an id that no longer exists.
+    const roster = useRosterStore()
+    await roster.ensureLoaded()
+    const stale = staleScopeRedirect(
+      typeof investorId === 'string' ? investorId : undefined,
+      typeof familyId === 'string' ? familyId : undefined,
+      roster.investors.map((i) => i.id),
+      roster.families.map((f) => f.id),
+    )
+    if (stale) {
+      ui.clearScope() // drop the stale persisted scope so `/` stops resolving to it
+      return stale
+    }
+  }
   if (typeof investorId === 'string') {
     ui.selectInvestor(Number(investorId))
   } else if (typeof familyId === 'string') {

@@ -49,6 +49,10 @@ _REQUEST_SPACING = 0.15  # seconds between live fetches
 # Beyond it we re-pull the full history and fill every missing date — so a desktop
 # opened once a fortnight catches up gaplessly instead of leaving weeks of holes.
 _HISTORY_FRESH_TRADING_DAYS = 1
+# The stored series counts as reaching the span start if its earliest date is within
+# this of the first transaction/holding — the first trade may fall on a holiday a few
+# days before the first available close, so an exact match isn't required.
+_BACKFILL_TAIL_GRACE = timedelta(days=7)
 # Window pulled to read an equity's *latest* close off the last row of its NSE
 # security-wise history — wide enough to clear a long weekend / holiday run.
 _QUOTE_LOOKBACK_DAYS = 10
@@ -353,17 +357,6 @@ def _backfill_missing(qs, *, backfill_one, force: bool = False) -> dict:
     cutoff = last_trading_day(today)
     fetched = False
     for security in qs:
-        # Business-day aware so we don't refetch every weekend or for a not-yet-
-        # published same-day price; gap aware so a fortnight-old series is brought
-        # fully current, not just nudged.
-        latest = NAVHistory.objects.filter(security=security).aggregate(m=Max("date"))["m"]
-        behind = trading_days_between(latest, cutoff) if latest is not None else None
-        if not force and behind is not None and behind <= _HISTORY_FRESH_TRADING_DAYS:
-            summary["skipped"] += 1
-            continue
-        if fetched:
-            _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
-        fetched = True
         # Cover the whole span the valuation series needs: the earliest of any
         # transaction date and any holding snapshot's as_of_date. A snapshot-only
         # equity (no transactions) must still backfill back to its statement date,
@@ -372,6 +365,29 @@ def _backfill_missing(qs, *, backfill_one, force: bool = False) -> dict:
         hold_first = Holding.objects.filter(security=security).aggregate(d=Min("as_of_date"))["d"]
         candidates = [d for d in (txn_first, hold_first) if d is not None]
         since = min(candidates) if candidates else None
+        # Skip only when the series is current at the head AND reaches back to the
+        # span start. The head-only check alone let a shallow series (recent daily
+        # refreshes, but no deep history) look "fresh" forever, so a freshly imported
+        # stock kept its first 2018 trade unpriced. Checking the tail self-heals it.
+        bounds = NAVHistory.objects.filter(security=security).aggregate(
+            lo=Min("date"), hi=Max("date")
+        )
+        latest, earliest = bounds["hi"], bounds["lo"]
+        behind = trading_days_between(latest, cutoff) if latest is not None else None
+        reaches_back = since is None or (
+            earliest is not None and earliest <= since + _BACKFILL_TAIL_GRACE
+        )
+        if (
+            not force
+            and behind is not None
+            and behind <= _HISTORY_FRESH_TRADING_DAYS
+            and reaches_back
+        ):
+            summary["skipped"] += 1
+            continue
+        if fetched:
+            _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
+        fetched = True
         try:
             written = backfill_one(security, since=since)
         except (NAVFetchError, PriceFetchError) as exc:

@@ -85,9 +85,7 @@ const rows = computed<Row[]>(() => {
   })
   // Sort by family (group field) then value desc; in grouped mode DataTable groups
   // by familyName and the stable order keeps members value-sorted within a family.
-  return list.sort(
-    (a, b) => a.familyName.localeCompare(b.familyName) || b.valueNum - a.valueNum,
-  )
+  return list.sort((a, b) => a.familyName.localeCompare(b.familyName) || b.valueNum - a.valueNum)
 })
 
 const filters = computed(() => ({
@@ -368,10 +366,26 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
         </p>
       </div>
       <div v-if="!ui.isMobile" class="actions">
-        <Button label="New family" icon="pi pi-sitemap" severity="secondary" outlined size="small" :disabled="readOnly" @click="openCreateFamily" />
-        <Button label="Add manually" icon="pi pi-user-plus" severity="secondary" outlined size="small" :disabled="readOnly" @click="openCreateInvestor()" />
+        <Button
+          label="New family"
+          icon="pi pi-sitemap"
+          severity="secondary"
+          outlined
+          size="small"
+          :disabled="readOnly"
+          @click="openCreateFamily"
+        />
+        <Button
+          label="Add manually"
+          icon="pi pi-user-plus"
+          severity="secondary"
+          outlined
+          size="small"
+          :disabled="readOnly"
+          @click="openCreateInvestor()"
+        />
         <!-- Primary path: an import creates the investor from the CAS automatically. -->
-        <Button label="Import CAS" icon="pi pi-file-pdf" size="small" @click="goImport" />
+        <Button label="Import" icon="pi pi-download" size="small" @click="goImport" />
       </div>
     </header>
 
@@ -381,7 +395,9 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
         <p class="rs-value">{{ formatInr(agg.totalInr) }}</p>
         <p class="rs-sub">
           {{ agg.investorCount }} investor{{ agg.investorCount === 1 ? '' : 's' }}
-          <template v-if="agg.familyCount > 0"> · {{ agg.familyCount }} {{ agg.familyCount === 1 ? 'family' : 'families' }}</template>
+          <template v-if="agg.familyCount > 0">
+            · {{ agg.familyCount }} {{ agg.familyCount === 1 ? 'family' : 'families' }}</template
+          >
           <span
             v-if="agg.navsStale && agg.navsAsOf"
             class="rs-stale"
@@ -392,7 +408,10 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
           </span>
         </p>
       </div>
-      <div class="rs-integrity" :title="`${agg.taxReadyCount} of ${agg.integrityUnitCount} holdings tax-ready`">
+      <div
+        class="rs-integrity"
+        :title="`${agg.taxReadyCount} of ${agg.integrityUnitCount} holdings tax-ready`"
+      >
         <span class="dot ok" /> {{ agg.taxReadyCount }}/{{ agg.integrityUnitCount }} tax-ready
         <span v-if="agg.needsAttentionCount > 0" class="rs-attn">
           <span class="dot attention" /> {{ agg.needsAttentionCount }} need attention
@@ -404,12 +423,19 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
       <i class="pi pi-inbox" />
       <p>No investors yet.</p>
       <p class="muted">
-        Import a CAS to get started — the investor is created automatically from the
-        statement, with their full holdings.
+        Import a CAS to get started — the investor is created automatically from the statement, with
+        their full holdings.
       </p>
       <div v-if="!ui.isMobile" class="empty-actions">
-        <Button label="Import CAS" icon="pi pi-file-pdf" @click="goImport" />
-        <Button label="Add manually" icon="pi pi-user-plus" severity="secondary" text :disabled="readOnly" @click="openCreateInvestor()" />
+        <Button label="Import" icon="pi pi-download" @click="goImport" />
+        <Button
+          label="Add manually"
+          icon="pi pi-user-plus"
+          severity="secondary"
+          text
+          :disabled="readOnly"
+          @click="openCreateInvestor()"
+        />
       </div>
     </div>
 
@@ -450,9 +476,16 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
             <template v-if="(data as Row).familyId != null">
               <span v-if="familyCombined((data as Row).familyName)" class="grp-combined">
                 {{ familyCombined((data as Row).familyName) }}
-                <span class="dot" :class="familyNeedsAttention((data as Row).familyName) ? 'attention' : 'ok'" />
+                <span
+                  class="dot"
+                  :class="familyNeedsAttention((data as Row).familyName) ? 'attention' : 'ok'"
+                />
               </span>
-              <button type="button" class="grp-link is-link" @click.stop="openFamily((data as Row).familyId!)">
+              <button
+                type="button"
+                class="grp-link is-link"
+                @click.stop="openFamily((data as Row).familyId!)"
+              >
                 Open dashboard <i class="pi pi-angle-right" />
               </button>
               <Button
@@ -471,20 +504,33 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
         <Column field="name" header="Investor" :sortable="!grouped">
           <template #body="{ data }">
             <div class="inv-name-cell">
-              <button type="button" class="inv-name is-link" @click.stop="openInvestor((data as Row).id)">
+              <button
+                type="button"
+                class="inv-name is-link"
+                @click.stop="openInvestor((data as Row).id)"
+              >
                 {{ (data as Row).name }}
               </button>
               <span
                 v-if="!(data as Row).hasPan"
                 class="no-pan"
                 title="No PAN on file — add one to enable the capital-gains export (optional)"
-              >no PAN</span>
-              <span v-if="!grouped && (data as Row).familyId != null" class="row-family">{{ (data as Row).familyName }}</span>
+                >no PAN</span
+              >
+              <span v-if="!grouped && (data as Row).familyId != null" class="row-family">{{
+                (data as Row).familyName
+              }}</span>
             </div>
           </template>
         </Column>
 
-        <Column field="valueNum" header="Value" :sortable="!grouped" class="col-num" header-class="col-num">
+        <Column
+          field="valueNum"
+          header="Value"
+          :sortable="!grouped"
+          class="col-num"
+          header-class="col-num"
+        >
           <template #body="{ data }">
             <span class="value" :class="{ pending: isPending((data as Row).summary) }">
               {{ valueText((data as Row).summary) }}
@@ -492,7 +538,8 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
                 v-if="!isPending((data as Row).summary) && unpriced((data as Row).summary) > 0"
                 class="unpriced-flag"
                 :title="`Total excludes ${unpriced((data as Row).summary)} fund(s) we couldn't price (no NAV yet).`"
-              >⚠ {{ unpriced((data as Row).summary) }}</small>
+                >⚠ {{ unpriced((data as Row).summary) }}</small
+              >
             </span>
           </template>
         </Column>
@@ -502,7 +549,9 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
             <span class="tax-ready" :title="integrityTitle((data as Row).summary)">
               <template v-if="(data as Row).summary">
                 <span class="dot" :class="integrityTone((data as Row).summary)" />
-                {{ (data as Row).summary!.taxReadyCount }}/{{ (data as Row).summary!.integrityUnitCount }}
+                {{ (data as Row).summary!.taxReadyCount }}/{{
+                  (data as Row).summary!.integrityUnitCount
+                }}
               </template>
               <template v-else>—</template>
             </span>
@@ -542,33 +591,50 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
     <Menu ref="rowMenu" :model="rowMenuModel" popup />
 
     <!-- Family create / rename -->
-    <Dialog v-model:visible="familyForm.visible" modal :header="familyForm.mode === 'create' ? 'New family' : 'Rename family'" :style="{ width: '24rem' }">
+    <Dialog
+      v-model:visible="familyForm.visible"
+      modal
+      :header="familyForm.mode === 'create' ? 'New family' : 'Rename family'"
+      :style="{ width: '24rem' }"
+    >
       <div class="field">
         <label for="family-name">Family name</label>
         <InputText id="family-name" v-model="familyForm.name" autofocus @keyup.enter="saveFamily" />
       </div>
       <template #footer>
         <Button label="Cancel" severity="secondary" outlined @click="familyForm.visible = false" />
-        <Button label="Save" :loading="familyStore.saving" :disabled="!familyForm.name.trim() || readOnly" @click="saveFamily" />
+        <Button
+          label="Save"
+          :loading="familyStore.saving"
+          :disabled="!familyForm.name.trim() || readOnly"
+          @click="saveFamily"
+        />
       </template>
     </Dialog>
 
     <!-- Investor create / edit (family reassignment lives here, not in the row) -->
-    <Dialog v-model:visible="investorForm.visible" modal :header="investorForm.mode === 'create' ? 'New investor' : 'Edit investor'" :style="{ width: '26rem' }">
+    <Dialog
+      v-model:visible="investorForm.visible"
+      modal
+      :header="investorForm.mode === 'create' ? 'New investor' : 'Edit investor'"
+      :style="{ width: '26rem' }"
+    >
       <div class="field">
         <label for="inv-name">Name</label>
         <InputText id="inv-name" v-model="investorForm.name" autofocus />
       </div>
       <div class="field">
-        <label for="inv-pan">PAN <span v-if="!investorForm.hasPan" class="optional">(optional)</span></label>
+        <label for="inv-pan"
+          >PAN <span v-if="!investorForm.hasPan" class="optional">(optional)</span></label
+        >
         <template v-if="investorForm.panLocked">
           <div class="pan-locked">
             <i class="pi pi-lock" />
             <span>{{ investorForm.panMasked || 'On file' }}</span>
           </div>
           <small class="field-hint">
-            Statements are already imported under this PAN, so it's the key they attach
-            to. Changing it would split this investor's holdings across two records.
+            Statements are already imported under this PAN, so it's the key they attach to. Changing
+            it would split this investor's holdings across two records.
           </small>
         </template>
         <template v-else>
@@ -583,7 +649,8 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
           />
           <small v-if="panError" class="field-error">{{ panError }}</small>
           <small v-else-if="investorForm.hasPan" class="field-hint">
-            Current: {{ investorForm.panMasked }} · leave blank to keep, or type a new PAN to replace it.
+            Current: {{ investorForm.panMasked }} · leave blank to keep, or type a new PAN to
+            replace it.
           </small>
           <small v-else class="field-hint">
             Needed for the per-PAN capital-gains (Schedule 112A) export.
@@ -592,11 +659,27 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
       </div>
       <div class="field">
         <label for="inv-family">Family</label>
-        <Select id="inv-family" v-model="investorForm.familyId" :options="familyOptions" option-label="label" option-value="value" />
+        <Select
+          id="inv-family"
+          v-model="investorForm.familyId"
+          :options="familyOptions"
+          option-label="label"
+          option-value="value"
+        />
       </div>
       <template #footer>
-        <Button label="Cancel" severity="secondary" outlined @click="investorForm.visible = false" />
-        <Button label="Save" :loading="investorStore.saving" :disabled="!investorForm.name.trim() || !!panError || readOnly" @click="saveInvestor" />
+        <Button
+          label="Cancel"
+          severity="secondary"
+          outlined
+          @click="investorForm.visible = false"
+        />
+        <Button
+          label="Save"
+          :loading="investorStore.saving"
+          :disabled="!investorForm.name.trim() || !!panError || readOnly"
+          @click="saveInvestor"
+        />
       </template>
     </Dialog>
   </section>

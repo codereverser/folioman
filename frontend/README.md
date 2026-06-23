@@ -6,19 +6,19 @@ ships as a view-only PWA on phones.
 
 ## Stack
 
-| Concern | Choice |
-|---------|--------|
-| Framework | Vue 3 (`<script setup>`, Composition API) |
-| Build | Vite 6 |
-| Language | TypeScript (strict) |
-| State | Pinia |
-| Routing | vue-router (history mode) |
-| UI kit | **PrimeVue 4** (Aura theme) + PrimeIcons |
-| Charts | ECharts (added with the dashboard) |
-| PWA | `vite-plugin-pwa` (Workbox) |
-| Tests | Vitest + `@vue/test-utils` (jsdom) |
-| Node | **24** (pinned via `.nvmrc` + `engines`) |
-| Package manager | **pnpm** |
+| Concern         | Choice                                    |
+| --------------- | ----------------------------------------- |
+| Framework       | Vue 3 (`<script setup>`, Composition API) |
+| Build           | Vite 6                                    |
+| Language        | TypeScript (strict)                       |
+| State           | Pinia                                     |
+| Routing         | vue-router (history mode)                 |
+| UI kit          | **PrimeVue 4** (Aura theme) + PrimeIcons  |
+| Charts          | ECharts (added with the dashboard)        |
+| PWA             | `vite-plugin-pwa` (Workbox)               |
+| Tests           | Vitest + `@vue/test-utils` (jsdom)        |
+| Node            | **24** (pinned via `.nvmrc` + `engines`)  |
+| Package manager | **pnpm**                                  |
 
 ## Scripts
 

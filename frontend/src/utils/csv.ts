@@ -22,7 +22,11 @@ import { isDesktopShell, saveCsvFile } from './desktop'
  * If running in the PyWebView desktop shell, it opens a native save dialog.
  * Returns true if the file was saved or download initiated, false if cancelled/failed.
  */
-export async function downloadText(filename: string, text: string, type = 'text/csv'): Promise<boolean> {
+export async function downloadText(
+  filename: string,
+  text: string,
+  type = 'text/csv',
+): Promise<boolean> {
   if (isDesktopShell()) {
     return await saveCsvFile(filename, text)
   }

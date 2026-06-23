@@ -64,6 +64,8 @@ describe('setup api', () => {
 
   it('createFirstAdmin surfaces the server error message', async () => {
     mockPost.mockResolvedValue({ error: { detail: 'Setup has already been completed.' } } as never)
-    await expect(createFirstAdmin('x', 's3cret-pw')).rejects.toThrow('Setup has already been completed.')
+    await expect(createFirstAdmin('x', 's3cret-pw')).rejects.toThrow(
+      'Setup has already been completed.',
+    )
   })
 })

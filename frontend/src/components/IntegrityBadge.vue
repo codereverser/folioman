@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { integrityMeta, type IntegrityStatus } from '@/integrity/status'
+import { integrityMeta, type IntegritySeverity, type IntegrityStatus } from '@/integrity/status'
 
 const props = withDefaults(
   defineProps<{
@@ -8,11 +8,20 @@ const props = withDefaults(
     size?: 'sm' | 'md' | 'lg'
     /** Hide the text label, show glyph only (still keeps an aria-label). */
     iconOnly?: boolean
+    /** Override the status's default label/severity — e.g. an incomplete-history
+     * row carries `snapshot_only` but should read as "Incomplete history". */
+    label?: string
+    severity?: IntegritySeverity
   }>(),
   { size: 'md', iconOnly: false },
 )
 
-const meta = computed(() => integrityMeta(props.status))
+const base = computed(() => integrityMeta(props.status))
+const meta = computed(() => ({
+  ...base.value,
+  label: props.label ?? base.value.label,
+  severity: props.severity ?? base.value.severity,
+}))
 </script>
 
 <template>

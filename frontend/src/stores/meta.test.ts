@@ -13,7 +13,13 @@ const mockGet = vi.mocked(api.GET)
 
 function metaReturns(readOnly: boolean) {
   mockGet.mockResolvedValue({
-    data: { version: '1.0.0', storage: 'server', data_location: '', key_location: '', read_only: readOnly },
+    data: {
+      version: '1.0.0',
+      storage: 'server',
+      data_location: '',
+      key_location: '',
+      read_only: readOnly,
+    },
   } as never)
 }
 

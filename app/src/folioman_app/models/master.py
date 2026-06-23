@@ -62,6 +62,12 @@ class Security(TimeStampedModel):
     # gap, so valuation degrades it (stale, never an error) instead of retrying the feed
     # forever. Reversible: a later backfill that finds data clears it (self-healing).
     nav_feed_closed = models.BooleanField(default=False)
+    # When this equity's NSE/BSE corporate actions were last fetched into the cache
+    # (set even when the feed returned none). Null = never fetched, which the
+    # integrity UI uses to tell "we haven't checked yet, wait" apart from "checked,
+    # genuinely no corporate action" — so the user doesn't hand-author a guessed
+    # action before the real per-event history is available.
+    corporate_actions_synced_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name_plural = "securities"
@@ -106,6 +112,59 @@ class NAVHistory(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.security_id} @ {self.date}: {self.nav}"
+
+
+class CorporateActionReference(TimeStampedModel):
+    """Cached NSE/BSE corporate-action events keyed by ISIN (refreshable).
+
+    One row per (isin, ex_date, subject, exchange) when ISIN is known; otherwise
+    per (symbol, ex_date, subject, exchange). Parsed fields mirror
+    :func:`folioman_core.corporate_action_subject.parse_subject` so the detection
+    pass can match unit multipliers against the eCAS anchor without re-hitting
+    the feed.
+    """
+
+    isin = models.CharField(max_length=12, blank=True, default="", db_index=True)
+    security = models.ForeignKey(
+        Security,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="corporate_actions",
+    )
+    symbol = models.CharField(max_length=32, blank=True, default="")
+    series = models.CharField(max_length=8, blank=True, default="")
+    exchange = models.CharField(max_length=8, blank=True, default="")
+    ex_date = models.DateField()
+    record_date = models.DateField(null=True, blank=True)
+    subject = models.TextField()
+    parsed_type = models.CharField(max_length=32, blank=True, default="")
+    unit_multiplier = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    amount = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    parsed = models.JSONField(default=dict, blank=True)
+    needs_review = models.BooleanField(default=False)
+    source = models.CharField(max_length=8, blank=True, default="")
+
+    class Meta:
+        verbose_name = "corporate action reference"
+        verbose_name_plural = "corporate action references"
+        ordering = ["isin", "-ex_date"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["isin", "ex_date", "subject", "exchange"],
+                condition=~models.Q(isin=""),
+                name="uniq_corp_action_isin_ex_subject_exch",
+            ),
+            models.UniqueConstraint(
+                fields=["symbol", "ex_date", "subject", "exchange"],
+                condition=models.Q(isin=""),
+                name="uniq_corp_action_sym_ex_subject_exch",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        ident = self.isin or self.symbol or "?"
+        return f"{ident} @ {self.ex_date}: {self.subject[:60]}"
 
 
 class FXRate(TimeStampedModel):
