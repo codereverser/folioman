@@ -3,9 +3,16 @@
 Loads a small family with:
 
 - an **MF investor** — four mutual-fund schemes with ~5 years of monthly SIPs, a
-  lump-sum, and one partial redemption (real ``Transaction`` ledger), and
+  lump-sum, and one partial redemption (real ``Transaction`` ledger),
 - an **eCAS investor** — NSE-listed equity **snapshots** across two CDSL demat
-  accounts (``Holding`` rows, ``source=ecas``), mirroring a multi-account eCAS.
+  accounts (``Holding`` rows, ``source=ecas``), mirroring a multi-account eCAS, and
+- an **equity-trader investor** — a demat tradebook with a full as-traded BUY ledger
+  and real NSE corporate-action events (a stock split; a same-day bonus + split that
+  compound to x10; recurring dividends), each stock reconciled against a matching
+  eCAS snapshot.
+
+A standalone investor (no family) holding both a fund SIP ledger and equity snapshots
+rounds out the roster.
 
 Only the v1 asset classes ship here — mutual funds and equities/bonds. FD ladders
 and crypto need the deferred multi-asset paths, so they're seeded later (see
@@ -33,6 +40,8 @@ from decimal import ROUND_DOWN, Decimal
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction as db_transaction
+from folioman_core.corporate_action_subject import CorpActionType
+from folioman_core.fifo import net_units_from_transactions
 from folioman_core.models import (
     HoldingSource,
     SecurityType,
@@ -43,7 +52,17 @@ from folioman_core.models.investor import Folio as CoreFolio
 from folioman_core.models.investor import FolioType
 from folioman_core.models.security import Security as CoreSecurity
 
-from folioman_app.models import Family, Holding, Investor, NAVHistory, Transaction
+from folioman_app.models import (
+    AppliedCorporateAction,
+    CorporateActionReference,
+    Family,
+    Holding,
+    Investor,
+    NAVHistory,
+    Security,
+    Transaction,
+)
+from folioman_app.services.projected_ledger import compute_ledger
 from folioman_app.tasks._upsert import upsert_folio, upsert_security
 from folioman_app.tasks.reconcile import reconcile_after_import
 from folioman_app.tasks.valuation_jobs import recompute_investor_valuation
@@ -171,6 +190,155 @@ _COMBINED_EQUITIES = [  # (_EQUITY_HOLDINGS index, units held)
 ]
 _COMBINED_DEMAT = ("1208160009998877", "Angel One Ltd")
 
+# An active equity trader (a third Sharma-family member): a demat tradebook with a
+# full as-traded BUY ledger and REAL NSE corporate-action events — a stock split, a
+# 1:1 bonus, and recurring dividends — so the as-traded equity ledger, the
+# corporate-action replay, and dividend attribution all render in the demo. Only the
+# events (kind + ratio) mirror real actions; share counts and prices are fictional.
+#
+# These stocks are NOT shared with the eCAS investors above, so each price series can
+# carry its own corporate-action steps without disturbing anyone else's holdings.
+#
+# Prices live on the RAW (as-traded) basis — exactly what a real NSE feed returns and
+# what a contract note shows — so the NAV chart and the as-traded ledger agree on
+# every date and the split/bonus shows up as a real price drop at its ex-date. The
+# synthetic ``base`` is the *current* (post-event) price; ``_ca_nav_history_fn`` scales
+# the series UP before each split/bonus by the pending multiplier, so a BUY just reads
+# the series price on its date — no per-transaction adjustment. Today's raw price
+# already equals the post-event price, so units * price values the holding correctly.
+# ``ex_date`` values sit comfortably inside the seed's 5-year window.
+_EQUITY_TRADER_DEMAT = ("1208160005551234", "Zerodha Broking Ltd")
+_EQUITY_TRADES = [
+    {
+        "name": "Tata Steel Ltd",
+        "symbol": "TATASTEEL",
+        "isin": "INE081A01020",
+        "base": Decimal("110"),  # current (post-split) price level
+        "drift": 0.08,
+        "buys": [(dt.date(2022, 1, 10), 50), (dt.date(2023, 3, 15), 100)],
+        # A part sale well over a year after the (split-scaled) 2022 lot → LTCG, and a
+        # showcase that FIFO cost basis carries correctly through the split.
+        "sells": [(dt.date(2024, 9, 10), 100)],
+        "events": [
+            {
+                "kind": CorpActionType.SPLIT,
+                "ex_date": dt.date(2022, 7, 28),
+                "multiplier": Decimal("10"),  # 1:10 face-value split (Rs.10 -> Re.1)
+                "subject": "Face Value Split From Rs.10 To Re.1",
+            },
+        ],
+    },
+    {
+        "name": "Bajaj Finserv Ltd",
+        "symbol": "BAJAJFINSV",
+        "isin": "INE918I01026",
+        "base": Decimal("1500"),  # current price (after both events below)
+        "drift": 0.07,
+        "buys": [(dt.date(2022, 2, 20), 30), (dt.date(2023, 6, 10), 20)],
+        # Two corporate actions on the SAME ex-date — a 1:1 bonus and a 1:5 face-value
+        # split — compound to x10, so the pre-event 30 shares become 300. The split
+        # sorts ahead of the bonus, so it applies first (price/5, units*5), then the
+        # bonus doubles the lot at zero cost.
+        "events": [
+            {
+                "kind": CorpActionType.SPLIT,
+                "ex_date": dt.date(2022, 9, 13),
+                "multiplier": Decimal("5"),  # 1:5 face-value split (Rs.5 -> Re.1)
+                "subject": "Face Value Split From Rs.5 To Re.1",
+            },
+            {
+                "kind": CorpActionType.BONUS,
+                "ex_date": dt.date(2022, 9, 13),
+                "multiplier": Decimal("2"),  # 1:1 bonus
+                "ratio": (1, 1),
+                "subject": "Bonus 1:1",
+            },
+        ],
+    },
+    {
+        "name": "ITC Ltd",
+        "symbol": "ITC",
+        "isin": "INE154A01025",
+        "base": Decimal("320"),
+        "drift": 0.10,
+        "buys": [(dt.date(2022, 3, 5), 200), (dt.date(2023, 9, 12), 100)],
+        "sells": [(dt.date(2024, 11, 20), 50)],  # part exit, LTCG
+        # ITC's REAL dividend cadence — interim (Feb) + final (May/Jun), plus the
+        # FY23 special. Real ex-dates and per-share amounts so the demo matches the
+        # actual stock; only the share counts above are fictional. (Dividends move no
+        # units; they're attributed onto the held shares at each ex-date.)
+        "events": [
+            {
+                "kind": CorpActionType.DIVIDEND,
+                "ex_date": dt.date(2023, 2, 15),
+                "dividend_per_share": Decimal("6.00"),
+                "subject": "Interim Dividend - Rs 6 Per Share",
+            },
+            {
+                "kind": CorpActionType.DIVIDEND,
+                "ex_date": dt.date(2023, 5, 30),
+                "dividend_per_share": Decimal("6.75"),
+                "subject": "Dividend - Rs 6.75 Per Share",
+            },
+            {
+                "kind": CorpActionType.DIVIDEND,
+                "ex_date": dt.date(2023, 5, 30),
+                "dividend_per_share": Decimal("2.75"),
+                "subject": "Special Dividend - Rs 2.75 Per Share",
+            },
+            {
+                "kind": CorpActionType.DIVIDEND,
+                "ex_date": dt.date(2024, 2, 8),
+                "dividend_per_share": Decimal("6.25"),
+                "subject": "Interim Dividend - Rs 6.25 Per Share",
+            },
+            {
+                "kind": CorpActionType.DIVIDEND,
+                "ex_date": dt.date(2024, 6, 4),
+                "dividend_per_share": Decimal("7.50"),
+                "subject": "Dividend - Rs 7.50 Per Share",
+            },
+            {
+                "kind": CorpActionType.DIVIDEND,
+                "ex_date": dt.date(2025, 2, 12),
+                "dividend_per_share": Decimal("6.50"),
+                "subject": "Interim Dividend - Rs 6.50 Per Share",
+            },
+            {
+                "kind": CorpActionType.DIVIDEND,
+                "ex_date": dt.date(2025, 5, 28),
+                "dividend_per_share": Decimal("7.85"),
+                "subject": "Dividend - Rs 7.85 Per Share",
+            },
+            {
+                "kind": CorpActionType.DIVIDEND,
+                "ex_date": dt.date(2026, 2, 4),
+                "dividend_per_share": Decimal("6.50"),
+                "subject": "Interim Dividend - Rs 6.50 Per Share",
+            },
+            {
+                "kind": CorpActionType.DIVIDEND,
+                "ex_date": dt.date(2026, 5, 27),
+                "dividend_per_share": Decimal("8.00"),
+                "subject": "Dividend - Rs 8 Per Share",
+            },
+        ],
+    },
+]
+
+
+def _future_scale(events, on: dt.date) -> Decimal:
+    """Product of split/bonus unit multipliers with ex-date after ``on``.
+
+    Lifts the synthetic price onto the as-traded (raw) basis: before a 1:10 split the
+    stock changed hands at ten times its current price, so the series sits 10x higher
+    until the ex-date, then drops to the post-split level."""
+    mult = Decimal("1")
+    for ev in events:
+        if ev["kind"] in (CorpActionType.SPLIT, CorpActionType.BONUS) and ev["ex_date"] > on:
+            mult *= ev["multiplier"]
+    return mult
+
 
 def _nav_on(base: Decimal, drift: float, start: dt.date, on: dt.date) -> Decimal:
     """Deterministic, smooth, upward-drifting price for ``on``.
@@ -276,6 +444,42 @@ def _nav_history_fn(
     return lambda on: _nav_on(base, drift, start, on)
 
 
+def _ca_nav_history_fn(
+    security,
+    base: Decimal,
+    drift: float,
+    start: dt.date,
+    today: dt.date,
+    events,
+    *,
+    real_navs: bool,
+    clients=None,
+):
+    """NAV series + as-of price fn for an equity with corporate actions, on the RAW
+    (as-traded) basis so the chart and the as-traded ledger agree and a split/bonus
+    shows as a price drop at its ex-date.
+
+    Real mode reuses the feed history as-is — NSE/Yahoo already return raw prices, so
+    the drop is real and no scaling is applied. Synthetic mode bakes the steps in: the
+    smooth curve is lifted by the pending split/bonus multiplier (``_future_scale``),
+    so it sits high before each ex-date and drops to the post-event level after."""
+    if real_navs and security.symbol:
+        return _nav_history_fn(security, base, drift, start, today, real_navs=True, clients=clients)
+
+    def raw_on(on: dt.date) -> Decimal:
+        return (_nav_on(base, drift, start, on) * _future_scale(events, on)).quantize(_Q_NAV)
+
+    # Clear prior synthetic points (see _weekly_history) so a re-seed leaves no stale
+    # NAVs, then seed the stepped weekly series the chart renders from.
+    NAVHistory.objects.filter(security=security, source="demo").delete()
+    rows, on = [], start
+    while on <= today:
+        rows.append(NAVHistory(security=security, date=on, nav=raw_on(on), source="demo"))
+        on += _WEEK
+    NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
+    return raw_on
+
+
 def _month_starts(start: dt.date, end: dt.date):
     """First-of-month dates in [start, end] (SIP installment dates)."""
     y, m = start.year, start.month
@@ -362,6 +566,9 @@ class Command(BaseCommand):
                 combined_inv, combined_secs = self._seed_combined_investor(
                     user, start, today, real_navs=opts["real_navs"], clients=clients
                 )
+                equity_inv, equity_secs = self._seed_equity_trader_investor(
+                    user, family, start, today, real_navs=opts["real_navs"], clients=clients
+                )
         finally:
             if clients is not None:
                 clients.close()
@@ -373,6 +580,7 @@ class Command(BaseCommand):
             (mf_inv, mf_secs),
             (ecas_inv, ecas_secs),
             (combined_inv, combined_secs),
+            (equity_inv, equity_secs),
         ):
             reconcile_after_import(inv, secs)
             recompute_investor_valuation(inv.id, start, prime_navs=False)
@@ -551,7 +759,231 @@ class Command(BaseCommand):
             )
         return inv, securities
 
+    def _seed_equity_trader_investor(
+        self, user, family, start: dt.date, today: dt.date, *, real_navs: bool, clients=None
+    ):
+        """An active equity trader: a demat tradebook (full as-traded BUY/SELL ledger),
+        each stock reconciled to a matching eCAS snapshot.
+
+        Corporate actions come from the **real exchange feed** under ``--real-navs``:
+        the seed fetches each stock's true split/bonus/dividend history and auto-applies
+        the scaling events server-side, so the demo matches the actual stock and stays
+        current as the feed refreshes — only the buy/sell quantities are fictional.
+        Offline (tests) it falls back to the deterministic curated events in
+        ``_EQUITY_TRADES`` so no network is touched. See ``_EQUITY_TRADES``."""
+        inv = Investor(owned_by=user, name="Rohan Sharma", email="rohan@example.com", family=family)
+        inv.set_pan("FGHIJ2345K")
+        inv.save()
+
+        number, broker = _EQUITY_TRADER_DEMAT
+        as_of = today - dt.timedelta(days=today.weekday() + 1)  # last completed week
+        securities = []
+
+        # One warmed exchange-feed pool for the whole equity-trader seed (real mode only),
+        # so the corporate-action fetch reuses a single NSE/BSE session instead of opening
+        # one per stock. Lazy: synthetic seeding never constructs it.
+        ca_clients = None
+        if real_navs:
+            from folioman_app.tasks.refresh_corporate_actions import _FeedClients as _CAClients
+
+            ca_clients = _CAClients()
+        try:
+            for spec in _EQUITY_TRADES:
+                self._seed_equity_trade(
+                    inv,
+                    spec,
+                    number,
+                    broker,
+                    start,
+                    today,
+                    as_of,
+                    real_navs=real_navs,
+                    clients=clients,
+                    ca_clients=ca_clients,
+                )
+                securities.append(Security.objects.get(isin=spec["isin"]))
+        finally:
+            if ca_clients is not None:
+                ca_clients.close()
+        return inv, securities
+
+    def _seed_equity_trade(
+        self, inv, spec, number, broker, start, today, as_of, *, real_navs, clients, ca_clients
+    ):
+        """Seed one equity: the as-traded ledger, its corporate actions, and the
+        matching eCAS snapshot. See ``_seed_equity_trader_investor``."""
+        security = upsert_security(
+            CoreSecurity(
+                type=SecurityType.EQUITY,
+                name=spec["name"],
+                symbol=spec["symbol"],
+                isin=spec["isin"],
+                currency="INR",
+            )
+        )
+        folio = upsert_folio(
+            inv, CoreFolio(folio_type=FolioType.DEMAT, number=number, broker=broker)
+        )
+        events = spec["events"]
+        # Raw (as-traded) price series. Real mode pulls the actual feed history (the
+        # split drop is real); offline bakes the curated split/bonus steps in so the
+        # chart and the ledger agree and today's price values the holding correctly.
+        nav_on = _ca_nav_history_fn(
+            security,
+            spec["base"],
+            spec["drift"],
+            start,
+            today,
+            events,
+            real_navs=real_navs,
+            clients=clients,
+        )
+
+        # As-traded BUY ledger: each buy just reads the series price on its date —
+        # the row matches the chart and the contract note with no extra adjustment.
+        for on, shares in spec["buys"]:
+            if on < start:
+                continue
+            self._buy_equity(inv, security, folio, on, nav_on(on), Decimal(shares))
+
+        # Part sales: FIFO consumes the oldest (split-scaled) lots, realising a
+        # long-term gain the demo's capital-gains view surfaces.
+        for on, shares in spec.get("sells", []):
+            if on < start:
+                continue
+            self._sell_equity(inv, security, folio, on, nav_on(on), Decimal(shares))
+
+        # Corporate actions. Real mode fetches the stock's true split/bonus/dividend
+        # history from the exchange feed and auto-applies the scaling events
+        # server-side (the path the integrity "Apply" button runs — a read-only demo
+        # blocks API writes, not server-side jobs). Offline replays the deterministic
+        # curated events so tests stay network-free. Split/bonus scale units via
+        # AppliedCorporateAction; dividends stay cached references the reconcile pass
+        # attributes onto the held shares.
+        if real_navs:
+            self._sync_and_apply_corporate_actions(inv, security, folio, start, ca_clients)
+        else:
+            for ev in events:
+                if ev["ex_date"] < start:
+                    continue
+                if ev["kind"] is CorpActionType.DIVIDEND:
+                    self._seed_dividend_reference(security, ev)
+                else:
+                    self._seed_applied_scaling(inv, security, folio, ev)
+
+        # A matching eCAS snapshot at today's projected units → reconciles to
+        # RECONCILED (a full ledger that agrees with the depository, tax-ready).
+        net_units = net_units_from_transactions(compute_ledger(inv, security, folio=folio))
+        price = nav_on(as_of)
+        Holding.objects.create(
+            investor=inv,
+            security=security,
+            folio=folio,
+            as_of_date=as_of,
+            units=net_units,
+            value_observed=(net_units * price).quantize(_Q_MONEY),
+            # An eCAS snapshot reports market value, no cost basis (see
+            # _seed_ecas_investor); the as-traded ledger supplies the basis here.
+            avg_cost_observed=None,
+            source=HoldingSource.ECAS.value,
+            source_ref="demo-ecas",
+        )
+
     # --- ledger helpers -------------------------------------------------------
+
+    def _buy_equity(self, inv, security, folio, on, price: Decimal, shares: Decimal) -> None:
+        """A whole-share equity BUY, as it would arrive from a broker tradebook."""
+        Transaction.objects.create(
+            investor=inv,
+            security=security,
+            folio=folio,
+            date=on,
+            transaction_type=TransactionType.BUY.value,
+            units=shares,
+            nav_or_price=price,
+            amount=(shares * price).quantize(_Q_MONEY),
+            source=TransactionSource.CSV_IMPORT.value,
+            source_ref="demo-tradebook",
+            narration="Equity Purchase",
+        )
+
+    def _sell_equity(self, inv, security, folio, on, price: Decimal, shares: Decimal) -> None:
+        """A whole-share equity SELL — realises a gain against the FIFO lots."""
+        Transaction.objects.create(
+            investor=inv,
+            security=security,
+            folio=folio,
+            date=on,
+            transaction_type=TransactionType.SELL.value,
+            units=shares,
+            nav_or_price=price,
+            amount=(shares * price).quantize(_Q_MONEY),
+            source=TransactionSource.CSV_IMPORT.value,
+            source_ref="demo-tradebook",
+            narration="Equity Sale",
+        )
+
+    def _seed_applied_scaling(self, inv, security, folio, ev) -> None:
+        """Record a split/bonus as an applied event the projection replays in."""
+        ratio = ev.get("ratio")
+        AppliedCorporateAction.objects.create(
+            investor=inv,
+            folio=folio,
+            security=security,
+            kind=ev["kind"].value,
+            ex_date=ev["ex_date"],
+            unit_multiplier=ev["multiplier"],
+            bonus_ratio_a=ratio[0] if ratio else None,
+            bonus_ratio_b=ratio[1] if ratio else None,
+            source_ref=f"manual:{ev['kind'].value}:{ev['ex_date'].isoformat()}:{security.isin}",
+        )
+
+    def _seed_dividend_reference(self, security, ev) -> None:
+        """Cache a dividend as a feed reference row; reconcile attributes it to the
+        held shares (the only path that writes DIVIDEND ledger rows)."""
+        CorporateActionReference.objects.update_or_create(
+            isin=security.isin or "",
+            ex_date=ev["ex_date"],
+            subject=ev["subject"],
+            exchange="NSE",
+            defaults={
+                "security": security,
+                "symbol": (security.symbol or "").upper(),
+                "parsed_type": CorpActionType.DIVIDEND.value,
+                "amount": ev["dividend_per_share"],
+                "needs_review": False,
+                "source": "demo",
+            },
+        )
+
+    def _sync_and_apply_corporate_actions(self, inv, security, folio, since, ca_clients) -> None:
+        """Fetch the stock's real corporate actions from the exchange feed and
+        auto-apply the high-confidence scaling events (split/bonus) to the folio.
+
+        This is the same fetch + apply the product runs (feed sync, then the integrity
+        "Apply"), invoked here server-side rather than by a user click — a read-only
+        demo blocks API writes, not management commands. The dedup mirrors the integrity
+        engine (one event per ex-date/multiplier, NSE + BSE collapsed), so the applied
+        set matches what a later reconcile expects and nothing re-surfaces as a
+        suggestion. Dividends are left as cached references; reconcile attributes them.
+        Any feed/network error is swallowed — the snapshot then just reflects the
+        as-traded ledger without the (unfetched) actions."""
+        from folioman_app.services.corporate_actions import apply_suggested_corporate_actions
+        from folioman_app.tasks.reconcile import _cached_actions_for_security, _dedupe_scaling
+        from folioman_app.tasks.refresh_corporate_actions import (
+            sync_corporate_actions_for_security,
+        )
+
+        with contextlib.suppress(Exception):
+            sync_corporate_actions_for_security(security, since=since, clients=ca_clients)
+        reference_ids = [
+            action.reference_id
+            for action in _dedupe_scaling(_cached_actions_for_security(security))
+            if action.reference_id is not None
+        ]
+        if reference_ids:
+            with contextlib.suppress(Exception):
+                apply_suggested_corporate_actions(inv, folio, security, reference_ids)
 
     def _buy(self, inv, security, folio, on, nav_on, amount: Decimal) -> None:
         nav = nav_on(on)
