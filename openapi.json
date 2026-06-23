@@ -4343,7 +4343,7 @@
     },
     "/api/investors/{investor_id}/holdings/{security_id}/value-series": {
       "get": {
-        "description": "One holding's worth over time (units held \u00d7 NAV) with the invested baseline,\nover its full history. 404 if the investor has never transacted this security.",
+        "description": "One holding's worth over time (units held x NAV) with the invested baseline,\nover its full history. 404 if the investor has never transacted this security.",
         "operationId": "folioman_app_api_investors_scheme_value_series",
         "parameters": [
           {
