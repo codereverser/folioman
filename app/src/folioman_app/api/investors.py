@@ -46,6 +46,7 @@ from folioman_app.services.valuation import (
     build_scheme_detail,
     build_valuation_status,
     default_series_start,
+    security_value_series,
     value_series,
 )
 from folioman_app.tasks.import_csv import create_manual_transaction
@@ -178,6 +179,37 @@ def scheme_detail(request, investor_id: int, security_id: int, as_of: date | Non
     if not held:
         raise HttpError(404, "investor has no holding for this security")
     return build_scheme_detail(investor, security, as_of or date.today())
+
+
+@router.get("/{investor_id}/holdings/{security_id}/value-series", response=ValueSeriesOut)
+def scheme_value_series(
+    request,
+    investor_id: int,
+    security_id: int,
+    to: date | None = None,
+    granularity: Literal["daily", "weekly", "monthly"] = "monthly",
+):
+    """One holding's worth over time (units held x NAV) with the invested baseline,
+    over its full history. 404 if the investor has never transacted this security."""
+    investor = get_owned_investor(request, investor_id)
+    security = get_object_or_404(Security, id=security_id)
+    held = (
+        investor.transactions.filter(security=security).exists()
+        or investor.holdings.filter(security=security).exists()
+    )
+    if not held:
+        raise HttpError(404, "investor has no holding for this security")
+    # A snapshot-only holding (no ledger) yields an empty series — the UI shows a
+    # "no day-wise history" note, as the dashboard does for snapshot positions.
+    end = to or date.today()
+    start, points = security_value_series(investor, security, to=end, granularity=granularity)
+    return {
+        "investor_id": investor.id,
+        "start": start,
+        "end": end,
+        "granularity": granularity,
+        "points": points,
+    }
 
 
 @router.get("/{investor_id}/folios", response=list[FolioOut])

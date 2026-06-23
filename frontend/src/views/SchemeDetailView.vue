@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
@@ -13,6 +13,10 @@ import { formatInr, formatInrPaise, formatUnits, formatDate } from '@/utils/form
 const NavHistoryChart = defineAsyncComponent(
   () => import('@/components/charts/NavHistoryChart.vue'),
 )
+const PortfolioValueChart = defineAsyncComponent(
+  () => import('@/components/charts/PortfolioValueChart.vue'),
+)
+const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
 const route = useRoute()
 const router = useRouter()
@@ -53,7 +57,21 @@ const securityId = computed(() => {
   return Number(Array.isArray(raw) ? raw[0] : raw)
 })
 
-const { detail, notFound, navSeries, integrityStatus } = useScheme(investorId, securityId)
+const { detail, notFound, navSeries, valueSeries, loadValueSeries, integrityStatus } = useScheme(
+  investorId,
+  securityId,
+)
+
+// NAV price line vs the holding's value over time. Value-series loads lazily the first
+// time it's shown (and once the charts are in view).
+const chartView = ref<'nav' | 'value'>('nav')
+const chartViews = [
+  { label: 'NAV', value: 'nav' },
+  { label: 'Value', value: 'value' },
+]
+watch([chartView, loadCharts], () => {
+  if (chartView.value === 'value' && loadCharts.value) void loadValueSeries()
+})
 
 function num(v: string | number | null | undefined): number {
   const n = typeof v === 'string' ? Number(v) : (v ?? 0)
@@ -309,19 +327,46 @@ function back(): void {
       </Message>
 
       <article ref="chartRegion" class="card">
-        <h2>NAV history</h2>
-        <NavHistoryChart
-          v-if="loadCharts && navSeries.length"
-          :data="navSeries"
-          :markers="navMarkers"
-          :events="navEvents"
-        />
-        <div
-          v-else-if="navSeries.length"
-          class="chart-placeholder nav-placeholder"
-          aria-hidden="true"
-        />
-        <p v-else class="muted empty">No NAV history on file for this scheme yet.</p>
+        <div class="chart-head">
+          <h2>{{ chartView === 'value' ? 'Value over time' : 'NAV history' }}</h2>
+          <SelectButton
+            v-if="loadCharts"
+            v-model="chartView"
+            :options="chartViews"
+            option-label="label"
+            option-value="value"
+            :allow-empty="false"
+            size="small"
+          />
+        </div>
+
+        <template v-if="chartView === 'nav'">
+          <NavHistoryChart
+            v-if="loadCharts && navSeries.length"
+            :data="navSeries"
+            :markers="navMarkers"
+            :events="navEvents"
+          />
+          <div
+            v-else-if="navSeries.length"
+            class="chart-placeholder nav-placeholder"
+            aria-hidden="true"
+          />
+          <p v-else class="muted empty">No NAV history on file for this scheme yet.</p>
+        </template>
+
+        <template v-else>
+          <PortfolioValueChart
+            v-if="loadCharts && valueSeries.length"
+            :data="valueSeries"
+            granularity="monthly"
+          />
+          <p v-else-if="loadCharts" class="muted empty">
+            No day-wise value history yet — snapshot-only holdings count toward worth but not the
+            trend. Import a transaction statement to build it.
+          </p>
+          <div v-else class="chart-placeholder nav-placeholder" aria-hidden="true" />
+        </template>
       </article>
 
       <article v-if="dividendRows.length" class="card">
@@ -572,6 +617,17 @@ function back(): void {
   margin: 0 0 var(--fm-space-3);
   font-size: 1rem;
   font-weight: 600;
+}
+/* Chart card header: title left, the NAV/Value toggle right. */
+.chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fm-space-3);
+  flex-wrap: wrap;
+}
+.chart-head h2 {
+  margin: 0 0 var(--fm-space-3);
 }
 .chart-placeholder {
   width: 100%;

@@ -4341,6 +4341,80 @@
         ]
       }
     },
+    "/api/investors/{investor_id}/holdings/{security_id}/value-series": {
+      "get": {
+        "description": "One holding's worth over time (units held \u00d7 NAV) with the invested baseline,\nover its full history. 404 if the investor has never transacted this security.",
+        "operationId": "folioman_app_api_investors_scheme_value_series",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "security_id",
+            "required": true,
+            "schema": {
+              "title": "Security Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "granularity",
+            "required": false,
+            "schema": {
+              "default": "monthly",
+              "enum": [
+                "daily",
+                "weekly",
+                "monthly"
+              ],
+              "title": "Granularity",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValueSeriesOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Scheme Value Series",
+        "tags": [
+          "investors"
+        ]
+      }
+    },
     "/api/investors/{investor_id}/imports": {
       "get": {
         "operationId": "folioman_app_api_imports_list_import_jobs",

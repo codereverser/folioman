@@ -1,6 +1,7 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { api, type Schemas } from '@/api/client'
 import type { NavPoint } from '@/components/charts/NavHistoryChart.vue'
+import type { ValuePoint } from '@/components/charts/PortfolioValueChart.vue'
 import { toIntegrityStatus, type IntegrityStatus } from '@/integrity/status'
 
 export type SchemeDetail = Schemas['SchemeDetailOut']
@@ -39,7 +40,39 @@ export function useScheme(investorId: Ref<number>, securityId: Ref<number>) {
     }
   }
 
-  watch([investorId, securityId], () => void load(), { immediate: true })
+  // Value-over-time (units held × NAV) — its own endpoint, fetched lazily the first
+  // time the chart is switched to "Value", and reset when the scheme changes.
+  const valueSeries = ref<ValuePoint[]>([])
+  const valueLoaded = ref(false)
+  async function loadValueSeries(): Promise<void> {
+    if (valueLoaded.value) return
+    valueLoaded.value = true
+    const { data } = await api.GET(
+      '/api/investors/{investor_id}/holdings/{security_id}/value-series',
+      {
+        params: {
+          path: { investor_id: investorId.value, security_id: securityId.value },
+          query: { granularity: 'monthly' },
+        },
+      },
+    )
+    if (data)
+      valueSeries.value = data.points.map((p) => ({
+        date: p.date,
+        current: num(p.value_inr),
+        invested: num(p.invested_inr),
+      }))
+  }
+
+  watch(
+    [investorId, securityId],
+    () => {
+      valueSeries.value = []
+      valueLoaded.value = false
+      void load()
+    },
+    { immediate: true },
+  )
 
   // NAV history mapped to the chart's point shape.
   const navSeries = computed<NavPoint[]>(() =>
@@ -63,5 +96,14 @@ export function useScheme(investorId: Ref<number>, securityId: Ref<number>) {
       .reduce((worst, s) => (SEVERITY[s] > SEVERITY[worst] ? s : worst))
   })
 
-  return { detail, loading, notFound, navSeries, integrityStatus, reload: load }
+  return {
+    detail,
+    loading,
+    notFound,
+    navSeries,
+    valueSeries,
+    loadValueSeries,
+    integrityStatus,
+    reload: load,
+  }
 }

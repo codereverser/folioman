@@ -1286,6 +1286,41 @@ def _value_series(investors: list[Investor], from_: date, to: date, granularity:
     return points
 
 
+def security_value_series(
+    investor: Investor, security, *, to: date, granularity: str = "monthly"
+) -> tuple[date, list[dict]]:
+    """One holding's worth over time: units held at each sample date (corporate-action
+    adjusted, so merged-in lots count under the acquirer) priced at the latest NAV
+    on/before it, with the invested baseline. Spans the holding's full history — from its
+    first acquisition to ``to``. Computed live from the ledger (no per-security persisted
+    series). Returns ``(start, points)``; ``points`` is ``[{date, value_inr, invested_inr,
+    stale}]`` (``stale`` flags a sample held but unpriced)."""
+    txn_keys, _hold = _ledger_index([investor])
+    txn_keys = {k: v for k, v in txn_keys.items() if k[0] == security.id}
+    if not txn_keys:
+        return to, []
+    start = min(d for rec in txn_keys.values() for (d, _core) in rec["core"])
+    nav_idx = _nav_index({security.id}, to)
+    points: list[dict] = []
+    for sample in _sample_dates(start, to, granularity):
+        agg = _positions_asof(txn_keys, {}, sample)
+        value = invested = _ZERO
+        stale = False
+        for sec_id, (_sec, units, inv_amt) in agg.items():
+            if units <= _ZERO:
+                continue
+            invested += inv_amt
+            price = _price_at(nav_idx, sec_id, sample)
+            if price is None:
+                stale = True
+                continue
+            value += units * price
+        points.append(
+            {"date": sample, "value_inr": value, "invested_inr": invested, "stale": stale}
+        )
+    return start, points
+
+
 def default_series_start(to: date) -> date:
     """Default value-series window start: one year before ``to`` (clamped for
     leap-day ``to``)."""

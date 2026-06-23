@@ -385,6 +385,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/holdings/{security_id}/value-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scheme Value Series
+         * @description One holding's worth over time (units held × NAV) with the invested baseline,
+         *     over its full history. 404 if the investor has never transacted this security.
+         */
+        get: operations["folioman_app_api_investors_scheme_value_series"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/imports": {
         parameters: {
             query?: never;
@@ -2899,6 +2920,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SchemeDetailOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_investors_scheme_value_series: {
+        parameters: {
+            query?: {
+                to?: string | null;
+                granularity?: "daily" | "weekly" | "monthly";
+            };
+            header?: never;
+            path: {
+                investor_id: number;
+                security_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValueSeriesOut"];
                 };
             };
         };
