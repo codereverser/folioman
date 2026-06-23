@@ -9,6 +9,7 @@ import ScopeSwitcher from '@/components/ScopeSwitcher.vue'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import PwaInstallPrompt from '@/components/PwaInstallPrompt.vue'
 import DemoBanner from '@/components/DemoBanner.vue'
+import UpdateBanner from '@/components/UpdateBanner.vue'
 import { useUiStore } from '@/stores/ui'
 import { useRosterStore } from '@/stores/roster'
 import { useIntegrityStore } from '@/stores/integrity'
@@ -256,6 +257,9 @@ onBeforeUnmount(() => {
     <Toast />
     <ConfirmDialog :style="{ width: 'min(30rem, 92vw)' }" />
   </div>
+
+  <!-- A floating "new version available" pill — renders in either layout above. -->
+  <UpdateBanner />
 </template>
 
 <style scoped>

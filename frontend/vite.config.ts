@@ -28,10 +28,12 @@ export default defineConfig({
     fontDisplayOptional,
     vue(),
     VitePWA({
-      // Auto-apply new service workers; the app is view-only on mobile so a
-      // silent refresh of the shell is fine. The "Add to Home Screen" prompt
+      // Prompt before swapping in a new build rather than auto-reloading: this is a
+      // data-entry app, so a silent mid-action reload could drop unsaved input.
+      // registerServiceWorker.ts surfaces a "new version" banner and polls for
+      // updates so long-open tabs notice. The "Add to Home Screen" prompt
       // (beforeinstallprompt / iOS tooltip) is handled separately in the UI.
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       // Icons + apple-touch links are generated from public/logo.svg and
       // injected into the manifest by the assets generator (pwa-assets.config.ts).
       pwaAssets: { config: true },
