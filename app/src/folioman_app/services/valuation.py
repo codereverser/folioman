@@ -19,7 +19,7 @@ from django.db.models import Max, Q
 from folioman_core.fifo import InsufficientUnitsError, apply_fifo, net_units_from_transactions
 from folioman_core.models import Holding as CoreHolding
 from folioman_core.models import HoldingSource, Quote, SecurityType, TransactionType
-from folioman_core.reconciliation import IntegrityStatus
+from folioman_core.reconciliation import TOLERANCE, IntegrityStatus
 from folioman_core.valuation import value_holdings
 from folioman_core.xirr import cashflows_from_transactions, compute_xirr
 
@@ -40,6 +40,7 @@ from folioman_app.models import (
 from folioman_app.models.jobs import ImportJob, ImportJobStatus
 from folioman_app.services.dividends import build_equity_dividend_detail
 from folioman_app.services.projected_ledger import (
+    compute_ledger,
     demerger_reductions,
     projected_transactions,
     security_key,
@@ -47,6 +48,7 @@ from folioman_app.services.projected_ledger import (
 from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
 
 _ZERO = Decimal("0")
+_ONE = Decimal("1")
 _security_key = security_key
 
 
@@ -737,6 +739,222 @@ def _folio_balances(investor: Investor, security, txns, price, as_of: date) -> l
     return rows
 
 
+# Synthetic ids for the engine-emitted marker rows (bonus / split / merger) that have
+# no Django pk. Kept above any real pk so the table's (date, id) tie-break renders a
+# marker after the trade it acts on, and never collides with a ledger row's id.
+_MARKER_ID_BASE = 2_000_000_000
+
+
+def _holdings_anchor(investor: Investor, security, as_of: date) -> Decimal | None:
+    """eCAS-confirmed units for ``security`` as-of the date: latest snapshot per folio,
+    summed. ``None`` when no snapshot exists — nothing to reconcile the ledger against."""
+    latest: dict[int | None, tuple[date, Decimal]] = {}
+    for h in investor.holdings.filter(security=security, as_of_date__lte=as_of):
+        cur = latest.get(h.folio_id)
+        if cur is None or h.as_of_date > cur[0]:
+            latest[h.folio_id] = (h.as_of_date, h.units)
+        elif h.as_of_date == cur[0]:
+            latest[h.folio_id] = (cur[0], cur[1] + h.units)
+    if not latest:
+        return None
+    return sum((u for (_d, u) in latest.values()), _ZERO)
+
+
+def _scheme_ledger(
+    investor: Investor, security, as_of: date
+) -> tuple[list[dict], list, date | None]:
+    """The as-traded ledger shown on the scheme page.
+
+    Trades render with their **original tradebook units and prices** — so the figures
+    match the contract notes and the buy/sell markers sit on the actual NAV line — and
+    each corporate action is a ``+units`` event at its ex-date: a split/bonus delta on
+    the held balance, or a merger **receipt** of the shares converted from the merged-away
+    scrip (tagged with that scrip via ``via_security``). The running ``balance`` is
+    computed here and reaches the held quantity.
+
+    Cost basis, gains and reconciliation stay on the corporate-action-adjusted projection
+    (returned as the second element for those consumers); this row view is presentation
+    only. Returns ``(rows, projected, partial_from)`` — ``projected`` the adjusted
+    cost-basis ledger, ``partial_from`` the earliest incomplete trade's date.
+    """
+    projected = compute_ledger(investor, security, as_of=as_of)
+
+    # Units converted *into* this security by each merger — the receipt amount. A
+    # rebased lot keeps the pk of its pre-merger row (on the merged-away security), so a
+    # row whose origin security isn't this one is a converted lot; net them per merger
+    # ref (the merged-away scrip's own pre-merger sells are already netted out).
+    # Keyed by the *origin* security (rebased rows keep their own trade ref, not the
+    # merger's, so source_ref can't group them): the merger event then claims the net
+    # converted from its merged-away scrip.
+    real_ids = [c.ledger_id for c in projected if c.ledger_id is not None]
+    origin_sec = dict(Transaction.objects.filter(id__in=real_ids).values_list("id", "security_id"))
+    receipts: dict[int, Decimal] = defaultdict(lambda: _ZERO)
+    for c in projected:
+        if c.ledger_id is None:
+            continue
+        osec = origin_sec.get(c.ledger_id)
+        if osec is None or osec == security.id:
+            continue
+        if c.type.value in _CA_INFLOW:
+            receipts[osec] += c.units
+        elif c.type.value in _CA_OUTFLOW:
+            receipts[osec] -= c.units
+
+    # One timeline: as-traded trades, then this security's corporate actions. Same-date
+    # ordering is trades → merger → split/bonus (a split acts on the post-trade balance).
+    trade, merger, scale = 0, 1, 2
+    timeline: list[tuple[date, int, int, str, object]] = []
+    seq = 0
+    for t in (
+        investor.transactions.filter(security=security)
+        .select_related("folio")
+        .order_by("date", "id")
+    ):
+        timeline.append((t.date, trade, seq, "trade", t))
+        seq += 1
+    for a in AppliedCorporateAction.objects.filter(
+        investor=investor, counterparty_security=security, kind="merger"
+    ).select_related("security"):
+        timeline.append((a.ex_date, merger, seq, "merger", a))
+        seq += 1
+    for a in AppliedCorporateAction.objects.filter(
+        investor=investor, security=security, kind__in=["split", "bonus"]
+    ):
+        timeline.append((a.ex_date, scale, seq, "scale", a))
+        seq += 1
+    timeline.sort(key=lambda e: (e[0], e[1], e[2]))
+
+    rows: list[dict] = []
+    marker_seq = 0
+    balance = _ZERO
+    partial_from: date | None = None
+    for _when, _order, _seq, kind, obj in timeline:
+        if kind == "trade":
+            complete = obj.cost_basis_complete
+            signed = (
+                obj.units
+                if obj.transaction_type in _CA_INFLOW
+                else -obj.units
+                if obj.transaction_type in _CA_OUTFLOW
+                else _ZERO
+            )
+            # An incomplete (missing-history) trade can't carry a meaningful running
+            # balance, so it's badged and left out of the accumulation, like the rest.
+            if complete:
+                balance += signed
+                row_balance = balance
+            else:
+                row_balance = None
+                if partial_from is None:
+                    partial_from = obj.date
+            rows.append(
+                {
+                    "id": obj.id,
+                    "investor_id": investor.id,
+                    "security_id": security.id,
+                    "folio_id": obj.folio_id,
+                    "date": obj.date,
+                    "transaction_type": obj.transaction_type,
+                    "units": obj.units,
+                    "nav_or_price": obj.nav_or_price,
+                    "amount": obj.amount,
+                    "fees": obj.fees,
+                    "stamp_duty": obj.stamp_duty,
+                    "brokerage": obj.brokerage,
+                    "currency": obj.currency,
+                    "source": obj.source,
+                    "narration": obj.narration,
+                    "cost_basis_complete": complete,
+                    "via_security": None,
+                    "balance": row_balance,
+                }
+            )
+            continue
+        # Corporate-action event rendered as a +units row at its ex-date.
+        if kind == "merger":
+            added = receipts.get(obj.security_id, _ZERO)
+            txn_type = "merger"
+            via = obj.security.symbol or obj.security.name
+        else:  # split / bonus: the increment doubling (etc.) the then-held balance
+            added = balance * ((obj.unit_multiplier or _ONE) - _ONE)
+            txn_type = obj.kind
+            via = None
+        ratio = _ratio_label(obj)
+        balance += added
+        marker_seq += 1
+        rows.append(
+            {
+                "id": _MARKER_ID_BASE + marker_seq,
+                "investor_id": investor.id,
+                "security_id": security.id,
+                "folio_id": None,
+                "date": obj.ex_date,
+                "transaction_type": txn_type,
+                "units": added,
+                "nav_or_price": _ZERO,
+                "amount": None,
+                "fees": _ZERO,
+                "stamp_duty": _ZERO,
+                "brokerage": _ZERO,
+                "currency": "INR",
+                "source": "corporate-action",
+                "narration": ratio,  # carries the ratio label for the events summary
+                "cost_basis_complete": True,
+                "via_security": via,
+                "balance": balance,
+            }
+        )
+    return rows, projected, partial_from
+
+
+# Net-units sign rule, mirroring folioman_core.fifo.net_units_from_transactions.
+_CA_INFLOW = frozenset(
+    {TransactionType.BUY.value, TransactionType.BONUS.value, TransactionType.TRANSFER_IN.value}
+)
+_CA_OUTFLOW = frozenset({TransactionType.SELL.value, TransactionType.TRANSFER_OUT.value})
+
+
+def _trim(d: Decimal) -> str:
+    """Plain decimal, trailing zeros trimmed (``1.680000`` -> ``1.68``, ``2.0`` -> ``2``)."""
+    text = f"{d:f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _ratio_label(a) -> str:
+    """A human ratio for the action: feed (a:b) when known, else the multiplier."""
+    if a is None:
+        return ""
+    if a.merger_ratio is not None:
+        return f"{_trim(a.merger_ratio)} new per old"
+    if a.bonus_ratio_a is not None and a.bonus_ratio_b is not None:
+        return f"{a.bonus_ratio_a}:{a.bonus_ratio_b}"
+    if a.unit_multiplier is not None:
+        # A face-value split records the resulting multiple (Rs 2 to Rs 1 => 1:2).
+        mult = a.unit_multiplier
+        whole = mult == mult.to_integral_value()
+        return f"1:{_trim(mult)}" if whole else f"{_trim(mult)}x"
+    return ""
+
+
+def _corporate_action_rows(ledger_rows: list[dict]) -> list[dict]:
+    """Applied issuer events for the events-summary card, drawn from the same as-traded
+    ledger as the Transactions table — so their running balance agrees with it. Each CA
+    row carries its ratio (in ``narration``), the counterparty scrip (``via_security``)
+    and the post-event balance."""
+    return [
+        {
+            "ex_date": r["date"],
+            "kind": r["transaction_type"],
+            "ratio": r["narration"],
+            "counterparty": r["via_security"],
+            "units_added": r["units"] if r["units"] > _ZERO else None,
+            "units_after": r["balance"],
+        }
+        for r in ledger_rows
+        if r["source"] == "corporate-action"
+    ]
+
+
 def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
     """Per-(investor, security) detail for the scheme page.
 
@@ -773,23 +991,37 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
     )
     latest_nav_date, latest_nav = latest if latest else (None, None)
 
-    # The scheme page shows the *whole* ledger (incl. partial-history rows, badged);
-    # cost-basis numbers (folio balances, XIRR window) use complete rows only.
-    txns = list(
-        investor.transactions.filter(security=security)
-        .select_related("folio")
-        .order_by("date", "id")
+    # The scheme page shows the corporate-action-adjusted ledger (merged lots, bonus /
+    # split / merger marker rows), so the running balance reaches the held quantity and
+    # the page explains how. Orphan partial-history rows are appended, badged.
+    txns, complete_core, partial_from = _scheme_ledger(investor, security, as_of)
+    folios = _folio_balances(
+        investor,
+        security,
+        list(investor.transactions.filter(security=security).cost_basis().select_related("folio")),
+        price,
+        as_of,
     )
-    complete_txns = [t for t in txns if t.cost_basis_complete]
-    folios = _folio_balances(investor, security, complete_txns, price, as_of)
+
+    # "Partial" should mean the held position genuinely lacks cost basis — not merely
+    # that a display-only orphan row is incomplete. A holding healed by a merger + bonus
+    # reconciles to its eCAS anchor, so it isn't partial even with orphan rows present.
+    anchor = _holdings_anchor(investor, security, as_of)
+    has_incomplete = partial_from is not None
+    complete_net = net_units_from_transactions(complete_core)
+    if anchor is not None:
+        partial_history = has_incomplete and abs(complete_net - anchor) > TOLERANCE
+    else:
+        partial_history = has_incomplete
+
     # Why the XIRR reads the way it does — so the UI can flag a provisional number
     # instead of presenting it as gospel.
     xirr = ex.get("xirr")
-    if not complete_txns:
+    if not complete_core:
         xirr_status = "estimated"  # snapshot-only (or partial-history): value is observed
     elif xirr is None:
         xirr_status = "estimated"  # held but unpriced — can't value the terminal leg
-    elif (as_of - complete_txns[0].date).days < 365:
+    elif (as_of - min(c.date for c in complete_core)).days < 365:
         xirr_status = "less_than_1_year"  # annualized over a short period — indicative
     else:
         xirr_status = "valid"
@@ -825,10 +1057,8 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
         "latest_nav": latest_nav,
         "latest_nav_date": latest_nav_date,
         "has_transactions": bool(txns),
-        "partial_history": len(complete_txns) < len(txns),
-        "partial_history_from": min(
-            (t.date for t in txns if not t.cost_basis_complete), default=None
-        ),
+        "partial_history": partial_history,
+        "partial_history_from": partial_from if partial_history else None,
         "integrity": list(
             investor.integrity_statuses.filter(security=security).select_related(
                 "security", "folio"
@@ -839,6 +1069,7 @@ def build_scheme_detail(investor: Investor, security, as_of: date) -> dict:
             NAVHistory.objects.filter(security=security, date__lte=as_of).order_by("date")
         ),
         **dividend_detail,
+        "corporate_actions": _corporate_action_rows(txns),
         "transactions": txns,
     }
 

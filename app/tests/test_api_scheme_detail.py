@@ -7,7 +7,7 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
-from folioman_app.models import NAVHistory
+from folioman_app.models import AppliedCorporateAction, NAVHistory
 from folioman_core.models import SecurityType
 
 pytestmark = pytest.mark.django_db
@@ -151,6 +151,103 @@ def test_scheme_detail_excludes_fully_exited_folio(
 
     body = client.get(f"/api/investors/{inv.id}/holdings/{mf.id}", {"as_of": "2025-06-01"}).json()
     assert body["folios"] == []
+
+
+def test_scheme_detail_corporate_actions_show_ratio_and_running_balance(
+    client, make_investor, make_security, make_folio, make_transaction, make_holding
+):
+    # An acquirer reached entirely through a merger then a bonus: the corporate-actions
+    # timeline must show each event's ratio (and the merged-away scrip) with the balance
+    # it produced — and the holding reconciles, so it isn't flagged partial.
+    inv = make_investor()
+    folio = make_folio(investor=inv)
+    old = make_security(
+        security_type=SecurityType.EQUITY.value, isin="INE001A01036", symbol="OLDCO", name="OLDCO"
+    )
+    new = make_security(
+        security_type=SecurityType.EQUITY.value, isin="INE040A01034", symbol="NEWCO", name="NEWCO"
+    )
+    make_transaction(
+        investor=inv,
+        security=old,
+        folio=folio,
+        date=dt.date(2022, 6, 27),
+        units=Decimal("50"),
+        nav_or_price=Decimal("2200"),
+    )
+    AppliedCorporateAction.objects.create(
+        investor=inv,
+        security=old,
+        counterparty_security=new,
+        kind="merger",
+        ex_date=dt.date(2023, 7, 1),
+        merger_ratio=Decimal("1.68"),  # 50 old -> 84 new
+        source_ref="merger-test",
+    )
+    AppliedCorporateAction.objects.create(
+        investor=inv,
+        security=new,
+        kind="bonus",
+        ex_date=dt.date(2025, 8, 26),
+        unit_multiplier=Decimal("2"),
+        bonus_ratio_a=1,
+        bonus_ratio_b=1,
+        source_ref="bonus-test",
+    )
+    make_holding(investor=inv, security=new, units=Decimal("168"), as_of_date=dt.date(2025, 9, 1))
+
+    body = client.get(f"/api/investors/{inv.id}/holdings/{new.id}", {"as_of": "2025-09-01"}).json()
+
+    assert Decimal(str(body["units"])) == Decimal("168")
+    assert body["partial_history"] is False
+    cas = {c["kind"]: c for c in body["corporate_actions"]}
+    assert cas["merger"]["ratio"] == "1.68 new per old"
+    assert cas["merger"]["counterparty"] == "OLDCO"
+    assert Decimal(str(cas["merger"]["units_after"])) == Decimal("84")
+    assert cas["bonus"]["ratio"] == "1:1"
+    assert Decimal(str(cas["bonus"]["units_added"])) == Decimal("84")
+    assert Decimal(str(cas["bonus"]["units_after"])) == Decimal("168")
+
+
+def test_scheme_detail_ledger_is_as_traded_with_corporate_action_delta_rows(
+    client, make_investor, make_security, make_folio, make_transaction, make_holding
+):
+    """Trades keep their original tradebook units/prices; a split shows as a +units
+    event, not by rescaling the buy. The running balance still reaches the holding."""
+    inv = make_investor()
+    folio = make_folio(investor=inv)
+    sec = make_security(
+        security_type=SecurityType.EQUITY.value, isin="INE111A01011", symbol="ACME", name="Acme"
+    )
+    make_transaction(
+        investor=inv,
+        security=sec,
+        folio=folio,
+        date=dt.date(2020, 1, 1),
+        units=Decimal("10"),
+        nav_or_price=Decimal("100"),
+    )
+    AppliedCorporateAction.objects.create(
+        investor=inv,
+        security=sec,
+        kind="split",
+        ex_date=dt.date(2021, 6, 1),
+        unit_multiplier=Decimal("2"),
+        source_ref="split-test",
+    )
+    make_holding(investor=inv, security=sec, units=Decimal("20"), as_of_date=dt.date(2021, 7, 1))
+
+    body = client.get(f"/api/investors/{inv.id}/holdings/{sec.id}", {"as_of": "2021-07-01"}).json()
+    txns = body["transactions"]
+
+    buy = next(t for t in txns if t["transaction_type"] == "buy")
+    assert Decimal(str(buy["units"])) == Decimal("10")  # original, not split-scaled to 20
+    assert Decimal(str(buy["nav_or_price"])) == Decimal("100")  # original price
+    assert Decimal(str(buy["balance"])) == Decimal("10")
+
+    split = next(t for t in txns if t["transaction_type"] == "split")
+    assert Decimal(str(split["units"])) == Decimal("10")  # +units the split added
+    assert Decimal(str(split["balance"])) == Decimal("20")  # reaches the holding
 
 
 def test_scheme_detail_unheld_security_404s(client, make_investor, make_security):

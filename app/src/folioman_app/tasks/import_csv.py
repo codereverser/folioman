@@ -330,13 +330,28 @@ def _reconcile_cost_basis_completeness(investor, security: Security) -> list[dic
 
     Returns one entry per folio that is incomplete (for the job's warnings).
     """
+    # Solvency is judged on the corporate-action-adjusted ledger, not the raw rows: a
+    # split (or bonus) on this security scales the holding, so an apparent over-sell
+    # (e.g. sold 2 against a pre-split 1) is squared off once the action applies. Replay
+    # only the events on this security itself — a merger that injects another scrip's
+    # lots must not paper over genuinely missing history here.
+    from folioman_core.corporate_actions import apply_corporate_action_events
+
+    from folioman_app.services.projected_ledger import event_from_applied
+
+    ca_events = [
+        event_from_applied(a)
+        for a in AppliedCorporateAction.objects.filter(investor=investor, security=security)
+    ]
+
     incomplete: list[dict] = []
     folio_ids = set(
         investor.transactions.filter(security=security).values_list("folio_id", flat=True)
     )
     for folio_id in folio_ids:
         bucket = investor.transactions.filter(security=security, folio_id=folio_id)
-        cores = [to_core_transaction(t) for t in bucket.select_related("security", "folio")]
+        raw = [to_core_transaction(t) for t in bucket.select_related("security", "folio")]
+        cores = apply_corporate_action_events(raw, ca_events) if ca_events else raw
         try:
             apply_fifo(cores)
         except InsufficientUnitsError:

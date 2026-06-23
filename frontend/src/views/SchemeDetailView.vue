@@ -98,17 +98,6 @@ function txnLabel(t: string): string {
   return TXN_TYPE_LABELS[t] ?? t
 }
 
-// Net-units sign rule mirrors folioman_core.fifo.net_units_from_transactions:
-// inflows add, sells / transfers-out subtract, splits & dividends are unit-neutral.
-const INFLOW = new Set(['buy', 'bonus', 'transfer_in'])
-const OUTFLOW = new Set(['sell', 'transfer_out'])
-function signedUnits(type: string, units: string | number | null | undefined): number {
-  const u = num(units)
-  if (INFLOW.has(type)) return u
-  if (OUTFLOW.has(type)) return -u
-  return 0
-}
-
 const TXN_FLOW: Record<string, 'in' | 'out' | 'neutral'> = {
   buy: 'in',
   bonus: 'in',
@@ -116,31 +105,23 @@ const TXN_FLOW: Record<string, 'in' | 'out' | 'neutral'> = {
   sell: 'out',
   transfer_out: 'out',
   dividend: 'neutral',
-  split: 'neutral',
-  merger: 'neutral',
+  split: 'in',
+  merger: 'in',
 }
 function txnFlow(t: string): 'in' | 'out' | 'neutral' {
   return TXN_FLOW[t] ?? 'neutral'
 }
 
-// Running unit balance after each row, over the full chronological ledger (the
-// backend orders by date,id asc); keyed by id so it survives table paging.
-// Partial-history rows are skipped: without the missing opening balance their
-// running total is meaningless, so they render "—" (see the Balance column).
-const balanceById = computed<Record<number, number>>(() => {
-  const map: Record<number, number> = {}
-  let bal = 0
-  for (const t of detail.value?.transactions ?? []) {
-    if (!t.cost_basis_complete) continue
-    bal += signedUnits(t.transaction_type, t.units)
-    map[t.id] = bal
-  }
-  return map
-})
-
-// Ledger rows carry a composite sort key so the table tie-breaks same-date rows by
-// id — matching the backend's date,id order that the running balance is computed on.
-// Sorting on `date` alone leaves ties unstable, which flips the displayed balance.
+// The backend computes the running balance over the as-traded ledger + corporate-action
+// events and sends it per row (`balance`, null on an incomplete row that can't carry
+// one). Round a sub-unit residual so a fully-exited position reads "0.000", not
+// "-0.000". The composite sort key tie-breaks same-date rows by id, matching the
+// backend order the balance was computed on.
+function balanceOf(b: string | number | null | undefined): number | null {
+  if (b == null) return null
+  const n = num(b)
+  return Math.abs(n) < 1e-6 ? 0 : n
+}
 const ledgerRows = computed(() =>
   (detail.value?.transactions ?? []).map((t) => ({
     ...t,
@@ -170,28 +151,24 @@ const navStale = computed(() => {
 
 const isEquity = computed(() => detail.value?.security.security_type === 'equity')
 
-// The Transactions table shows only rows that move the balance — the trades you
-// made. Dividends (zero-unit payouts) live in their own section, and corporate
-// actions (the zero-unit split marker; bonus rows are kept here because they DO
-// change the balance) are summarised separately below.
-const tradeRows = computed(() =>
-  ledgerRows.value.filter(
-    (t) =>
-      t.transaction_type !== 'dividend' &&
-      t.transaction_type !== 'split' &&
-      t.transaction_type !== 'merger',
-  ),
-)
+// The Transactions ledger shows your as-traded trades plus each corporate action as a
+// +units event (split/bonus delta, merger receipt), so the running balance reaches the
+// held quantity. Dividends (zero-unit payouts) have their own section.
+const tradeRows = computed(() => ledgerRows.value.filter((t) => t.transaction_type !== 'dividend'))
 
-// Issuer events applied to the holding (bonus, split, demerger, rights, buyback) —
-// everything the corporate-action engine wrote, except dividends (the attribution
-// pass also tags those 'corporate-action', but they belong to the Dividends
-// section). A reference view of "what happened to the stock".
-const corporateActionRows = computed(() =>
-  ledgerRows.value.filter(
-    (t) => t.source === 'corporate-action' && t.transaction_type !== 'dividend',
-  ),
-)
+// Issuer events applied to the holding (bonus, split, merger) with their ratio,
+// counterparty scrip and running balance — the backend builds this timeline so the
+// page can show how the position evolved. A reference view of "what happened to the
+// stock", distinct from the trade ledger.
+const corporateActionRows = computed(() => detail.value?.corporate_actions ?? [])
+
+// "Bonus · 1:1", "Split · 1:2", "Merger · 1.68 new per old (from HDFC)".
+function caLabel(row: { kind: string; ratio: string; counterparty?: string | null }): string {
+  const parts = [txnLabel(row.kind)]
+  if (row.ratio) parts.push(row.ratio)
+  const head = parts.join(' · ')
+  return row.counterparty ? `${head} (from ${row.counterparty})` : head
+}
 
 // A dividend row for the payouts section. Equity uses the attributed timeline the
 // backend builds; mutual funds have no such timeline, so synthesise rows from the
@@ -396,27 +373,25 @@ function back(): void {
         <DataTable
           v-if="loadCharts"
           :value="corporateActionRows"
-          data-key="id"
+          data-key="ex_date"
           size="small"
           class="ledger"
-          sort-field="_sortKey"
+          sort-field="ex_date"
           :sort-order="-1"
         >
-          <Column field="date" sort-field="_sortKey" header="Date" sortable>
-            <template #body="{ data }">{{ formatDate(data.date) }}</template>
+          <Column field="ex_date" header="Date" sortable>
+            <template #body="{ data }">{{ formatDate(data.ex_date) }}</template>
           </Column>
-          <Column field="transaction_type" header="Action">
-            <template #body="{ data }">{{ txnLabel(data.transaction_type) }}</template>
+          <Column header="Action">
+            <template #body="{ data }">{{ caLabel(data) }}</template>
           </Column>
           <Column header="Units added" class="num" header-class="num">
             <template #body="{ data }">
-              {{ num(data.units) > 0 ? formatUnits(data.units) : '—' }}
+              {{ data.units_added == null ? '—' : formatUnits(data.units_added) }}
             </template>
           </Column>
           <Column header="Balance" class="num" header-class="num">
-            <template #body="{ data }">
-              {{ data.cost_basis_complete ? formatUnits(balanceById[data.id]) : '—' }}
-            </template>
+            <template #body="{ data }">{{ formatUnits(data.units_after) }}</template>
           </Column>
         </DataTable>
         <div v-else class="table-placeholder" aria-hidden="true" />
@@ -465,13 +440,16 @@ function back(): void {
                 <span class="flow" :class="txnFlow(data.transaction_type)">{{
                   txnLabel(data.transaction_type)
                 }}</span>
+                <span v-if="data.via_security" class="via-pill">via {{ data.via_security }}</span>
               </template>
             </Column>
             <Column header="Units" class="num" header-class="num">
               <template #body="{ data }">{{ formatUnits(data.units) }}</template>
             </Column>
             <Column header="NAV / Price" class="num" header-class="num">
-              <template #body="{ data }">{{ formatInrPaise(data.nav_or_price) }}</template>
+              <template #body="{ data }">{{
+                data.source === 'corporate-action' ? '—' : formatInrPaise(data.nav_or_price)
+              }}</template>
             </Column>
             <Column header="Amount" class="num" header-class="num">
               <template #body="{ data }">{{
@@ -480,7 +458,7 @@ function back(): void {
             </Column>
             <Column header="Balance" class="num" header-class="num">
               <template #body="{ data }">{{
-                data.cost_basis_complete ? formatUnits(balanceById[data.id]) : '—'
+                balanceOf(data.balance) == null ? '—' : formatUnits(balanceOf(data.balance))
               }}</template>
             </Column>
           </DataTable>
@@ -673,6 +651,19 @@ function back(): void {
 }
 .flow.neutral {
   color: var(--fm-text-muted);
+}
+/* Provenance tag: a lot rebased onto this scrip by a merger (e.g. "via HDFC"). */
+.via-pill {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--fm-text-muted);
+  background: var(--fm-surface-raised);
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: 999px;
+  vertical-align: middle;
 }
 /* Marks a partial-history row (kept for display, excluded from cost basis). */
 .partial-pill {

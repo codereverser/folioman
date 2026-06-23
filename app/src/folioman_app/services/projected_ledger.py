@@ -24,13 +24,6 @@ from folioman_app.mappers import to_core_security, to_core_transaction
 from folioman_app.models import AppliedCorporateAction, Investor, Security
 
 
-def _same_isin(left, right) -> bool:
-    """ISIN identity when both carry one, else object equality — mirrors the core."""
-    if left.isin and right.isin:
-        return left.isin == right.isin
-    return left == right
-
-
 def security_key(sec) -> str:
     """Stable identity for grouping projected core rows back to a Django security.
     Works on both core and Django ``Security`` (ISIN for equity, AMFI for MF)."""
@@ -179,4 +172,8 @@ def compute_ledger(
 
     raw = net_intraday_offsets([to_core_transaction(t) for t in raw_qs])
     adjusted = _replay(raw, events_qs, as_of)
-    return [t for t in adjusted if _same_isin(t.security, security)]
+    # Keep the rows that now belong to ``security``. Match on the shared identity key
+    # (ISIN for equity, AMFI for funds) so it holds across the core/Django boundary and
+    # for no-ISIN funds (object equality would never match a core row to a Django one).
+    want = security_key(security)
+    return [t for t in adjusted if security_key(t.security) == want]

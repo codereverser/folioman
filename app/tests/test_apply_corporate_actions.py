@@ -514,3 +514,46 @@ def test_replay_suggests_the_reconciling_event_not_a_stale_same_ratio_one(make_i
     # The post-2022 bonus reconciles 84 -> 168; the 2019 split predates the lots (no-op).
     assert suggestion["reference_ids"] == [real_bonus.id]
     assert stale_split.id not in suggestion["reference_ids"]
+
+
+def test_split_squares_off_an_oversold_tradebook_into_complete_rows(make_investor):
+    """A 1:2 split applied to a tradebook that over-sells against a pre-split balance
+    squares it off: the rows replay solvent and flip back to cost-basis-complete."""
+    inv = make_investor()
+    isin = "INE040A01034"
+    # Net of the raw rows is -1 (sold 2 against a holding of 1) → flagged incomplete on
+    # import; the 1:2 split doubles the pre-split balance, so 2 covers the final sell.
+    rows = "".join(
+        f"equity,Acme Bank,ACME,{isin},{d},{t},{u},{p},{_DEMAT},ZERODHA\n"
+        for d, t, u, p in [
+            ("2018-11-20", "buy", "2", "2015"),
+            ("2018-12-03", "sell", "1", "2138"),
+            ("2019-03-19", "buy", "1", "2255"),
+            ("2019-06-17", "sell", "1", "2434"),
+            ("2020-02-27", "sell", "2", "1187"),
+        ]
+    )
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_TRADEBOOK_HEADER + rows).encode(), "")
+
+    sec = Security.objects.get(isin=isin)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    assert not inv.transactions.filter(security=sec, cost_basis_complete=True).exists()
+
+    apply_corporate_actions_to_folio(
+        inv,
+        folio,
+        events=[
+            CorporateActionApplyEvent(
+                kind=CorpActionType.SPLIT,
+                ex_date=dt.date(2019, 9, 19),
+                security=CoreSecurity(type=SecurityType.EQUITY, name="Acme Bank", isin=isin),
+                unit_multiplier=Decimal("2"),
+                source_ref="split:acme:2019",
+            )
+        ],
+    )
+
+    # Every raw row is now complete and the split-adjusted position fully exits.
+    assert not inv.transactions.filter(security=sec, cost_basis_complete=False).exists()
+    assert net_units_from_transactions(compute_ledger(inv, sec)) == Decimal("0")

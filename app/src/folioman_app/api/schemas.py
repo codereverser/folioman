@@ -419,6 +419,12 @@ class TransactionOut(Schema):
     # False for a partial-history row: shown for context but excluded from cost
     # basis / units / gains. The scheme page badges these.
     cost_basis_complete: bool = True
+    # Pre-merger scrip a rebased lot originally traded under (e.g. "HDFC" for an
+    # HDFCBANK lot that arrived through the merger); null for natively-held rows.
+    via_security: str | None = None
+    # Running unit balance after this row (server-computed over the as-traded ledger +
+    # corporate-action events); null for an incomplete row that can't carry one.
+    balance: Decimal | None = None
 
 
 class SecurityRef(Schema):
@@ -608,6 +614,17 @@ class DividendTimelineRow(Schema):
     kind: str
 
 
+class SchemeCorporateActionRow(Schema):
+    """One applied issuer event on the scheme-detail corporate-actions timeline."""
+
+    ex_date: date
+    kind: str  # bonus | split | merger
+    ratio: str  # human ratio, e.g. "1:1", "1:2", "1.68 new per old"
+    counterparty: str | None = None  # merged-away / acquiring scrip, for a merger
+    units_added: Decimal | None = None  # bonus shares issued (null for unit-neutral events)
+    units_after: Decimal  # running balance once the event has acted
+
+
 class SchemeDetailOut(Schema):
     """Everything one scheme page needs in a single call: identity, current
     metrics, integrity per folio, the NAV history series, and the ledger."""
@@ -642,6 +659,9 @@ class SchemeDetailOut(Schema):
     dividends: list[DividendTimelineRow] = Field(default_factory=list)
     dividends_received_inr: Decimal | None = None
     dividend_yield_on_cost: float | None = None
+    # Applied issuer events (bonus / split / merger) with their ratio and running
+    # balance — how the holding evolved, distinct from the trade ledger below.
+    corporate_actions: list[SchemeCorporateActionRow] = Field(default_factory=list)
     transactions: list[TransactionOut]
 
 

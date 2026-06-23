@@ -1897,6 +1897,27 @@ export interface components {
             title: string;
         };
         /**
+         * SchemeCorporateActionRow
+         * @description One applied issuer event on the scheme-detail corporate-actions timeline.
+         */
+        SchemeCorporateActionRow: {
+            /** Counterparty */
+            counterparty?: string | null;
+            /**
+             * Ex Date
+             * Format: date
+             */
+            ex_date: string;
+            /** Kind */
+            kind: string;
+            /** Ratio */
+            ratio: string;
+            /** Units Added */
+            units_added?: string | null;
+            /** Units After */
+            units_after: string;
+        };
+        /**
          * SchemeDetailOut
          * @description Everything one scheme page needs in a single call: identity, current
          *     metrics, integrity per folio, the NAV history series, and the ledger.
@@ -1907,6 +1928,8 @@ export interface components {
              * Format: date
              */
             as_of: string;
+            /** Corporate Actions */
+            corporate_actions?: components["schemas"]["SchemeCorporateActionRow"][];
             /** Day Change Inr */
             day_change_inr: string | null;
             /** Day Change Pct */
@@ -2111,6 +2134,8 @@ export interface components {
         TransactionOut: {
             /** Amount */
             amount: string | null;
+            /** Balance */
+            balance?: string | null;
             /** Brokerage */
             brokerage: string;
             /**
@@ -2147,6 +2172,8 @@ export interface components {
             transaction_type: string;
             /** Units */
             units: string;
+            /** Via Security */
+            via_security?: string | null;
         };
         /**
          * ValuationDiagnosticsOut

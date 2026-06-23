@@ -271,9 +271,20 @@ def apply_corporate_actions_to_folio(
     # them on read. Flag any pre-window acquisitions the events touch as cost-basis
     # incomplete before anything reads the projection.
     events_written, affected_ids = _persist_applied_events(investor, folio, all_events)
+
+    # A split / bonus can square off an over-sold tradebook (sold against a pre-split
+    # balance), so re-derive FIFO completeness now the event is on record — it reads the
+    # corporate-action-adjusted ledger and may flip orphan rows back to complete. Do this
+    # BEFORE the pre-window reliability flag, which then re-marks pre-2016 acquisitions so
+    # the solvency pass doesn't clobber it. Local import: import_csv loads this module.
+    from folioman_app.tasks.import_csv import _reconcile_cost_basis_completeness
+
+    affected = list(Security.objects.filter(id__in=affected_ids))
+    for sec in affected:
+        _reconcile_cost_basis_completeness(investor, sec)
     _flag_pre2016_cost_basis(investor, folio, affected_ids)
 
-    for sec in Security.objects.filter(id__in=affected_ids):
+    for sec in affected:
         # Whole the ledger against the eCAS anchor before reconciling, so a CA
         # fractional remainder doesn't read as a mismatch.
         _settle_fractional_entitlement(investor, folio, sec)
