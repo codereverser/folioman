@@ -134,7 +134,12 @@ def demerger_reductions(investor: Investor, *, folio=None) -> dict[str, list]:
 
 
 def compute_ledger(
-    investor: Investor, security: Security, *, folio=None, as_of: date | None = None
+    investor: Investor,
+    security: Security,
+    *,
+    folio=None,
+    as_of: date | None = None,
+    include_incomplete: bool = False,
 ) -> list[CoreTransaction]:
     """The cost-basis ledger for ``security`` with corporate actions applied in memory.
 
@@ -145,7 +150,10 @@ def compute_ledger(
     on or before that date for a point-in-time view; ``None`` returns the full ledger.
 
     Only ``cost_basis()`` rows feed the projection (partial-history rows carry no
-    usable basis), matching every other cost-basis consumer.
+    usable basis), matching every other cost-basis consumer — unless
+    ``include_incomplete`` is set, which also replays the display-only orphan rows. That
+    is for the reconciliation replay alone: it must test a cached split/bonus against the
+    *whole* timeline (orphan sells included) while still seeing already-applied events.
     """
     # Securities in scope: this one, plus any linked by a merger (old <-> acquirer),
     # so the acquirer's projection includes the lots rebased onto it.
@@ -163,11 +171,8 @@ def compute_ledger(
     events_qs = AppliedCorporateAction.objects.filter(investor=investor).filter(
         Q(security_id__in=sec_ids) | Q(counterparty_security_id__in=sec_ids)
     )
-    raw_qs = (
-        investor.transactions.cost_basis()
-        .filter(security_id__in=sec_ids)
-        .select_related("security", "folio")
-    )
+    base_qs = investor.transactions if include_incomplete else investor.transactions.cost_basis()
+    raw_qs = base_qs.filter(security_id__in=sec_ids).select_related("security", "folio")
     if folio is not None:
         events_qs = events_qs.filter(folio=folio)
         raw_qs = raw_qs.filter(folio=folio)

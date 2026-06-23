@@ -36,6 +36,7 @@ from folioman_core.reconciliation import TOLERANCE, IntegrityStatus, Reconciliat
 
 from folioman_app.mappers import to_core_holding, to_core_security, to_core_transaction
 from folioman_app.models import (
+    AppliedCorporateAction,
     CorporateActionReference,
     Folio,
     Investor,
@@ -139,16 +140,23 @@ def _replay_corporate_actions(
     txns: list,
     security: Security,
     cached_actions: list[CachedCorporateAction],
+    applied_refs: set[str],
 ) -> ReplayMatch | None:
-    """Net units after applying the cached scaling events over the real timeline.
+    """Net units after applying the *unapplied* cached scaling events over the timeline.
 
-    Returns ``None`` when there are no auto-applicable events (detection then has
-    nothing to suggest). Mirrors how ``apply_corporate_actions_to_folio`` builds and
-    applies events, so the prediction matches what "Apply" would actually do. Applies
-    one event at a time, in ex-date order, recording the holding before and after each
-    so the UI can preview every step.
+    ``txns`` is the projected ledger (already-applied events replayed in, incl. a merger
+    that rebased another scrip's lots on), so the replay starts from what the holding
+    really is today and only simulates the cached split/bonus events not yet applied —
+    matching what "Apply" would do. An event already in the log (``applied_refs``) is
+    skipped so it neither double-applies nor re-surfaces as an outstanding step.
+
+    Returns ``None`` when there is nothing left to simulate.
     """
-    deduped = sorted(_dedupe_scaling(cached_actions), key=lambda a: a.ex_date)
+    deduped = [
+        a
+        for a in sorted(_dedupe_scaling(cached_actions), key=lambda a: a.ex_date)
+        if f"ca-ref:{a.reference_id}" not in applied_refs
+    ]
     if not deduped:
         return None
     core_security = to_core_security(security)
@@ -156,26 +164,18 @@ def _replay_corporate_actions(
     steps: list[ReplayStep] = []
     try:
         for a in deduped:
-            ref = f"ca-ref:{a.reference_id}"
             event = CorporateActionApplyEvent(
                 kind=CorpActionType(a.parsed_type),
                 ex_date=a.ex_date,
                 security=core_security,
                 unit_multiplier=a.unit_multiplier,
                 bonus_ratio=a.bonus_ratio,
-                source_ref=ref,
+                source_ref=f"ca-ref:{a.reference_id}",
             )
-            # Already in the ledger (a prior apply wrote it)? Re-applying is an
-            # idempotent no-op, so it must not appear as an outstanding step — else a
-            # reconciled holding keeps "suggesting" an action that's already done. A
-            # bonus row sits at its ex-date, so its before/after still spans the jump
-            # and the units-changed check alone can't tell it's applied.
-            already_applied = any(txn.source_ref == ref for txn in running)
             before = held_units_asof(running, core_security, a.ex_date)
             running = apply_corporate_action_events(running, [event])
             after = held_units_asof(running, core_security, a.ex_date + timedelta(days=1))
-            if not already_applied:
-                steps.append(ReplayStep(action=a, units_before=before, units_after=after))
+            steps.append(ReplayStep(action=a, units_before=before, units_after=after))
     except (ValueError, KeyError):
         # A malformed cached event can't be simulated; treat as "no clean replay" so
         # detection falls back to a manual flag rather than crashing reconciliation.
@@ -189,7 +189,8 @@ def _annotate_corporate_actions(
     security: Security,
     incomplete_history: bool,
     txns: list,
-    ledger_txns: list | None = None,
+    replay_source: list | None = None,
+    applied_refs: set[str] | None = None,
 ) -> ReconciliationResult:
     """Run the detection ruleset and merge issues into ``result``."""
     issues = strip_corporate_action_issues(result.issues)
@@ -197,14 +198,15 @@ def _annotate_corporate_actions(
     replay = None
     net = result.units_from_transactions
     holding = result.units_from_holdings
-    # Replay uses the full folio timeline (including display-only partial rows), not
-    # just cost-basis rows — orphan sells live in the latter bucket but still need
-    # scaling events applied in date order to test whether a cached CA explains eCAS.
-    replay_source = ledger_txns if ledger_txns else txns
+    # The replay runs over the *projected* whole-folio timeline (already-applied events
+    # replayed in — incl. a merger that rebased lots — and orphan/display rows kept), so
+    # it sees what the holding really is and only simulates the cached events not yet
+    # applied. Falls back to the cost-basis projection if no fuller base was supplied.
+    base = replay_source if replay_source else txns
     has_gap = net is not None and holding is not None and holding - net > TOLERANCE
     needs_replay_probe = incomplete_history or (net is not None and net < _ZERO) or has_gap
-    if replay_source and needs_replay_probe and _dedupe_scaling(cached_actions):
-        replay = _replay_corporate_actions(replay_source, security, cached_actions)
+    if base and needs_replay_probe and _dedupe_scaling(cached_actions):
+        replay = _replay_corporate_actions(base, security, cached_actions, applied_refs or set())
     ca_issues = detect_corporate_action_issues(
         net_units=net,
         holding_units=holding,
@@ -363,12 +365,24 @@ def reconcile_security_folio(
         and result.units_from_transactions < 0
     )
     if result is not None and security.security_type == SecurityType.EQUITY.value:
+        # Replay over the projected whole-folio timeline (applied events incl. a merger
+        # replayed in, orphan rows kept) and tell it which cached events are already
+        # applied — so the suggestion reflects today's real holding, not the raw rows.
+        replay_base = (
+            compute_ledger(investor, security, folio=folio, include_incomplete=True) or display_txns
+        )
+        applied_refs = set(
+            AppliedCorporateAction.objects.filter(investor=investor, security=security).values_list(
+                "source_ref", flat=True
+            )
+        )
         result = _annotate_corporate_actions(
             result,
             security=security,
             incomplete_history=incomplete_history,
             txns=txns,
-            ledger_txns=display_txns,
+            replay_source=replay_base,
+            applied_refs=applied_refs,
         )
         result = _annotate_opening_lot(
             result,

@@ -22,6 +22,7 @@ from folioman_app.services.corporate_actions import (
 from folioman_app.services.projected_ledger import compute_ledger
 from folioman_app.tasks.import_csv import process_csv
 from folioman_app.tasks.import_ecas import persist_ecas_statement
+from folioman_app.tasks.reconcile import reconcile_security_folio
 from folioman_core.corporate_action_subject import CorpActionType
 from folioman_core.corporate_actions import CorporateActionApplyEvent
 from folioman_core.fifo import apply_fifo, net_units_from_transactions
@@ -434,3 +435,82 @@ def test_manual_demerger_authoring_is_rejected(make_investor):
             ex_date=dt.date(2024, 1, 2),
             counterparty_isin="INE999X01010",
         )
+
+
+def test_replay_suggests_the_reconciling_event_not_a_stale_same_ratio_one(make_investor):
+    """After a merger, the suggestion must be the event that actually reconciles today's
+    holding — not a same-ratio event predating the lots. 50 OLD (2022) merges 42:25 → 84
+    NEW; eCAS shows 168 (a 1:1 bonus). Both a stale 2019 split (x2) and the real 2025
+    bonus (x2) are cached; only the bonus, applied to the post-2022 lots, hits 168."""
+    inv = make_investor()
+    old_isin, new_isin = "INE001A01036", "INE040A01034"
+    row = f"equity,Old Co,OLD,{old_isin},2022-06-27,buy,50,2200,{_DEMAT},ZERODHA\n"
+    job = ImportJob.objects.create(investor=inv, kind=ImportKind.CSV)
+    process_csv(job, (_TRADEBOOK_HEADER + row).encode(), "")
+
+    newco = CoreSecurity(type=SecurityType.EQUITY, name="New Co", isin=new_isin, symbol="NEW")
+    persist_ecas_statement(
+        inv,
+        EcasStatement(
+            depository=Depository.CDSL,
+            statement_date=dt.date(2025, 9, 1),
+            accounts=[
+                EcasAccountBlock(
+                    folio=CoreFolio(folio_type="demat", number=_DEMAT, broker="ZERODHA"),
+                    holdings=[
+                        EcasHoldingLine(security=newco, units="168", value_observed="300000")
+                    ],
+                )
+            ],
+        ),
+        source_ref="ecas-new",
+    )
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    apply_corporate_actions_to_folio(
+        inv,
+        folio,
+        events=[
+            CorporateActionApplyEvent(
+                kind=CorpActionType.MERGER,
+                ex_date=dt.date(2023, 7, 13),
+                security=newco,
+                merger_old_security=CoreSecurity(
+                    type=SecurityType.EQUITY, name="Old Co", isin=old_isin, symbol="OLD"
+                ),
+                merger_new_security=newco,
+                merger_ratio=Decimal("42") / Decimal("25"),
+                source_ref="merger:x",
+            )
+        ],
+    )
+    new_sec = Security.objects.get(isin=new_isin)
+    stale_split = CorporateActionReference.objects.create(
+        security=new_sec,
+        isin=new_isin,
+        symbol="NEW",
+        exchange="NSE",
+        ex_date=dt.date(2019, 9, 19),
+        subject="Face Value Split",
+        parsed_type="split",
+        unit_multiplier=Decimal("2"),
+        needs_review=False,
+        source="NSE",
+    )
+    real_bonus = CorporateActionReference.objects.create(
+        security=new_sec,
+        isin=new_isin,
+        symbol="NEW",
+        exchange="NSE",
+        ex_date=dt.date(2025, 8, 26),
+        subject="Bonus 1:1",
+        parsed_type="bonus",
+        unit_multiplier=Decimal("2"),
+        needs_review=False,
+        source="NSE",
+    )
+
+    status = reconcile_security_folio(inv, new_sec, folio)
+    suggestion = next(i for i in status.issues if i["type"] == "corporate_action_suggestion")
+    # The post-2022 bonus reconciles 84 -> 168; the 2019 split predates the lots (no-op).
+    assert suggestion["reference_ids"] == [real_bonus.id]
+    assert stale_split.id not in suggestion["reference_ids"]
