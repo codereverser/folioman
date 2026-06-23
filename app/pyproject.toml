@@ -31,7 +31,7 @@ dependencies = [
 # `pip install folioman-app[server]` for self-hosted / Docker deployments.
 [project.optional-dependencies]
 server = [
-    "psycopg[binary]>=3.3.2",
+    "psycopg[binary]>=3.3.4",
     "django-ninja-jwt>=5.4",
     # WSGI server for the self-hosted deployment (gthread workers behind a
     # reverse proxy). Pure Python.
