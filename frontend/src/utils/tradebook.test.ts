@@ -5,6 +5,7 @@ import {
   isValidDematNumber,
   mappingErrors,
   normalizeDecimalCell,
+  normalizeTransactionType,
 } from './tradebook'
 
 describe('autoDetectMapping', () => {
@@ -89,6 +90,22 @@ describe('normalizeDecimalCell', () => {
   })
 })
 
+describe('normalizeTransactionType', () => {
+  it('maps unambiguous broker side tokens to buy/sell', () => {
+    for (const t of ['buy', 'BUY', 'B', 'b', 'Bought', 'purchase']) {
+      expect(normalizeTransactionType(t)).toBe('buy')
+    }
+    for (const t of ['sell', 'SELL', 'S', 's', 'Sold', 'sale']) {
+      expect(normalizeTransactionType(t)).toBe('sell')
+    }
+  })
+
+  it('passes an unrecognised value through (the backend rejects it, never a wrong guess)', () => {
+    expect(normalizeTransactionType('split')).toBe('split')
+    expect(normalizeTransactionType('')).toBe('')
+  })
+})
+
 describe('buildCanonicalRows', () => {
   const mapping = {
     date: 'trade_date',
@@ -122,6 +139,31 @@ describe('buildCanonicalRows', () => {
     expect(row.source_ref).toBe('T1')
     expect(row.folio_number).toBe('1208160000000001')
     expect(row.broker).toBe('Zerodha')
+  })
+
+  it('normalizes broker side tokens (e.g. Groww B/S) to canonical buy/sell', () => {
+    const rows = [
+      {
+        symbol: 'X',
+        isin: 'INE1',
+        trade_date: 'd',
+        trade_type: 'B',
+        quantity: '1',
+        price: '1',
+        trade_id: 'a',
+      },
+      {
+        symbol: 'X',
+        isin: 'INE1',
+        trade_date: 'd',
+        trade_type: 'S',
+        quantity: '1',
+        price: '1',
+        trade_id: 'b',
+      },
+    ]
+    const built = buildCanonicalRows(rows, mapping, opts)
+    expect(built.map((r) => r.transaction_type)).toEqual(['buy', 'sell'])
   })
 
   it('falls back to symbol then isin for an unmapped name', () => {

@@ -65,6 +65,10 @@ Content-hash dedup at the job level also prevents duplicate file uploads.
 Alias lists in `CANONICAL_FIELDS` drive auto-detect (e.g. Zerodha `trade_date` → `date`).
 Extend aliases when adding broker profiles; no backend change needed.
 
+`normalizeTransactionType` maps unambiguous side tokens (`B`/`S`, `Bought`/`Sold`, …) to
+the canonical `buy`/`sell` so non-Zerodha value conventions import; unknown values pass
+through for the backend to reject rather than guess.
+
 Unit tests:
 
 - `frontend/src/utils/tradebook.test.ts` — mapping logic

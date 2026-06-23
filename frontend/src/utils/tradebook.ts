@@ -160,6 +160,20 @@ export function isValidDematNumber(value: string): boolean {
 
 const NUMERIC_FIELD_KEYS = new Set(['units', 'price', 'amount', 'fees', 'stamp_duty', 'brokerage'])
 
+// Brokers spell the side differently (Zerodha "buy"/"sell", Groww "B"/"S", others
+// "Bought"/"Sold"). The backend's canonical contract is strictly "buy"/"sell", so map
+// the unambiguous tokens here. An unrecognised value passes through untouched — the
+// backend then rejects it as a row error rather than guessing wrong.
+const _BUY_TOKENS = new Set(['buy', 'b', 'bought', 'purchase'])
+const _SELL_TOKENS = new Set(['sell', 's', 'sold', 'sale'])
+
+export function normalizeTransactionType(value: string): string {
+  const t = value.trim().toLowerCase()
+  if (_BUY_TOKENS.has(t)) return 'buy'
+  if (_SELL_TOKENS.has(t)) return 'sell'
+  return value.trim()
+}
+
 /**
  * Strip locale formatting from a numeric cell (thousands separators, currency
  * glyphs) so the backend ``Decimal()`` parse accepts XLSX display strings.
@@ -205,6 +219,8 @@ export function mapCanonicalRows(
       let cell = header ? (fileRow[header] ?? '').trim() : ''
       if (cell && NUMERIC_FIELD_KEYS.has(field.key)) {
         cell = normalizeDecimalCell(cell)
+      } else if (cell && field.key === 'transaction_type') {
+        cell = normalizeTransactionType(cell)
       }
       row[field.key] = cell
     }
