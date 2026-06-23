@@ -143,6 +143,14 @@ const navMarkers = computed(() =>
     })),
 )
 
+// Corporate actions pinned on the NAV line at their ex-date (split / bonus / merger).
+const navEvents = computed(() =>
+  (detail.value?.corporate_actions ?? []).map((c) => ({
+    date: c.ex_date,
+    label: txnLabel(c.kind),
+  })),
+)
+
 // Held but unpriced: the value can't be computed because the latest NAV is stale.
 const navStale = computed(() => {
   const d = detail.value
@@ -206,8 +214,12 @@ function dividendKindLabel(kind: string): string {
   return DIVIDEND_KIND_LABELS[kind] ?? kind
 }
 
+// Return to wherever the user came from (the stocks/MF tab, integrity, etc.) so the
+// active tab and scroll are preserved. Fall back to the dashboard on a deep link with
+// no history to step back to.
 function back(): void {
-  void router.push({ name: 'dashboard', params: { investorId: investorId.value } })
+  if (window.history.state?.back) router.back()
+  else void router.push({ name: 'dashboard', params: { investorId: investorId.value } })
 }
 </script>
 
@@ -221,7 +233,7 @@ function back(): void {
     <template v-else-if="detail">
       <header class="page-head">
         <button class="back" type="button" @click="back">
-          <i class="pi pi-arrow-left" /> Dashboard
+          <i class="pi pi-arrow-left" /> Back
         </button>
         <div class="title-row">
           <h1>{{ detail.security.name }}</h1>
@@ -302,6 +314,7 @@ function back(): void {
           v-if="loadCharts && navSeries.length"
           :data="navSeries"
           :markers="navMarkers"
+          :events="navEvents"
         />
         <div
           v-else-if="navSeries.length"
