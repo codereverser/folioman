@@ -265,6 +265,20 @@ const openingLotUnitsTotal = computed(() =>
   openingLotForm.value.lots.reduce((sum, l) => sum + (Number(l.units) || 0), 0),
 )
 
+const openingLotCostTotal = computed(() =>
+  openingLotForm.value.lots.reduce(
+    (sum, l) => sum + (Number(l.units) || 0) * (Number(l.price) || 0),
+    0,
+  ),
+)
+
+// The multi-lot demerger receipt is a table (date + qty + cost per lot) that needs room;
+// a single opening lot is a couple of fields.
+const openingLotDialogStyle = computed(() => ({
+  width: isMultiLot.value ? '44rem' : '28rem',
+  maxWidth: '95vw',
+}))
+
 const openingLotValid = computed(() => {
   if (isMultiLot.value) {
     return (
@@ -712,9 +726,9 @@ function back(): void {
 
     <Dialog
       v-model:visible="openingLotVisible"
-      header="Record opening lot"
+      :header="isMultiLot ? 'Record demerger receipt' : 'Record opening lot'"
       modal
-      :style="{ width: '28rem' }"
+      :style="openingLotDialogStyle"
       @hide="openingLotRow = null"
     >
       <p v-if="openingLotRow && openingLotIssue(openingLotRow.issues)" class="dialog-copy">
@@ -755,26 +769,43 @@ function back(): void {
             Enter one row per lot from your broker's holding breakdown — the inherited acquisition
             date, quantity, and allocated cost per unit.
           </p>
-          <div v-for="(lot, i) in openingLotForm.lots" :key="i" class="lot-row">
-            <InputText v-model="lot.date" type="date" :disabled="false" />
-            <InputText v-model="lot.units" inputmode="decimal" placeholder="qty" />
-            <InputText
-              v-model="lot.price"
-              inputmode="decimal"
-              placeholder="cost/unit"
-              :disabled="openingLotForm.costBasisUnknown"
-            />
-            <Button
-              icon="pi pi-times"
-              text
-              rounded
-              :disabled="openingLotForm.lots.length === 1"
-              @click="removeOpeningLot(i)"
-            />
+          <div class="lot-table" role="table">
+            <div class="lot-row lot-head" role="row">
+              <span role="columnheader">Acquisition date</span>
+              <span role="columnheader" class="num">Units</span>
+              <span role="columnheader" class="num">Cost / unit</span>
+              <span class="lot-remove-col" aria-hidden="true"></span>
+            </div>
+            <div v-for="(lot, i) in openingLotForm.lots" :key="i" class="lot-row" role="row">
+              <InputText v-model="lot.date" type="date" aria-label="Acquisition date" />
+              <InputText v-model="lot.units" inputmode="decimal" class="num" aria-label="Units" />
+              <InputText
+                v-model="lot.price"
+                inputmode="decimal"
+                class="num"
+                aria-label="Cost per unit"
+                :disabled="openingLotForm.costBasisUnknown"
+              />
+              <Button
+                icon="pi pi-times"
+                text
+                rounded
+                severity="secondary"
+                aria-label="Remove lot"
+                :disabled="openingLotForm.lots.length === 1"
+                @click="removeOpeningLot(i)"
+              />
+            </div>
           </div>
           <div class="lot-foot">
             <Button label="Add lot" icon="pi pi-plus" text size="small" @click="addOpeningLot" />
-            <span class="lot-total">Total: {{ openingLotUnitsTotal }} units</span>
+            <span class="lot-total">
+              {{ openingLotUnitsTotal }} units
+              <template v-if="!openingLotForm.costBasisUnknown && openingLotCostTotal > 0">
+                · ₹{{ openingLotCostTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 }) }}
+                total
+              </template>
+            </span>
           </div>
           <label>
             Demerger date (optional)
@@ -1121,19 +1152,55 @@ function back(): void {
   align-items: center;
   gap: 0.5rem !important;
 }
-.lot-row {
-  display: grid;
-  grid-template-columns: 1fr 0.7fr 0.9fr auto;
+.lot-table {
+  display: flex;
+  flex-direction: column;
   gap: 0.4rem;
+  /* On a narrow viewport the four columns can't shrink to nothing — scroll the table
+     rather than clip the cost column / remove button or burst the dialog. */
+  overflow-x: auto;
+}
+.lot-row {
+  /* Shared columns so the header and every input row align exactly; the remove
+     button gets a fixed track (not `auto`) so the numeric columns never shift. */
+  display: grid;
+  grid-template-columns: minmax(8rem, 1.2fr) 0.9fr 1fr 2.25rem;
+  gap: 0.5rem;
   align-items: center;
+  min-width: 22rem;
+}
+.lot-head {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fm-text-muted);
+  padding: 0 0.1rem;
+}
+.lot-row .num,
+.lot-head .num {
+  text-align: right;
+}
+.lot-remove-col {
+  width: 2.25rem;
 }
 .lot-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-top: 0.1rem;
 }
 .lot-total {
   font-size: 0.8125rem;
   color: var(--fm-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.dialog-hint {
+  margin-bottom: 0.75rem;
+}
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--fm-text-muted);
+  line-height: 1.4;
 }
 </style>
