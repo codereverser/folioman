@@ -360,9 +360,10 @@ def test_dividend_payout_without_units_or_nav_is_kept_as_income():
     assert parser.scheme_has_full_history(parser.map_cas_data(cas).schemes[0])
 
 
-def test_buy_missing_units_or_nav_fallbacks():
-    # A purchase with missing NAV/units falls back to zero-cost
-    # rather than failing the entire statement import.
+def test_material_buy_missing_nav_raises():
+    # A material (>= 1 unit) buy with no NAV and nothing to recover it from can't
+    # form a cost-basis lot -> raise (snapshot), never a phantom zero-cost lot that
+    # would overstate gains on a later sale.
     cas = _cas(
         [
             TransactionData(
@@ -377,9 +378,65 @@ def test_buy_missing_units_or_nav_fallbacks():
             ),
         ]
     )
-    res = parser.map_cas_data(cas)
-    t = res.schemes[0].transactions[0]
-    assert t.units == Decimal("100")
+    with pytest.raises(parser.UnsupportedCASTransaction, match="missing NAV"):
+        parser.map_cas_data(cas)
+
+
+def test_sub_unit_allotment_uses_same_day_nav():
+    # Regression for issue #80: an "Additional Allotment" row carries units but no
+    # NAV/amount. Price it at the same day's purchase NAV so the units reconcile
+    # against the folio balance with a sensible cost (instead of failing the import).
+    cas = _cas(
+        [
+            TransactionData(
+                date=date(2021, 11, 1),
+                description="SIP Purchase-BSE",
+                amount=Decimal("699.97"),
+                units=Decimal("4.052"),
+                nav=Decimal("172.76"),
+                balance=Decimal("15.832"),
+                type=CTxn.PURCHASE_SIP,
+                dividend_rate=None,
+            ),
+            TransactionData(
+                date=date(2021, 11, 1),
+                description="Additional Allotment",
+                amount=None,
+                units=Decimal("0.010"),
+                nav=None,
+                balance=Decimal("15.842"),
+                type=CTxn.PURCHASE,
+                dividend_rate=None,
+            ),
+        ],
+        open_units="11.78",
+        close_units="15.842",
+    )
+    allotment = parser.map_cas_data(cas).schemes[0].transactions[1]
+    assert allotment.units == Decimal("0.010")
+    assert allotment.nav == Decimal("172.76")  # filled from the same-day SIP NAV
+    assert allotment.amount == Decimal("1.7276")  # units * same-day NAV
+
+
+def test_sub_unit_allotment_without_same_day_nav_books_zero_cost():
+    # No NAV anywhere for the date, but the units are sub-unit dust — book it at
+    # zero cost (negligible) rather than failing the whole import.
+    cas = _cas(
+        [
+            TransactionData(
+                date=date(2022, 1, 1),
+                description="Additional Allotment",
+                amount=None,
+                units=Decimal("0.010"),
+                nav=None,
+                balance=None,
+                type=CTxn.PURCHASE,
+                dividend_rate=None,
+            ),
+        ]
+    )
+    t = parser.map_cas_data(cas).schemes[0].transactions[0]
+    assert t.units == Decimal("0.010")
     assert t.nav == Decimal("0")
     assert t.amount == Decimal("0")
 
