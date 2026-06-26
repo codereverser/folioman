@@ -360,9 +360,9 @@ def test_dividend_payout_without_units_or_nav_is_kept_as_income():
     assert parser.scheme_has_full_history(parser.map_cas_data(cas).schemes[0])
 
 
-def test_buy_missing_units_or_nav_raises():
-    # A purchase with no NAV can't form a cost-basis lot -> raise (snapshot),
-    # never a phantom zero-cost lot.
+def test_buy_missing_units_or_nav_fallbacks():
+    # A purchase with missing NAV/units falls back to zero-cost
+    # rather than failing the entire statement import.
     cas = _cas(
         [
             TransactionData(
@@ -377,8 +377,11 @@ def test_buy_missing_units_or_nav_raises():
             ),
         ]
     )
-    with pytest.raises(parser.UnsupportedCASTransaction, match="missing units/NAV"):
-        parser.map_cas_data(cas)
+    res = parser.map_cas_data(cas)
+    t = res.schemes[0].transactions[0]
+    assert t.units == Decimal("100")
+    assert t.nav == Decimal("0")
+    assert t.amount == Decimal("0")
 
 
 def test_every_casparser_txn_type_is_categorised():

@@ -95,7 +95,7 @@ def _abs_or_none(value: Decimal | None) -> Decimal | None:
 
 
 def _map_line(
-    txn: object, idx: int, *, stt_for_idx: dict, stamp_for_idx: dict
+    txn: object, idx: int, *, stt_for_idx: dict, stamp_for_idx: dict, nav_for_date: dict
 ) -> MfCasLineItem | None:
     ctype = txn.type
     if ctype in _UNSUPPORTED_TXNS:
@@ -108,17 +108,28 @@ def _map_line(
         msg = f"unmapped casparser transaction type {ctype.value!r}"
         raise UnsupportedCASTransaction(msg)
     units, nav = txn.units, txn.nav
+    amount_val = _abs_or_none(txn.amount)
     if mapped is TransactionType.DIVIDEND:
         # A dividend *payout* is a cash event: casparser carries no units or NAV
         # for it (both ``None``). Keep the cash ``amount`` as income and zero the
         # unit/NAV fields — FIFO treats DIVIDEND as a no-op on the lot balance.
         units = units if units is not None else _ZERO
         nav = nav if nav is not None else _ZERO
-    elif units is None or nav is None:
-        # A buy/sell with no units or NAV can't form a cost-basis lot; failing
-        # loud (→ snapshot) beats minting a phantom zero-cost lot.
-        msg = f"{ctype.value!r} row is missing units/NAV — cannot build a tax lot"
-        raise UnsupportedCASTransaction(msg)
+    else:
+        # Try to infer missing units/nav from amount if possible
+        if units is None and nav is not None and amount_val is not None and nav != _ZERO:
+            units = amount_val / nav
+        elif nav is None and units is not None and amount_val is not None and units != _ZERO:
+            nav = amount_val / units
+
+        # Fall back to same-day NAV or zero-cost if units/NAV are missing
+        if units is None or nav is None:
+            fallback_nav = nav_for_date.get(txn.date, _ZERO)
+            units = units if units is not None else _ZERO
+            nav = nav if nav is not None else fallback_nav
+            if amount_val is None:
+                amount_val = units * nav
+
     # casparser model: stamp duty rides with the *buy* (per-lot) and is pro-rated
     # to each disposal as a transfer expense. STT rides with the *sell* and is
     # pro-rated by consumed units. Both flow into col 12 of Schedule 112A and
@@ -132,7 +143,7 @@ def _map_line(
         transaction_type=mapped,
         units=abs(units),
         nav=nav,
-        amount=_abs_or_none(txn.amount),
+        amount=amount_val,
         fees=fees,
         stamp_duty=stamp_duty,
         description=txn.description or "",
@@ -195,7 +206,7 @@ def _map_folio(folio: object) -> Folio:
     return Folio(folio_type=FolioType.MF, number=str(folio.folio))
 
 
-def _collect_per_index_charges(scheme_txns) -> tuple[dict, dict]:
+def _collect_per_index_charges(scheme_txns) -> tuple[dict, dict, dict]:
     """Pair STT/stamp rows with the *immediately preceding* sell/buy by index.
 
     Real CAS layout: each REDEMPTION is followed (on the same date) by its
@@ -205,6 +216,7 @@ def _collect_per_index_charges(scheme_txns) -> tuple[dict, dict]:
     """
     stt_for_idx: dict = {}
     stamp_for_idx: dict = {}
+    nav_for_date: dict = {}
     last_sell_idx: int | None = None
     last_buy_idx: int | None = None
     for i, t in enumerate(scheme_txns):
@@ -212,6 +224,8 @@ def _collect_per_index_charges(scheme_txns) -> tuple[dict, dict]:
             last_sell_idx = i
         elif t.type in _BUY_TXNS:
             last_buy_idx = i
+            if t.nav is not None and t.type in (CTxn.PURCHASE, CTxn.PURCHASE_SIP):
+                nav_for_date[t.date] = t.nav
         elif (
             t.type is CTxn.STT_TAX
             and t.amount is not None
@@ -226,7 +240,7 @@ def _collect_per_index_charges(scheme_txns) -> tuple[dict, dict]:
             and scheme_txns[last_buy_idx].date == t.date
         ):
             stamp_for_idx[last_buy_idx] = stamp_for_idx.get(last_buy_idx, _ZERO) + abs(t.amount)
-    return stt_for_idx, stamp_for_idx
+    return stt_for_idx, stamp_for_idx, nav_for_date
 
 
 def _close(a: Decimal | None, b: Decimal | None) -> bool:
@@ -353,11 +367,11 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
                 # Net out REVERSAL rows against the transactions they void before
                 # building the ledger (a reversal isn't a real buy or sell).
                 scheme_txns = _cancel_reversals(scheme.transactions)
-                stt_for_idx, stamp_for_idx = _collect_per_index_charges(scheme_txns)
+                stt_for_idx, stamp_for_idx, nav_for_date = _collect_per_index_charges(scheme_txns)
                 lines = [
                     li
                     for li in (
-                        _map_line(t, i, stt_for_idx=stt_for_idx, stamp_for_idx=stamp_for_idx)
+                        _map_line(t, i, stt_for_idx=stt_for_idx, stamp_for_idx=stamp_for_idx, nav_for_date=nav_for_date)
                         for i, t in enumerate(scheme_txns)
                     )
                     if li is not None
