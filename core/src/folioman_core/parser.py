@@ -46,6 +46,11 @@ class UnsupportedCASTransaction(CASParseError):
 
 
 _ZERO = Decimal("0")
+# A unit-bearing buy with no recoverable NAV is only safe to book at zero cost when
+# it is sub-unit "dust" — an Additional-Allotment / rounding artifact. A material lot
+# (>= this many units) with no NAV would mint a phantom zero-cost lot that overstates
+# capital gains, so it fails loud (the scheme becomes a snapshot) instead.
+_DUST_UNITS = Decimal("1")
 
 _BUY_TXNS = frozenset(
     {
@@ -116,17 +121,33 @@ def _map_line(
         units = units if units is not None else _ZERO
         nav = nav if nav is not None else _ZERO
     else:
-        # Try to infer missing units/nav from amount if possible
+        # Recover a missing unit/NAV from the amount when the other is known
+        # (e.g. a row that carries amount + NAV but no units).
         if units is None and nav is not None and amount_val is not None and nav != _ZERO:
             units = amount_val / nav
         elif nav is None and units is not None and amount_val is not None and units != _ZERO:
             nav = amount_val / units
 
-        # Fall back to same-day NAV or zero-cost if units/NAV are missing
+        # A unit-bearing buy can still arrive with no NAV — e.g. an "Additional
+        # Allotment" / rounding row (issue #80). Price it at the same day's purchase
+        # NAV so the units reconcile against the folio balance with a sensible cost.
+        if nav is None and units is not None:
+            same_day_nav = nav_for_date.get(txn.date)
+            if same_day_nav is not None:
+                nav = same_day_nav
+                if amount_val is None:
+                    amount_val = units * nav
+
+        # Still missing units or NAV. Booking a unit-bearing lot at zero cost is only
+        # safe for sub-unit dust; a material lot with no recoverable NAV would mint a
+        # phantom zero-cost lot that overstates gains, so fail loud (→ snapshot).
         if units is None or nav is None:
-            fallback_nav = nav_for_date.get(txn.date, _ZERO)
-            units = units if units is not None else _ZERO
-            nav = nav if nav is not None else fallback_nav
+            resolved_units = units if units is not None else _ZERO
+            if nav is None and abs(resolved_units) >= _DUST_UNITS:
+                msg = f"{ctype.value!r} row is missing NAV — cannot build a tax lot"
+                raise UnsupportedCASTransaction(msg)
+            units = resolved_units
+            nav = nav if nav is not None else _ZERO
             if amount_val is None:
                 amount_val = units * nav
 
