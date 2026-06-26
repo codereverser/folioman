@@ -371,7 +371,13 @@ def map_cas_data(cas: CASData) -> MfCasStatement:
                 lines = [
                     li
                     for li in (
-                        _map_line(t, i, stt_for_idx=stt_for_idx, stamp_for_idx=stamp_for_idx, nav_for_date=nav_for_date)
+                        _map_line(
+                            t,
+                            i,
+                            stt_for_idx=stt_for_idx,
+                            stamp_for_idx=stamp_for_idx,
+                            nav_for_date=nav_for_date,
+                        )
                         for i, t in enumerate(scheme_txns)
                     )
                     if li is not None
