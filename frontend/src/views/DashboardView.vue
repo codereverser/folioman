@@ -61,10 +61,11 @@ const investorId = computed(() => {
 })
 const investorName = computed(() => roster.investorName(investorId.value) ?? 'Investor')
 
-// Live summary + net-worth series; the range toggle re-fetches the series.
-const { summary, rollup, range, setRange, valuationReady } = useDashboard(investorId)
+// Live summary + the full net-worth series (fetched once); the range toggle just
+// windows it client-side via `valueWindow`, and the chart's slider can free-zoom.
+const { summary, rollup, range, setRange, valueWindow, valuationReady } = useDashboard(investorId)
 
-// Axis tick density follows the range's sampling (see RANGES).
+// Axis tick density follows the active range's sampling (see RANGES).
 const valueGranularity = computed(() => RANGES[range.value].granularity)
 
 // When prices are stale on open, the launch catch-up is already refreshing them in
@@ -326,6 +327,7 @@ function openScheme(securityId: number): void {
           v-else-if="loadCharts"
           :data="summary.valueSeries"
           :granularity="valueGranularity"
+          :window="valueWindow"
         />
         <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
       </article>

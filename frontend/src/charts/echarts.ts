@@ -10,6 +10,7 @@ import {
   LegendComponent,
   GridComponent,
   DatasetComponent,
+  DataZoomComponent,
 } from 'echarts/components'
 
 use([
@@ -21,4 +22,5 @@ use([
   LegendComponent,
   GridComponent,
   DatasetComponent,
+  DataZoomComponent,
 ])

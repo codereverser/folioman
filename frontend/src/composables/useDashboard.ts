@@ -175,12 +175,15 @@ export function useDashboard(investorId: Ref<number>) {
     summaryData.value = data ?? null
   }
 
+  // One fetch of the WHOLE trend at daily granularity. The range buttons + the
+  // chart's zoom slider window it client-side, so the slider's overview always spans
+  // full history and switching ranges needs no network. The chart down-samples
+  // (LTTB) for render: a smoothed overview when zoomed out, finer detail on zoom in.
   async function loadSeries(): Promise<void> {
-    const cfg = RANGES[range.value]
     const { data } = await api.GET('/api/investors/{investor_id}/value-series', {
       params: {
         path: { investor_id: investorId.value },
-        query: { from: cfg.from(), granularity: cfg.granularity },
+        query: { from: RANGES.All.from(), granularity: 'daily' },
       },
     })
     series.value = data?.points ?? []
@@ -234,11 +237,19 @@ export function useDashboard(investorId: Ref<number>) {
     if (!valuationReady.value) startPolling()
   }
 
+  // Range is now a client-side zoom window over the already-fetched full series —
+  // no refetch. `valueWindow` (below) turns it into the chart's zoom bounds.
   function setRange(next: RangeKey): void {
-    if (next === range.value) return
     range.value = next
-    void loadSeries()
   }
+
+  // The [from, to] the chart should zoom to for the active preset; null = full
+  // range (All), i.e. show everything with no window.
+  const valueWindow = computed(() =>
+    range.value === 'All'
+      ? null
+      : { from: RANGES[range.value].from(), to: new Date().toISOString().slice(0, 10) },
+  )
 
   watch(investorId, () => void loadAll(), { immediate: true })
   if (getCurrentScope()) onScopeDispose(stopPolling)
@@ -378,6 +389,7 @@ export function useDashboard(investorId: Ref<number>) {
     loading,
     range,
     setRange,
+    valueWindow,
     reload: loadAll,
     valuationReady,
     valuationStatus,

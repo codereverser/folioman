@@ -4,6 +4,7 @@ import VChart from 'vue-echarts'
 import type { EChartsOption } from 'echarts'
 import '@/charts/echarts' // registers the tree-shaken ECharts modules (side-effect)
 import { useChartTokens } from '@/charts/useChartTokens'
+import { buildDataZoom, DATA_ZOOM_GRID_BOTTOM } from '@/charts/dataZoom'
 import { formatInr, formatDate, formatDayMonth, formatMonthYear } from '@/utils/format'
 
 export interface ValuePoint {
@@ -13,11 +14,37 @@ export interface ValuePoint {
 }
 
 const props = withDefaults(
-  defineProps<{ data: ValuePoint[]; granularity?: 'daily' | 'weekly' | 'monthly' }>(),
-  { granularity: 'monthly' },
+  defineProps<{
+    data: ValuePoint[]
+    granularity?: 'daily' | 'weekly' | 'monthly'
+    // Show the draggable zoom slider (a mini overview to focus any window). On by
+    // default; callers in tight cards can turn it off.
+    zoomable?: boolean
+    // Initial zoom window [from, to] (ISO dates). The slider still shows the full
+    // series; this just sets which portion is in view (e.g. a "1Y" preset). null =
+    // show the whole range.
+    window?: { from: string; to: string } | null
+  }>(),
+  { granularity: 'monthly', zoomable: true, window: null },
 )
 
 const tokens = useChartTokens()
+
+// Translate the [from, to] window into dataZoom start/end percentages over the
+// (full) series, so the main plot opens on that slice while the slider overview
+// still spans everything. A free drag on the slider then takes over from here.
+const zoomBounds = computed<{ start: number; end: number }>(() => {
+  const w = props.window
+  const n = props.data.length
+  if (!w || n === 0) return { start: 0, end: 100 }
+  const span = n - 1 || 1
+  const firstAtOrAfter = props.data.findIndex((d) => d.date >= w.from)
+  const start = firstAtOrAfter < 0 ? 0 : (firstAtOrAfter / span) * 100
+  let lastAtOrBefore = -1
+  for (let i = 0; i < n; i++) if (props.data[i].date <= w.to) lastAtOrBefore = i
+  const end = lastAtOrBefore < 0 ? 100 : (lastAtOrBefore / span) * 100
+  return { start, end: Math.max(end, start) }
+})
 
 // Axis ticks match the sampling: day-level windows read "30 May", multi-year
 // monthly windows read "May 2025". hideOverlap thins whatever doesn't fit.
@@ -55,7 +82,16 @@ const option = computed<EChartsOption>(() => ({
     textStyle: { color: tokens.value.muted },
     data: ['Current value', 'Invested'],
   },
-  grid: { left: 8, right: 8, top: 36, bottom: 8, containLabel: true },
+  grid: {
+    left: 8,
+    right: 8,
+    top: 36,
+    bottom: props.zoomable ? DATA_ZOOM_GRID_BOTTOM : 8,
+    containLabel: true,
+  },
+  dataZoom: props.zoomable
+    ? buildDataZoom(tokens.value).map((z) => ({ ...z, ...zoomBounds.value }))
+    : undefined,
   xAxis: {
     type: 'category',
     boundaryGap: false,
@@ -81,6 +117,9 @@ const option = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       symbol: 'none',
+      // Down-sample the daily series for render: a smoothed line when zoomed out,
+      // finer detail as the zoom window narrows.
+      sampling: 'lttb',
       lineStyle: { width: 2, color: tokens.value.verified },
       itemStyle: { color: tokens.value.verified },
       areaStyle: {
@@ -103,6 +142,7 @@ const option = computed<EChartsOption>(() => ({
       type: 'line',
       smooth: true,
       symbol: 'none',
+      sampling: 'lttb',
       lineStyle: { width: 1.5, type: 'dashed', color: tokens.value.muted },
       itemStyle: { color: tokens.value.muted },
       data: props.data.map((d) => d.invested),
@@ -124,12 +164,16 @@ function color(c: string, alpha: number): string {
 </script>
 
 <template>
-  <VChart class="value-chart" :option="option" autoresize />
+  <VChart class="value-chart" :class="{ 'is-zoomable': zoomable }" :option="option" autoresize />
 </template>
 
 <style scoped>
 .value-chart {
   height: 280px;
   width: 100%;
+}
+/* Taller when the zoom slider is on, so the plot isn't squeezed by it. */
+.value-chart.is-zoomable {
+  height: 320px;
 }
 </style>

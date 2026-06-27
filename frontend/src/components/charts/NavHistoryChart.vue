@@ -4,6 +4,7 @@ import VChart from 'vue-echarts'
 import type { EChartsOption } from 'echarts'
 import '@/charts/echarts' // registers the tree-shaken ECharts modules (side-effect)
 import { useChartTokens } from '@/charts/useChartTokens'
+import { buildDataZoom, DATA_ZOOM_GRID_BOTTOM } from '@/charts/dataZoom'
 
 export interface NavPoint {
   date: string // ISO date
@@ -25,7 +26,16 @@ export interface NavEvent {
   label: string // short action label, e.g. "Split"
 }
 
-const props = defineProps<{ data: NavPoint[]; markers?: NavMarker[]; events?: NavEvent[] }>()
+const props = withDefaults(
+  defineProps<{
+    data: NavPoint[]
+    markers?: NavMarker[]
+    events?: NavEvent[]
+    // Draggable zoom slider for focusing any window of a long price history.
+    zoomable?: boolean
+  }>(),
+  { zoomable: true },
+)
 
 const tokens = useChartTokens()
 
@@ -74,9 +84,10 @@ const option = computed<EChartsOption>(() => {
       left: 8,
       right: 8,
       top: hasOverlay ? 28 : 16,
-      bottom: 8,
+      bottom: props.zoomable ? DATA_ZOOM_GRID_BOTTOM : 8,
       containLabel: true,
     },
+    dataZoom: props.zoomable ? buildDataZoom(tokens.value) : undefined,
     xAxis: {
       type: 'time',
       axisLine: { lineStyle: { color: tokens.value.border } },
@@ -156,12 +167,16 @@ const option = computed<EChartsOption>(() => {
 </script>
 
 <template>
-  <VChart class="nav-chart" :option="option" autoresize />
+  <VChart class="nav-chart" :class="{ 'is-zoomable': zoomable }" :option="option" autoresize />
 </template>
 
 <style scoped>
 .nav-chart {
   height: 260px;
   width: 100%;
+}
+/* Taller when the zoom slider is on, so the plot isn't squeezed by it. */
+.nav-chart.is-zoomable {
+  height: 320px;
 }
 </style>
