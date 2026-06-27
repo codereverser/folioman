@@ -9,7 +9,6 @@ from django.core.management.base import CommandError
 from django.test import Client, override_settings
 from folioman_app.models import (
     AppliedCorporateAction,
-    CorporateActionReference,
     Family,
     Holding,
     Investor,
@@ -23,10 +22,9 @@ from folioman_app.models import (
 
 
 class _StubFeedClients:
-    """Stand-in for the seed's pooled feed clients so --real-navs tests stay
-    offline: no real connections are opened (the mocked backfills ignore the
-    client args anyway, and accessing the real ``.nse`` would warm a live NSE
-    session over the network)."""
+    """Stand-in for the seed's pooled feed clients so tests stay offline: no real
+    connections are opened (the stubbed backfills ignore the client args anyway, and
+    constructing the real pool would warm a live NSE session over the network)."""
 
     mfapi = captnemo = nse = yahoo = None
 
@@ -34,14 +32,43 @@ class _StubFeedClients:
         pass
 
 
-def _stub_corporate_action_feed(monkeypatch):
-    """Keep the equity-trader corporate-action fetch offline in --real-navs tests:
-    no exchange session is warmed and no real actions are fetched (so the seed's
-    auto-apply finds nothing to apply, leaving the as-traded ledger as seeded)."""
-    import folioman_app.tasks.refresh_corporate_actions as rca
+@pytest.fixture(autouse=True)
+def _stub_price_feeds(monkeypatch):
+    """seed_demo prices the whole ledger off the live feeds and has no synthetic
+    fallback, so every test stubs the backfills with a deterministic, monotonically
+    rising real-shaped series. Rising matters: FIFO sells the cheapest early lots, so
+    every disposal realises a gain (what the gains tests assert). Tests that need an
+    empty feed (the fail-loud path) re-patch these to write nothing."""
+    import datetime as dt
+    from decimal import Decimal
 
-    monkeypatch.setattr(rca, "sync_corporate_actions_for_security", lambda *a, **k: 0)
-    monkeypatch.setattr(rca, "_FeedClients", _StubFeedClients)
+    import folioman_app.tasks.refresh_navs as refresh_navs
+
+    def _rising(security, *, since, base, source):
+        rows, d, i = [], since, 0
+        while d <= dt.date.today():
+            nav = (base * (Decimal("1") + Decimal("0.0004") * i)).quantize(Decimal("0.0001"))
+            rows.append(NAVHistory(security=security, date=d, nav=nav, source=source))
+            d += dt.timedelta(days=1)
+            i += 1
+        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
+        return len(rows)
+
+    monkeypatch.setattr(
+        refresh_navs,
+        "backfill_nav_history",
+        lambda security, *, since, **_: _rising(
+            security, since=since, base=Decimal("100"), source="mfapi"
+        ),
+    )
+    monkeypatch.setattr(
+        refresh_navs,
+        "backfill_equity_history",
+        lambda security, *, since, **_: _rising(
+            security, since=since, base=Decimal("250"), source="nse"
+        ),
+    )
+    monkeypatch.setattr(refresh_navs, "_FeedClients", _StubFeedClients)
 
 
 # --- seed_demo -----------------------------------------------------------------
@@ -93,8 +120,10 @@ def test_seed_demo_builds_rich_v1_portfolio():
     assert applied.filter(kind="split").exists()
     assert applied.filter(kind="bonus").exists()
 
-    # NAV history seeded and the day-wise series computed offline → ready, non-empty.
-    assert NAVHistory.objects.filter(source="demo").exists()
+    # NAV history comes from the (stubbed) live feed — no synthetic 'demo' rows — and
+    # the day-wise series is computed off it → ready, non-empty.
+    assert NAVHistory.objects.filter(source__in=["mfapi", "nse"]).exists()
+    assert not NAVHistory.objects.filter(source="demo").exists()
     for inv in investors:
         inv.refresh_from_db()
         assert inv.valuation_status == ValuationStatus.READY
@@ -196,146 +225,48 @@ def test_seed_demo_is_idempotent_without_reset():
 
 
 @pytest.mark.django_db
-def test_seed_demo_real_navs_prices_from_fetched_history(monkeypatch):
-    # --real-navs reuses the app's mfapi feed; mock it to a flat real series so the
-    # test stays offline and we can prove the ledger is priced from fetched NAVs.
-    import datetime as dt
-    from decimal import Decimal
-
-    import folioman_app.tasks.refresh_navs as refresh_navs
-
-    def fake_backfill(security, *, since, **_):
-        rows, d = [], since
-        while d <= dt.date.today():
-            rows.append(NAVHistory(security=security, date=d, nav=Decimal("100"), source="mfapi"))
-            d += dt.timedelta(days=1)
-        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
-        return len(rows)
-
-    def fake_equity_backfill(security, *, since, **_):
-        rows, d = [], since
-        while d <= dt.date.today():
-            rows.append(NAVHistory(security=security, date=d, nav=Decimal("250"), source="nse"))
-            d += dt.timedelta(days=1)
-        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
-        return len(rows)
-
-    monkeypatch.setattr(refresh_navs, "backfill_nav_history", fake_backfill)
-    monkeypatch.setattr(refresh_navs, "backfill_equity_history", fake_equity_backfill)
-    monkeypatch.setattr(refresh_navs, "_FeedClients", _StubFeedClients)
-    _stub_corporate_action_feed(monkeypatch)
-    call_command("seed_demo", username="demo", real_navs=True)
+def test_seed_demo_prices_ledger_from_feed():
+    # Every buy is priced off the fetched NAV series — never a synthetic curve.
+    call_command("seed_demo", username="demo")
 
     mf = Investor.objects.get(owned_by__username="demo", name="Arjun Sharma")
+    fund = Security.objects.filter(security_type="mf").first()
+    series = set(
+        NAVHistory.objects.filter(security=fund, source="mfapi").values_list("nav", flat=True)
+    )
     buy_navs = {
-        t.nav_or_price for t in Transaction.objects.filter(investor=mf, transaction_type="buy")
+        t.nav_or_price
+        for t in Transaction.objects.filter(investor=mf, security=fund, transaction_type="buy")
     }
-    assert buy_navs == {Decimal("100")}  # every buy priced off the fetched series
-    # MF history is the fetched (mfapi) series — no synthetic 'demo' rows for funds.
-    assert NAVHistory.objects.filter(security__security_type="mf", source="mfapi").exists()
-    assert not NAVHistory.objects.filter(security__security_type="mf", source="demo").exists()
+    assert buy_navs and buy_navs <= series  # each buy reads a real fetched NAV
+    assert not NAVHistory.objects.filter(source="demo").exists()  # no synthetic rows
 
 
 @pytest.mark.django_db
-def test_real_navs_reseed_clears_stale_synthetic_navs(monkeypatch):
-    # The bug: --reset keeps the global NAVHistory and backfill only fills *missing*
-    # dates, so a synthetic seed's weekly 'demo' NAVs survived a later --real-navs
-    # reseed and showed up as a sawtooth among the real daily NAVs. Re-seeding must
-    # clear the stale synthetic points so only the real series remains.
-    import datetime as dt
-    from decimal import Decimal
-
+def test_seed_demo_fails_loudly_when_feed_empty(monkeypatch):
+    # No synthetic fallback: if a feed yields no history, the command must error
+    # rather than fabricate prices. Re-patch the (autouse-stubbed) backfills to no-ops.
     import folioman_app.tasks.refresh_navs as refresh_navs
 
-    call_command("seed_demo", username="demo")  # synthetic first → writes 'demo' rows
-    assert NAVHistory.objects.filter(security__security_type="mf", source="demo").exists()
+    monkeypatch.setattr(refresh_navs, "backfill_nav_history", lambda *a, **k: 0)
+    monkeypatch.setattr(refresh_navs, "backfill_equity_history", lambda *a, **k: 0)
 
-    def fake_backfill(security, *, since, **_):
-        rows, d = [], since
-        while d <= dt.date.today():
-            rows.append(NAVHistory(security=security, date=d, nav=Decimal("100"), source="mfapi"))
-            d += dt.timedelta(days=1)
-        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
-        return len(rows)
-
-    def fake_equity_backfill(security, *, since, **_):
-        rows, d = [], since
-        while d <= dt.date.today():
-            rows.append(NAVHistory(security=security, date=d, nav=Decimal("250"), source="nse"))
-            d += dt.timedelta(days=1)
-        NAVHistory.objects.bulk_create(rows, ignore_conflicts=True)
-        return len(rows)
-
-    monkeypatch.setattr(refresh_navs, "backfill_nav_history", fake_backfill)
-    monkeypatch.setattr(refresh_navs, "backfill_equity_history", fake_equity_backfill)
-    monkeypatch.setattr(refresh_navs, "_FeedClients", _StubFeedClients)
-    _stub_corporate_action_feed(monkeypatch)
-    call_command("seed_demo", username="demo", reset=True, real_navs=True)
-
-    mf_navs = NAVHistory.objects.filter(security__security_type="mf")
-    assert not mf_navs.filter(source="demo").exists()  # no stale synthetic left
-    assert {n.nav for n in mf_navs} == {Decimal("100")}  # only the real series remains
+    with pytest.raises(CommandError, match="No NAV/price history"):
+        call_command("seed_demo", username="demo")
 
 
 @pytest.mark.django_db
-def test_real_navs_applies_fetched_corporate_actions(monkeypatch):
-    # With --real-navs the seed fetches each stock's real corporate actions and
-    # auto-applies the scaling events server-side (no API write). Mock the feed to
-    # return a 1:10 TATASTEEL split and prove the seed applies it and the holding
-    # reflects it — the as-traded buys/sells stay fictional, the action is "real".
-    import datetime as dt
+def test_seed_demo_applies_curated_split():
+    # The curated TATASTEEL 1:10 split scales units (50*10 + 100 - 100 = 500) while
+    # prices come from the feed — units and the real price drop never double-count.
     from decimal import Decimal
 
-    import folioman_app.tasks.refresh_corporate_actions as rca
-    import folioman_app.tasks.refresh_navs as refresh_navs
-
-    def fake_nav(security, *, since, **_):
-        NAVHistory.objects.bulk_create(
-            [NAVHistory(security=security, date=since, nav=Decimal("100"), source="mfapi")],
-            ignore_conflicts=True,
-        )
-        return 1
-
-    def fake_equity(security, *, since, **_):
-        NAVHistory.objects.bulk_create(
-            [NAVHistory(security=security, date=since, nav=Decimal("250"), source="nse")],
-            ignore_conflicts=True,
-        )
-        return 1
-
-    def fake_sync(security, **_):
-        # The feed reports TATASTEEL's real 1:10 face-value split.
-        if security.symbol == "TATASTEEL":
-            CorporateActionReference.objects.update_or_create(
-                isin=security.isin,
-                ex_date=dt.date(2022, 7, 28),
-                subject="Face Value Split From Rs.10 To Re.1",
-                exchange="NSE",
-                defaults={
-                    "security": security,
-                    "symbol": "TATASTEEL",
-                    "parsed_type": "split",
-                    "unit_multiplier": Decimal("10"),
-                    "needs_review": False,
-                    "source": "nse",
-                },
-            )
-            return 1
-        return 0
-
-    monkeypatch.setattr(refresh_navs, "backfill_nav_history", fake_nav)
-    monkeypatch.setattr(refresh_navs, "backfill_equity_history", fake_equity)
-    monkeypatch.setattr(refresh_navs, "_FeedClients", _StubFeedClients)
-    monkeypatch.setattr(rca, "sync_corporate_actions_for_security", fake_sync)
-    monkeypatch.setattr(rca, "_FeedClients", _StubFeedClients)
-    call_command("seed_demo", username="demo", real_navs=True)
+    call_command("seed_demo", username="demo")
 
     trader = Investor.objects.get(owned_by__username="demo", name="Rohan Sharma")
     tata = Security.objects.get(symbol="TATASTEEL")
-    # The fetched split was applied (not hand-seeded — note source_ref is the feed's).
     applied = AppliedCorporateAction.objects.get(investor=trader, security=tata, kind="split")
     assert applied.unit_multiplier == Decimal("10")
-    # 50 (pre-split) * 10 + 100 (post-split) - 100 (sold) = 500, and the snapshot agrees.
     assert Holding.objects.get(investor=trader, security=tata).units == 500
 
 
