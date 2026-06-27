@@ -35,7 +35,7 @@ const { readOnly } = useWriteLock()
 
 onMounted(() => void roster.ensureLoaded())
 
-type Step = 'pick' | 'map' | 'result'
+type Step = 'pick' | 'account' | 'map' | 'result'
 const step = ref<Step>('pick')
 const busy = ref(false)
 const errorMessage = ref('')
@@ -129,13 +129,18 @@ const canParse = computed(
   () => investorId.value != null && loadedFiles.value.length > 0 && !parsing.value,
 )
 
-function toMapping(): void {
+// Files chosen → ask which demat account this tradebook is for (its own step, so
+// the choice isn't missed), then column mapping.
+function toAccount(): void {
   mapping.value = autoDetectMapping(headers.value)
   void loadFolios()
-  step.value = 'map'
+  step.value = 'account'
+}
+function toMap(): void {
+  if (accountErrors.value.length === 0) step.value = 'map'
 }
 
-// --- step 2: column mapping + demat account ---------------------------------
+// --- steps 2 & 3: demat account + column mapping ----------------------------
 const mapping = ref<Mapping>({})
 // "— skip —" plus each file header, for the per-field dropdown.
 const headerOptions = computed(() => [
@@ -407,21 +412,19 @@ watch(investorId, () => {
 
       <div class="actions">
         <Button
-          label="Map columns"
+          label="Continue"
           icon="pi pi-arrow-right"
           icon-pos="right"
           :disabled="!canParse || readOnly"
-          @click="toMapping"
+          @click="toAccount"
         />
       </div>
     </div>
 
-    <!-- Step 2: map columns + demat account -->
-    <div v-else-if="step === 'map'" class="card">
-      <!-- Demat account first: which account this tradebook belongs to drives the
-           reconcile, so it's decided up front — pick an imported one (no typing) or
-           enter DP ID + Client ID. -->
-      <h2 class="step-title">Demat account</h2>
+    <!-- Step 2: demat account — decided on its own so it can't be missed; it drives
+         the reconcile against eCAS holdings. -->
+    <div v-else-if="step === 'account'" class="card">
+      <h2 class="step-title">Which demat account?</h2>
       <p class="muted small">
         Which demat account is this tradebook for? Matching the real account lets it reconcile
         against your eCAS holdings.
@@ -488,6 +491,26 @@ watch(investorId, () => {
         <Message v-if="dematWarning" severity="warn" :closable="false">{{ dematWarning }}</Message>
       </template>
 
+      <Message v-if="accountErrors.length" severity="warn" :closable="false">
+        <ul class="err-list">
+          <li v-for="e in accountErrors" :key="e">{{ e }}</li>
+        </ul>
+      </Message>
+
+      <div class="actions">
+        <Button label="Back" severity="secondary" outlined @click="step = 'pick'" />
+        <Button
+          label="Map columns"
+          icon="pi pi-arrow-right"
+          icon-pos="right"
+          :disabled="accountErrors.length > 0 || readOnly"
+          @click="toMap"
+        />
+      </div>
+    </div>
+
+    <!-- Step 3: map columns -->
+    <div v-else-if="step === 'map'" class="card">
       <h2 class="step-title">Map your columns</h2>
       <p class="muted small">
         We matched what we could — fix anything that’s off. Required fields are marked
@@ -537,7 +560,13 @@ watch(investorId, () => {
       <Message v-if="errorMessage" severity="error" :closable="false">{{ errorMessage }}</Message>
 
       <div class="actions">
-        <Button label="Back" severity="secondary" outlined :disabled="busy" @click="reset" />
+        <Button
+          label="Back"
+          severity="secondary"
+          outlined
+          :disabled="busy"
+          @click="step = 'account'"
+        />
         <Button
           label="Import"
           icon="pi pi-upload"
@@ -548,7 +577,7 @@ watch(investorId, () => {
       </div>
     </div>
 
-    <!-- Step 3: result -->
+    <!-- Step 4: result -->
     <div v-else class="card">
       <Message v-if="job?.status === 'failed'" severity="error" :closable="false">
         {{ job?.error }}

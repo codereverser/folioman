@@ -20,6 +20,8 @@ interface NavLink {
   icon: string
   to: RouteLocationRaw
   badge?: number
+  /** Pinned to the bottom of the rail, below a spacer (Import / Integrity / Settings). */
+  footer?: boolean
 }
 
 const ui = useUiStore()
@@ -48,24 +50,15 @@ watch(
 
 // Nav matches the page list; scoped links appear once a scope is selected.
 const navLinks = computed<NavLink[]>(() => {
-  // Import is always available (the primary way to onboard an investor); the hub
-  // routes to each source — CAS/eCAS PDF, stock tradebook, …
-  const links: NavLink[] = [
-    { label: 'Investors', icon: 'pi pi-users', to: { name: 'investors' } },
-    { label: 'Import', icon: 'pi pi-download', to: { name: 'import' } },
-  ]
+  // Top group: the day-to-day views. Footer group (Import / Integrity / Settings)
+  // is pinned to the bottom of the rail via a spacer.
+  const links: NavLink[] = [{ label: 'Investors', icon: 'pi pi-users', to: { name: 'investors' } }]
   if (ui.selectedInvestorId !== null) {
     const investorId = ui.selectedInvestorId
     links.push({
       label: 'Dashboard',
       icon: 'pi pi-chart-line',
       to: { name: 'dashboard', params: { investorId } },
-    })
-    links.push({
-      label: 'Integrity',
-      icon: 'pi pi-verified',
-      to: { name: 'integrity', params: { investorId } },
-      badge: attentionCount.value || undefined,
     })
     links.push({
       label: 'Capital Gains',
@@ -80,9 +73,23 @@ const navLinks = computed<NavLink[]>(() => {
       to: { name: 'family', params: { familyId: ui.selectedFamilyId } },
     })
   }
-  links.push({ label: 'Settings', icon: 'pi pi-cog', to: { name: 'settings' } })
+  // Footer (pinned bottom): Import is always available; Integrity is scoped.
+  links.push({ label: 'Import', icon: 'pi pi-download', to: { name: 'import' }, footer: true })
+  if (ui.selectedInvestorId !== null) {
+    links.push({
+      label: 'Integrity',
+      icon: 'pi pi-verified',
+      to: { name: 'integrity', params: { investorId: ui.selectedInvestorId } },
+      badge: attentionCount.value || undefined,
+      footer: true,
+    })
+  }
+  links.push({ label: 'Settings', icon: 'pi pi-cog', to: { name: 'settings' }, footer: true })
   return links
 })
+
+const topLinks = computed(() => navLinks.value.filter((l) => !l.footer))
+const footerLinks = computed(() => navLinks.value.filter((l) => l.footer))
 
 // Mobile bottom tab bar: primary destinations only. Import is desktop-only; any
 // other link (e.g. nothing extra today) is reachable via the scope switcher.
@@ -164,7 +171,22 @@ onBeforeUnmount(() => {
       </div>
       <nav class="side-nav">
         <RouterLink
-          v-for="link in navLinks"
+          v-for="link in topLinks"
+          :key="link.label"
+          v-tooltip.right="railTooltip(link.label)"
+          :to="link.to"
+          class="nav-link"
+          active-class="is-active"
+        >
+          <i :class="link.icon" />
+          <span class="nav-label">{{ link.label }}</span>
+          <span v-if="link.badge" class="nav-badge" :title="`${link.badge} need attention`">{{
+            link.badge
+          }}</span>
+        </RouterLink>
+        <span class="nav-spacer" aria-hidden="true" />
+        <RouterLink
+          v-for="link in footerLinks"
           :key="link.label"
           v-tooltip.right="railTooltip(link.label)"
           :to="link.to"
@@ -282,6 +304,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  /* Full-height, pinned rail so the footer links (Import / Integrity / Settings)
+     sit at the bottom regardless of page content height. */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   /* Keep the nav column from setting a min-content floor on the grid track —
      without this the single-column mobile shell can't shrink to the viewport and
      the page scrolls sideways. */
@@ -300,6 +328,15 @@ nav {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+/* Fill the rail so the spacer can pin the footer links (Import / Integrity /
+   Settings) to the bottom. */
+.side-nav {
+  flex: 1 1 auto;
+}
+.nav-spacer {
+  flex: 1 1 auto;
+  min-height: 0.5rem;
 }
 
 .nav-link {
@@ -564,6 +601,10 @@ nav {
     border-right: none;
     border-bottom: 1px solid var(--fm-border-subtle);
     padding: var(--fm-space-3) var(--fm-space-4);
+    /* Back to a normal top bar on mobile (the desktop full-height rail is undone). */
+    position: static;
+    height: auto;
+    overflow: visible;
   }
 
   /* The sidebar link list moves to the bottom tab bar on mobile; the

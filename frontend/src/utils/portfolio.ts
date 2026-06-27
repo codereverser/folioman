@@ -10,19 +10,28 @@ export function num(v: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0
 }
 
-// Display label + a fixed colour per security type. MF is the common case; the
-// rest get distinct asset-class colours so a mixed portfolio reads clearly.
-export const ASSET_META: Record<string, { label: string; color: string }> = {
-  mf: { label: 'Mutual funds', color: 'var(--fm-asset-equity)' },
-  equity: { label: 'Stocks', color: 'var(--fm-asset-intl)' },
-  etf: { label: 'ETFs', color: 'var(--fm-asset-gold)' },
-  bond: { label: 'Bonds', color: 'var(--fm-asset-debt)' },
-  fd: { label: 'Fixed deposits', color: 'var(--fm-asset-cash)' },
-  crypto: { label: 'Crypto', color: 'var(--fm-asset-crypto)' },
-  foreign_equity: { label: 'International', color: 'var(--fm-asset-realestate)' },
+// Display label, a fixed colour, and a quantity noun per security type. MF is the
+// common case; the rest get distinct asset-class colours so a mixed portfolio reads
+// clearly. `unit` labels a holding's quantity in lists (units / shares / coins / …).
+export const ASSET_META: Record<string, { label: string; color: string; unit: string }> = {
+  mf: { label: 'Mutual funds', color: 'var(--fm-asset-equity)', unit: 'units' },
+  equity: { label: 'Stocks', color: 'var(--fm-asset-intl)', unit: 'shares' },
+  etf: { label: 'ETFs', color: 'var(--fm-asset-gold)', unit: 'units' },
+  bond: { label: 'Bonds', color: 'var(--fm-asset-debt)', unit: 'units' },
+  fd: { label: 'Fixed deposits', color: 'var(--fm-asset-cash)', unit: '' },
+  crypto: { label: 'Crypto', color: 'var(--fm-asset-crypto)', unit: 'coins' },
+  foreign_equity: { label: 'International', color: 'var(--fm-asset-realestate)', unit: 'shares' },
 }
 export function assetLabel(securityType: string): string {
   return ASSET_META[securityType]?.label ?? securityType
+}
+/** Asset-class swatch colour for a security type; neutral when unknown. */
+export function assetColor(securityType: string): string {
+  return ASSET_META[securityType]?.color ?? 'var(--fm-asset-cash)'
+}
+/** Quantity noun (units / shares / coins …) for a security type; '' when n/a. */
+export function assetUnit(securityType: string): string {
+  return ASSET_META[securityType]?.unit ?? 'units'
 }
 
 // Equity vs Debt slices reuse the semantic asset-class colours (equity = brand

@@ -12,6 +12,7 @@ const POLL_MAX_TICKS = 120 // ~10 min cap
 import {
   ASSET_META,
   RANGES,
+  assetColor,
   assetLabel,
   categoryColor,
   num,
@@ -25,32 +26,32 @@ export type { RangeKey }
 export interface HoldingRow {
   securityId: number
   name: string
-  assetClass: string
+  securityType: string // 'mf' | 'equity' | 'etf' | … — the asset-class grouping key
+  assetClass: string // display label for securityType (Mutual funds, Stocks, …)
+  color: string // asset-class swatch colour (var(--fm-asset-*))
   value: number
   units: number
+  invested: number | null // cost basis in ₹; null when unknown (eCAS snapshot)
+  gain: number | null // value − invested, in ₹; null when cost basis is unknown
   returnPct: number | null // percent; null when cost basis is unknown
   integrity: IntegrityStatus
 }
 
 // A stock on the Stocks tab: a holding plus its ticker, current/average price,
-// 1-day move, and absolute ₹ gain. Mirrors FundRow but framed for equities
-// (price instead of NAV, no AMC/category grouping).
+// 1-day move. Mirrors FundRow but framed for equities (price instead of NAV).
 export interface StockRow extends HoldingRow {
   symbol: string // exchange ticker (e.g. RELIANCE); falls back to name when empty
   price: number | null // current price the shares are valued at (latest close)
   avgCost: number | null // average cost per share = invested / units
-  gain: number | null // value − invested, in ₹; null when cost basis is unknown
   dayChangeAmount: number | null // 1-day INR change for this holding
   dayChangePercent: number | null // 1-day % move
 }
 
-// A fund on the MF breakdown page: a holding plus its grouping keys, XIRR, and
-// absolute ₹ contribution (for the "contribution to returns" strip).
+// A fund on the MF breakdown page: a holding plus its grouping keys and XIRR.
 export interface FundRow extends HoldingRow {
   amc: string
   category: string
   xirr: number | null // percent; null when not computable
-  gain: number | null // value − invested, in ₹; null when cost basis is unknown
   // Per-scheme secondary-line details (NAV / Avg cost-per-unit / 1-day move).
   nav: number | null // current NAV the units are valued at
   avgNav: number | null // average cost per unit = invested / units
@@ -78,6 +79,8 @@ export interface DashboardSummary {
   allocationByCategory: AllocationSlice[] // equity vs debt
   allocationByAmc: AllocationSlice[] // by fund house
   valueSeries: ValuePoint[]
+  // Every priced holding, mapped for the asset-class summary + the asset-class page.
+  holdings: HoldingRow[]
   topHoldings: HoldingRow[]
   funds: FundRow[] // priced mutual funds only, for the MF breakdown's grouped list
   // MF-only allocation for the "Mutual funds" tab (excludes stocks/other assets,
@@ -107,6 +110,7 @@ const EMPTY: DashboardSummary = {
   allocationByCategory: [],
   allocationByAmc: [],
   valueSeries: [],
+  holdings: [],
   topHoldings: [],
   funds: [],
   mfByCategory: [],
@@ -318,23 +322,45 @@ export function useDashboard(investorId: Ref<number>) {
       // into a neutral "Others" slice (backend already orders buckets value-desc).
       allocationByAmc: toSlices(s.amc_mix ?? [], (_label, i) => rampColor(i), 6, shortAmc),
       valueSeries: valueSeries.value,
+      // Every priced holding → the asset-class summary on the dashboard and the
+      // per-security list on the asset-class page. Carries cost basis for class sums.
+      holdings: (s.holdings ?? []).map<HoldingRow>((h) => ({
+        securityId: h.security_id,
+        name: h.name,
+        securityType: h.security_type,
+        assetClass: assetLabel(h.security_type),
+        color: assetColor(h.security_type),
+        value: num(h.value_inr),
+        units: num(h.units),
+        invested: h.invested_inr == null ? null : num(h.invested_inr),
+        gain: h.invested_inr == null ? null : num(h.value_inr) - num(h.invested_inr),
+        returnPct: h.return_pct == null ? null : h.return_pct * 100,
+        integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
+      })),
       topHoldings: (s.top_holdings ?? []).map<HoldingRow>((h) => ({
         securityId: h.security_id,
         name: h.name,
+        securityType: h.security_type,
         assetClass: assetLabel(h.security_type),
+        color: assetColor(h.security_type),
         value: num(h.value_inr),
         units: num(h.units),
+        invested: null,
+        gain: null,
         returnPct: h.return_pct == null ? null : h.return_pct * 100,
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
       funds: mfHoldings.map<FundRow>((h) => ({
         securityId: h.security_id,
         name: h.name,
+        securityType: h.security_type,
         assetClass: assetLabel(h.security_type),
+        color: assetColor(h.security_type),
         amc: shortAmc(h.amc || 'Other'),
         category: h.category || 'Other',
         value: num(h.value_inr),
         units: num(h.units),
+        invested: h.invested_inr == null ? null : num(h.invested_inr),
         returnPct: h.return_pct == null ? null : h.return_pct * 100,
         xirr: h.xirr == null ? null : h.xirr * 100,
         gain: h.invested_inr == null ? null : num(h.value_inr) - num(h.invested_inr),
@@ -362,9 +388,12 @@ export function useDashboard(investorId: Ref<number>) {
           securityId: h.security_id,
           name: h.name,
           symbol: h.symbol || '',
+          securityType: h.security_type,
           assetClass: assetLabel(h.security_type),
+          color: assetColor(h.security_type),
           units: num(h.units),
           value: num(h.value_inr),
+          invested: h.invested_inr == null ? null : num(h.invested_inr),
           price: h.latest_nav == null ? null : num(h.latest_nav),
           avgCost:
             h.invested_inr == null || num(h.units) === 0

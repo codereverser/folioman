@@ -92,13 +92,22 @@ const routes: RouteRecordRaw[] = [
     redirect: (to) => ({ name: 'dashboard', params: { investorId: to.params.investorId } }),
   },
   {
-    // Optional asset-class tab in the path so each is deep-linkable: no segment =
-    // All (cross-asset), `/mf` = the mutual-fund breakdown. The `(mf)` constraint
-    // keeps the `dashboard` route name working for plain `{investorId}` links and
-    // rejects unknown asset segments. Future asset classes widen the pattern.
-    path: '/investors/:investorId/dashboard/:assetTab(mf|stocks)?',
+    path: '/investors/:investorId/dashboard',
     name: 'dashboard',
     component: DashboardView,
+  },
+  {
+    // Drill-down from the dashboard's asset-class rows: a class-scoped view (its
+    // value trend, composition, and the securities inside it). `assetType` is a
+    // security_type (mf, equity, etf, …).
+    path: '/investors/:investorId/assets/:assetType',
+    name: 'asset-class',
+    component: () => import('@/views/dashboard/AssetClassView.vue'),
+  },
+  {
+    // Old asset-class tab links (/dashboard/mf|stocks) → the dashboard overview.
+    path: '/investors/:investorId/dashboard/:assetTab(mf|stocks)',
+    redirect: (to) => ({ name: 'dashboard', params: { investorId: to.params.investorId } }),
   },
   {
     path: '/investors/:investorId/schemes/:securityId',

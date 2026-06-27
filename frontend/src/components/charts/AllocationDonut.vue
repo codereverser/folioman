@@ -17,6 +17,8 @@ const props = defineProps<{
   data: AllocationSlice[]
   /** Center label, e.g. total net worth. */
   centerLabel?: string
+  /** Hide the built-in legend (when the caller renders its own, e.g. a side list). */
+  hideLegend?: boolean
 }>()
 
 const emit = defineEmits<{ (e: 'slice', name: string): void }>()
@@ -48,22 +50,24 @@ const option = computed<EChartsOption>(() => ({
     textStyle: { color: tokens.value.text },
     valueFormatter: (v) => formatInr(v as number),
   },
-  legend: {
-    bottom: 0,
-    // One scrollable row so a long tail of slices (e.g. many AMCs) never wraps up
-    // over the ring / center label; ‹ › page through the rest.
-    type: 'scroll',
-    icon: 'circle',
-    textStyle: { color: tokens.value.muted },
-    pageIconColor: tokens.value.muted,
-    pageIconInactiveColor: tokens.value.border,
-    pageTextStyle: { color: tokens.value.muted },
-  },
+  legend: props.hideLegend
+    ? undefined
+    : {
+        bottom: 0,
+        // One scrollable row so a long tail of slices (e.g. many AMCs) never wraps up
+        // over the ring / center label; ‹ › page through the rest.
+        type: 'scroll',
+        icon: 'circle',
+        textStyle: { color: tokens.value.muted },
+        pageIconColor: tokens.value.muted,
+        pageIconInactiveColor: tokens.value.border,
+        pageTextStyle: { color: tokens.value.muted },
+      },
   series: [
     {
       type: 'pie',
       radius: ['58%', '82%'],
-      center: ['50%', '46%'],
+      center: ['50%', props.hideLegend ? '50%' : '46%'],
       padAngle: 2,
       itemStyle: { borderRadius: 4, borderColor: tokens.value.surface, borderWidth: 2 },
       label: { show: false },
@@ -88,7 +92,7 @@ function onClick(params: { name?: string }): void {
 <template>
   <div class="donut-wrap">
     <VChart class="donut" :option="option" autoresize @click="onClick" />
-    <div v-if="centerLabel" class="center" aria-hidden="true">
+    <div v-if="centerLabel" class="center" :class="{ centered: hideLegend }" aria-hidden="true">
       <span class="center-label">Total</span>
       <span class="center-value">{{ centerLabel }}</span>
     </div>
@@ -109,6 +113,9 @@ function onClick(params: { name?: string }): void {
   top: 44%;
   left: 50%;
   transform: translate(-50%, -50%);
+}
+.center.centered {
+  top: 50%;
   display: flex;
   flex-direction: column;
   align-items: center;

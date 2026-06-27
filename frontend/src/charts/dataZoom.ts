@@ -24,7 +24,10 @@ export const DATA_ZOOM_GRID_BOTTOM = 56
  */
 export function buildDataZoom(t: ChartTokens): DataZoomComponentOption[] {
   return [
-    { type: 'inside', throttle: 50 },
+    // Drag-to-pan inside the plot, but never grab the mouse wheel — otherwise
+    // scrolling the page locks into the chart and zooms instead. Zoom is via the
+    // slider handles (and pinch on touch).
+    { type: 'inside', throttle: 50, zoomOnMouseWheel: false, moveOnMouseWheel: false },
     {
       type: 'slider',
       height: 26,

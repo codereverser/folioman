@@ -1,20 +1,15 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, toRef, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import Column from 'primevue/column'
-import DataTable from 'primevue/datatable'
-import Popover from 'primevue/popover'
+import { useRoute } from 'vue-router'
 import IntegrityHealthCard from '@/components/IntegrityHealthCard.vue'
-import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
-import DashboardFunds from '@/views/dashboard/DashboardFunds.vue'
-import DashboardStocks from '@/views/dashboard/DashboardStocks.vue'
+import AssetClassSummary from '@/views/dashboard/AssetClassSummary.vue'
 import { useDashboard, type RangeKey } from '@/composables/useDashboard'
 import { RANGES } from '@/utils/portfolio'
 import { useCountUp } from '@/composables/useCountUp'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
-import { formatInr, formatInrCompact, formatUnits } from '@/utils/format'
+import { formatInr, formatInrCompact } from '@/utils/format'
 
 const AllocationDonut = defineAsyncComponent(
   () => import('@/components/charts/AllocationDonut.vue'),
@@ -25,7 +20,6 @@ const PortfolioValueChart = defineAsyncComponent(
 const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
 const route = useRoute()
-const router = useRouter()
 const roster = useRosterStore()
 const ui = useUiStore()
 const loadCharts = ref(false)
@@ -63,7 +57,8 @@ const investorName = computed(() => roster.investorName(investorId.value) ?? 'In
 
 // Live summary + the full net-worth series (fetched once); the range toggle just
 // windows it client-side via `valueWindow`, and the chart's slider can free-zoom.
-const { summary, rollup, range, setRange, valueWindow, valuationReady } = useDashboard(investorId)
+const { summary, rollup, range, setRange, valueWindow, valuationReady, loading } =
+  useDashboard(investorId)
 
 // Axis tick density follows the active range's sampling (see RANGES).
 const valueGranularity = computed(() => RANGES[range.value].granularity)
@@ -91,75 +86,50 @@ const ranges: { label: string; value: RangeKey }[] = [
   { label: 'All', value: 'All' },
 ]
 
-// Hero: net worth counts up; the all-time return % switches between the simple
-// absolute return and XIRR (money-weighted annualized, the headline default).
-// (No CAGR: it assumes a single lump sum and a known holding period — wrong for a
-// multi-cashflow SIP portfolio, where XIRR is the correct annualized figure.)
+// Hero net worth counts up. XIRR is the money-weighted annualized headline (no CAGR:
+// it assumes a single lump sum, wrong for a multi-cashflow SIP portfolio).
 const heroNetWorth = useCountUp(toRef(() => summary.value.netWorth))
 
-// Main-dashboard allocation: the *asset-allocation* question (asset class →
-// equity/debt). Fund-house (AMC) concentration is a fund-level lens and lives on
-// the Mutual funds tab, reachable via the "View fund breakdown" link. Defaults to
-// Equity/Debt because the asset-class view is a single "Mutual funds" slice until
-// multi-asset import lands.
+// Period change shown under the number, tied to the selected chart range — the
+// value gained/lost from the window's start to now (price move, not cash flow).
+const RANGE_LABEL: Record<RangeKey, string> = {
+  '1M': 'past month',
+  '3M': 'past 3 months',
+  '6M': 'past 6 months',
+  '1Y': 'past year',
+  '3Y': 'past 3 years',
+  '5Y': 'past 5 years',
+  All: 'all time',
+}
+const rangeLabel = computed(() => RANGE_LABEL[range.value])
+const periodReturn = computed<{ amount: number; pct: number } | null>(() => {
+  const pts = summary.value.valueSeries
+  if (pts.length < 2) return null
+  const from = valueWindow.value?.from
+  const inWindow = from ? pts.filter((p) => p.date >= from) : pts
+  // First point with real value in the window (skip leading all-zero pre-holding days).
+  const startPt = inWindow.find((p) => p.current > 0) ?? inWindow[0]
+  const start = startPt?.current ?? 0
+  const end = pts[pts.length - 1].current
+  if (!start) return null
+  return { amount: end - start, pct: ((end - start) / start) * 100 }
+})
+
+// Allocation: defaults to Asset class (the multi-asset overview); the toggle drills
+// into Equity/Debt. AMC concentration is a fund lens deferred to the Insights view.
 type AllocationGroup = 'asset' | 'category'
 const allocationGroups: { label: string; value: AllocationGroup }[] = [
   { label: 'Asset class', value: 'asset' },
   { label: 'Equity/Debt', value: 'category' },
 ]
-const allocationGroup = ref<AllocationGroup>('category')
+const allocationGroup = ref<AllocationGroup>('asset')
 const allocationData = computed(() =>
   allocationGroup.value === 'asset' ? summary.value.allocation : summary.value.allocationByCategory,
 )
-
-// Asset-class tab from the route (deep-linkable): no segment = All, `/mf` = MF.
-const activeTab = computed<'all' | 'mf' | 'stocks'>(() => {
-  if (route.params.assetTab === 'mf') return 'mf'
-  if (route.params.assetTab === 'stocks') return 'stocks'
-  return 'all'
-})
-
-// "More" tab → a popover listing planned asset classes + a link to vote on what's
-// next (a GitHub Discussions poll). Keeps the tab strip tidy and frames these as
-// "planned · vote" rather than promising delivery.
-const POLL_URL = 'https://github.com/codereverser/folioman/discussions/52'
-const plannedAssets: { label: string; icon: string }[] = [
-  { label: 'US stocks', icon: 'pi pi-globe' },
-  { label: 'Gold', icon: 'pi pi-star' },
-  { label: 'Crypto', icon: 'pi pi-bitcoin' },
-  { label: 'Fixed deposits', icon: 'pi pi-wallet' },
-  { label: 'Real estate', icon: 'pi pi-home' },
-]
-const moreOp = ref<InstanceType<typeof Popover>>()
-function tabTo(asset?: 'mf' | 'stocks') {
-  return {
-    name: 'dashboard',
-    params: { investorId: investorId.value, ...(asset ? { assetTab: asset } : {}) },
-  }
-}
-
-// Contribution to returns: which funds added (or shed) the most rupees. Purely
-// descriptive — no ranking-as-advice.
-const topContributors = computed(() =>
-  summary.value.funds
-    .filter((f) => f.gain !== null && f.gain > 0)
-    .sort((a, b) => (b.gain ?? 0) - (a.gain ?? 0))
-    .slice(0, 5),
-)
-const detractors = computed(() =>
-  summary.value.funds
-    .filter((f) => f.gain !== null && f.gain < 0)
-    .sort((a, b) => (a.gain ?? 0) - (b.gain ?? 0))
-    .slice(0, 3),
-)
-
-function openScheme(securityId: number): void {
-  void router.push({ name: 'scheme-detail', params: { investorId: investorId.value, securityId } })
-}
 </script>
 
 <template>
-  <section class="dashboard">
+  <section class="dashboard" :class="{ 'is-loading': loading }">
     <header class="page-head">
       <div>
         <h1>Dashboard</h1>
@@ -179,96 +149,105 @@ function openScheme(securityId: number): void {
       </div>
     </header>
 
-    <div class="bento">
-      <header class="hero span-8 card">
+    <!-- Hero: net worth + the value-over-time chart as the main card. -->
+    <article ref="chartRegion" class="card hero">
+      <div class="hero-head">
         <div class="hero-net">
           <p class="eyebrow">Net worth</p>
           <p class="hero-value">{{ formatInrCompact(heroNetWorth) }}</p>
           <p class="hero-exact">{{ formatInr(summary.netWorth) }}</p>
-          <p class="hero-invested">Invested {{ formatInrCompact(summary.invested) }}</p>
-        </div>
-        <div class="hero-kpis">
-          <div class="kpi">
-            <span class="eyebrow">All-time return</span>
+          <p v-if="periodReturn" class="hero-period">
             <DeltaChip
-              :amount="summary.totalReturnAmount"
-              :percent="summary.totalReturnPercent ?? undefined"
-              :value="summary.totalReturnAmount"
-              size="md"
-              compact
-            />
-          </div>
-          <div class="kpi">
-            <span class="eyebrow">XIRR</span>
-            <DeltaChip
-              v-if="summary.xirr !== null"
-              :percent="summary.xirr"
-              :value="summary.xirr"
-              size="md"
-            />
-            <span v-else class="kpi-na">Needs more history</span>
-          </div>
-          <div class="kpi">
-            <span class="eyebrow">1D return</span>
-            <DeltaChip
-              v-if="summary.dayChangeAmount !== null"
-              :amount="summary.dayChangeAmount"
-              :percent="summary.dayChangePercent ?? undefined"
+              :amount="periodReturn.amount"
+              :percent="periodReturn.pct"
+              :value="periodReturn.amount"
               size="sm"
               compact
             />
-            <span v-else class="muted">—</span>
-          </div>
-          <div class="kpi">
-            <span class="eyebrow">Holdings</span>
-            <span class="kpi-val">{{ summary.holdingsCount }}</span>
-          </div>
+            <span class="period-label">{{ rangeLabel }}</span>
+          </p>
+          <p class="hero-invested">Invested {{ formatInrCompact(summary.invested) }}</p>
         </div>
-      </header>
-
-      <IntegrityHealthCard class="span-4" :rollup="rollup" :review-to="integrityTo" />
-    </div>
-
-    <nav class="asset-tabs" aria-label="Asset class">
-      <RouterLink class="asset-tab" :class="{ active: activeTab === 'all' }" :to="tabTo()"
-        >All</RouterLink
-      >
-      <RouterLink class="asset-tab" :class="{ active: activeTab === 'mf' }" :to="tabTo('mf')"
-        >Mutual funds</RouterLink
-      >
-      <RouterLink
-        class="asset-tab"
-        :class="{ active: activeTab === 'stocks' }"
-        :to="tabTo('stocks')"
-        >Stocks</RouterLink
-      >
-      <button
-        type="button"
-        class="asset-tab more"
-        aria-haspopup="true"
-        aria-label="More asset classes"
-        @click="(e) => moreOp?.toggle(e)"
-      >
-        <i class="pi pi-ellipsis-h" /> More
-      </button>
-    </nav>
-
-    <Popover ref="moreOp">
-      <div class="more-pop">
-        <p class="more-head">On the roadmap</p>
-        <ul class="more-list">
-          <li v-for="a in plannedAssets" :key="a.label">
-            <i :class="a.icon" aria-hidden="true" /><span>{{ a.label }}</span>
-          </li>
-        </ul>
-        <a class="more-vote" :href="POLL_URL" target="_blank" rel="noopener noreferrer">
-          <i class="pi pi-thumbs-up" aria-hidden="true" /> Vote for what's next →
-        </a>
+        <SelectButton
+          v-if="valuationReady && loadCharts"
+          class="hero-range"
+          :model-value="range"
+          :options="ranges"
+          option-label="label"
+          option-value="value"
+          :allow-empty="false"
+          size="small"
+          @update:model-value="(v: RangeKey | null) => v && setRange(v)"
+        />
+        <span v-else class="range-placeholder" aria-hidden="true" />
       </div>
-    </Popover>
 
-    <div v-if="activeTab === 'all'" class="bento">
-      <article ref="chartRegion" class="span-4 card chart-card">
+      <template v-if="!valuationReady">
+        <div class="chart-placeholder value-placeholder" aria-hidden="true" />
+        <p class="chart-progress">
+          Portfolio valuation in progress — refresh in a bit. Showing values as of your latest
+          statement meanwhile.
+          <RouterLink class="navs-link" :to="{ name: 'settings', params: { tab: 'navs' } }"
+            >Check NAV freshness →</RouterLink
+          >
+        </p>
+      </template>
+      <p v-else-if="loadCharts && !summary.valueSeries?.length" class="chart-progress">
+        No day-wise history yet — snapshot holdings (a demat eCAS) count toward net worth but not
+        the trend. Import a transaction statement (a CAS or a broker tradebook) to build the
+        history.
+      </p>
+      <PortfolioValueChart
+        v-else-if="loadCharts"
+        :data="summary.valueSeries"
+        :granularity="valueGranularity"
+        :window="valueWindow"
+      />
+      <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
+    </article>
+
+    <!-- Headline metrics strip. -->
+    <section class="card stat-strip">
+      <div class="stat">
+        <span class="eyebrow">All-time return</span>
+        <DeltaChip
+          :amount="summary.totalReturnAmount"
+          :percent="summary.totalReturnPercent ?? undefined"
+          :value="summary.totalReturnAmount"
+          size="md"
+          compact
+        />
+      </div>
+      <div class="stat">
+        <span class="eyebrow">XIRR</span>
+        <DeltaChip
+          v-if="summary.xirr !== null"
+          :percent="summary.xirr"
+          :value="summary.xirr"
+          size="md"
+        />
+        <span v-else class="kpi-na">Needs more history</span>
+      </div>
+      <div class="stat">
+        <span class="eyebrow">1D return</span>
+        <DeltaChip
+          v-if="summary.dayChangeAmount !== null"
+          :amount="summary.dayChangeAmount"
+          :percent="summary.dayChangePercent ?? undefined"
+          size="sm"
+          compact
+        />
+        <span v-else class="muted">—</span>
+      </div>
+      <div class="stat">
+        <span class="eyebrow">Holdings</span>
+        <span class="kpi-val">{{ summary.holdingsCount }}</span>
+      </div>
+    </section>
+
+    <!-- Allocation + data integrity. -->
+    <div class="bento">
+      <article class="span-8 card chart-card">
         <div class="chart-head">
           <h2>Allocation</h2>
           <SelectButton
@@ -290,150 +269,11 @@ function openScheme(securityId: number): void {
         <div v-else class="chart-placeholder donut-placeholder" aria-hidden="true" />
       </article>
 
-      <article class="span-8 card chart-card">
-        <div class="chart-head">
-          <div class="head-titles">
-            <h2>Value over time</h2>
-            <span class="head-caption">Mutual funds · current value vs invested</span>
-          </div>
-          <SelectButton
-            v-if="valuationReady && loadCharts"
-            :model-value="range"
-            :options="ranges"
-            option-label="label"
-            option-value="value"
-            :allow-empty="false"
-            size="small"
-            @update:model-value="(v: RangeKey | null) => v && setRange(v)"
-          />
-          <span v-else class="range-placeholder" aria-hidden="true" />
-        </div>
-        <template v-if="!valuationReady">
-          <div class="chart-placeholder value-placeholder" aria-hidden="true" />
-          <p class="chart-progress">
-            Portfolio valuation in progress — refresh in a bit. Showing values as of your latest
-            statement meanwhile.
-            <RouterLink class="navs-link" :to="{ name: 'settings', params: { tab: 'navs' } }"
-              >Check NAV freshness →</RouterLink
-            >
-          </p>
-        </template>
-        <p v-else-if="loadCharts && !summary.valueSeries?.length" class="chart-progress">
-          No day-wise history yet — snapshot holdings (a demat eCAS) count toward net worth but not
-          the trend. Import a transaction statement (a CAS or a broker tradebook) to build the
-          history.
-        </p>
-        <PortfolioValueChart
-          v-else-if="loadCharts"
-          :data="summary.valueSeries"
-          :granularity="valueGranularity"
-          :window="valueWindow"
-        />
-        <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
-      </article>
-
-      <article v-if="topContributors.length" class="span-12 card movers">
-        <h2>Contribution to returns</h2>
-        <p class="movers-sub">Funds that have added the most to your portfolio so far.</p>
-        <div class="movers-row">
-          <button
-            v-for="f in topContributors"
-            :key="f.securityId"
-            type="button"
-            class="mover"
-            @click="openScheme(f.securityId)"
-          >
-            <span class="mover-name">{{ f.name }}</span>
-            <DeltaChip
-              :amount="f.gain ?? undefined"
-              :percent="f.returnPct ?? undefined"
-              :value="f.gain ?? undefined"
-              size="sm"
-            />
-          </button>
-        </div>
-        <template v-if="detractors.length">
-          <p class="movers-sub detractor-label">Held back returns</p>
-          <div class="movers-row">
-            <button
-              v-for="f in detractors"
-              :key="f.securityId"
-              type="button"
-              class="mover"
-              @click="openScheme(f.securityId)"
-            >
-              <span class="mover-name">{{ f.name }}</span>
-              <DeltaChip
-                :amount="f.gain ?? undefined"
-                :percent="f.returnPct ?? undefined"
-                :value="f.gain ?? undefined"
-                size="sm"
-              />
-            </button>
-          </div>
-        </template>
-      </article>
-
-      <article class="span-12 card">
-        <h2>Top holdings</h2>
-        <DataTable
-          v-if="loadCharts"
-          :value="summary.topHoldings"
-          data-key="securityId"
-          class="holdings clickable-rows"
-          size="small"
-          @row-click="(e) => openScheme(e.data.securityId)"
-        >
-          <Column field="name" header="Holding">
-            <template #body="{ data }">
-              <div class="holding-name">
-                <span>{{ data.name }}</span>
-                <small>{{ data.assetClass }}</small>
-              </div>
-            </template>
-          </Column>
-          <Column header="Value" class="num" header-class="num">
-            <template #body="{ data }">{{ formatInr(data.value) }}</template>
-          </Column>
-          <Column header="Units" class="num" header-class="num">
-            <template #body="{ data }">{{ formatUnits(data.units) }}</template>
-          </Column>
-          <Column header="Return" class="num" header-class="num">
-            <template #body="{ data }">
-              <DeltaChip
-                v-if="data.returnPct !== null"
-                :percent="data.returnPct"
-                :value="data.returnPct"
-                size="sm"
-              />
-              <span v-else class="muted">—</span>
-            </template>
-          </Column>
-          <Column header="Integrity">
-            <template #body="{ data }">
-              <IntegrityBadge :status="data.integrity" size="sm" />
-            </template>
-          </Column>
-        </DataTable>
-        <div v-else class="table-placeholder" aria-hidden="true" />
-      </article>
+      <IntegrityHealthCard class="span-4" :rollup="rollup" :review-to="integrityTo" />
     </div>
 
-    <DashboardFunds
-      v-else-if="activeTab === 'mf'"
-      :by-category="summary.mfByCategory"
-      :by-amc="summary.mfByAmc"
-      :funds="summary.funds"
-      :total="summary.mfTotal"
-      @select="openScheme"
-    />
-
-    <DashboardStocks
-      v-else-if="activeTab === 'stocks'"
-      :stocks="summary.stocks"
-      :total="summary.stockTotal"
-      @select="openScheme"
-    />
+    <!-- Holdings, by asset class — open one to drill into its securities. -->
+    <AssetClassSummary :holdings="summary.holdings" :investor-id="investorId" />
   </section>
 </template>
 
@@ -443,10 +283,13 @@ function openScheme(securityId: number): void {
   max-width: var(--fm-content-max);
   margin: 0 auto;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-5);
 }
 
 .page-head {
-  margin-bottom: var(--fm-space-5);
+  margin-bottom: 0;
 }
 .page-head h1 {
   margin: 0;
@@ -457,7 +300,6 @@ function openScheme(securityId: number): void {
   margin: 0.15rem 0 0;
   color: var(--fm-text-muted);
 }
-/* NAV-feed staleness marker: qualifies price recency without alarming about value. */
 .page-head .sub .stale-navs {
   color: var(--p-amber-600, #d97706);
   font-weight: 600;
@@ -472,29 +314,15 @@ function openScheme(securityId: number): void {
 
 .bento {
   display: grid;
-  /* minmax(0, …) so a track can shrink past its content's intrinsic width;
-     the default `1fr` is `minmax(auto, 1fr)` and would force sideways scroll. */
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: var(--fm-space-5);
-}
-
-.span-3 {
-  grid-column: span 3;
 }
 .span-4 {
   grid-column: span 4;
 }
-.span-6 {
-  grid-column: span 6;
-}
 .span-8 {
   grid-column: span 8;
 }
-.span-12 {
-  grid-column: span 12;
-}
-
-/* Every grid item must also opt out of the auto min-width floor. */
 .bento > * {
   min-width: 0;
 }
@@ -506,81 +334,114 @@ function openScheme(securityId: number): void {
   border-radius: var(--fm-radius-xl);
   box-shadow: var(--fm-shadow-sm);
 }
-
 .card h2 {
   margin: 0 0 var(--fm-space-3);
   font-size: 1rem;
   font-weight: 600;
 }
 
+.eyebrow {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fm-text-muted);
+}
+
+/* ---- hero (chart is the main card) ---- */
+.hero-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fm-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--fm-space-3);
+}
+.hero-net {
+  min-width: 0;
+}
+.hero-value {
+  margin: 0.25rem 0 0;
+  font-size: 2.6rem;
+  line-height: 1.04;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.hero-exact {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--fm-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.hero-period {
+  margin: 0.5rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.period-label {
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.hero-invested {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.hero-range {
+  flex-shrink: 0;
+}
+
+/* ---- stat strip ---- */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--fm-space-4);
+  padding: var(--fm-space-4) var(--fm-space-5);
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-start;
+  padding-left: var(--fm-space-4);
+  border-left: 1px solid var(--fm-border-subtle);
+}
+.stat:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+.kpi-val {
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-na {
+  font-size: 0.6875rem;
+  color: var(--fm-text-subtle);
+}
+
+/* ---- charts ---- */
 .chart-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--fm-space-2) var(--fm-space-3);
-  /* In a narrow card the toggle can't sit beside the title — let it wrap to its
-     own line rather than squeezing the segments until labels truncate. */
   flex-wrap: wrap;
   margin-bottom: var(--fm-space-2);
 }
 .chart-head h2 {
   margin: 0;
 }
-/* Keep the toggle intact: never wrap a segment's label, never shrink it. */
-.chart-head :deep(.p-selectbutton) {
+.chart-head :deep(.p-selectbutton),
+.hero-range:deep(.p-selectbutton) {
   flex-shrink: 0;
 }
 .chart-head :deep(.p-togglebutton),
 .chart-head :deep(.p-togglebutton-label) {
   white-space: nowrap;
-}
-.head-caption {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 0.75rem;
-  color: var(--fm-text-muted);
-}
-
-/* Contribution-to-returns strip. */
-.movers .movers-sub {
-  margin: 0 0 var(--fm-space-3);
-  font-size: 0.8125rem;
-  color: var(--fm-text-muted);
-}
-.movers .detractor-label {
-  margin-top: var(--fm-space-4);
-}
-.movers-row {
-  display: flex;
-  gap: var(--fm-space-3);
-  flex-wrap: wrap;
-}
-.mover {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.35rem;
-  min-width: 0;
-  max-width: 16rem;
-  padding: 0.6rem 0.8rem;
-  border: 1px solid var(--fm-border-subtle);
-  border-radius: var(--fm-radius-lg, 0.75rem);
-  background: var(--fm-surface-raised);
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  transition: border-color var(--fm-dur-fast) var(--fm-ease);
-}
-.mover:hover {
-  border-color: var(--fm-border);
-}
-.mover-name {
-  max-width: 14rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8125rem;
-  font-weight: 600;
 }
 .range-placeholder {
   display: block;
@@ -605,7 +466,7 @@ function openScheme(securityId: number): void {
   height: 260px;
 }
 .value-placeholder {
-  height: 280px;
+  height: 320px;
 }
 .chart-progress {
   margin: var(--fm-space-2) 0 0;
@@ -621,244 +482,63 @@ function openScheme(securityId: number): void {
 .chart-progress .navs-link:hover {
   text-decoration: underline;
 }
-.table-placeholder {
-  height: 12rem;
-  border-radius: var(--fm-radius-sm);
-  background:
-    linear-gradient(
-      90deg,
-      transparent 0,
-      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
-      transparent 100%
-    ),
-    var(--fm-surface-raised);
-}
-
-/* ---- asset-class tab strip ---- */
-.asset-tabs {
-  display: flex;
-  gap: var(--fm-space-1, 0.25rem);
-  border-bottom: 1px solid var(--fm-border-subtle);
-  margin: var(--fm-space-5) 0 var(--fm-space-4);
-  overflow-x: auto;
-}
-.asset-tab {
-  padding: 0.6rem 0.95rem;
-  text-decoration: none;
-  white-space: nowrap;
-  color: var(--fm-text-muted);
-  font-weight: 600;
-  font-size: 0.9rem;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: color var(--fm-dur-fast) var(--fm-ease);
-}
-.asset-tab:hover:not(.disabled) {
-  color: var(--fm-text);
-}
-.asset-tab.active {
-  color: var(--p-primary-color);
-  border-bottom-color: var(--p-primary-color);
-}
-.asset-tab.more {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 600;
-  font-size: 0.9rem;
-  color: var(--fm-text-muted);
-}
-.asset-tab.more:hover {
-  color: var(--fm-text);
-}
-.asset-tab.more .pi-ellipsis-h {
-  font-size: 0.8rem;
-}
-
-/* "More" popover: planned asset classes + a vote CTA. */
-.more-pop {
-  min-width: 13rem;
-  padding: 0.25rem;
-}
-.more-head {
-  margin: 0 0 0.5rem;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fm-text-muted);
-}
-.more-list {
-  list-style: none;
-  margin: 0 0 0.6rem;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-}
-.more-list li {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.4rem 0.5rem;
-  border-radius: var(--fm-radius-sm);
-  color: var(--fm-text);
-  font-size: 0.875rem;
-}
-.more-list li i {
-  color: var(--fm-text-subtle);
-  width: 1rem;
-  text-align: center;
-}
-.more-vote {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.55rem 0.6rem;
-  border-top: 1px solid var(--fm-border-subtle);
-  margin-top: 0.2rem;
-  color: var(--p-primary-color);
-  font-weight: 600;
-  font-size: 0.875rem;
-  text-decoration: none;
-}
-.more-vote:hover {
-  color: var(--fm-accent-hover, var(--p-primary-color));
-  opacity: 0.85;
-}
-
-/* ---- hero band ---- */
-.hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--fm-space-5);
-  flex-wrap: wrap;
-}
-.eyebrow {
-  margin: 0;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fm-text-muted);
-}
-.hero-net {
-  min-width: 0;
-}
-.hero-value {
-  margin: 0.25rem 0 0;
-  font-size: 2.4rem;
-  line-height: 1.05;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-.hero-exact {
-  margin: 0.25rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--fm-text-subtle);
-  font-variant-numeric: tabular-nums;
-}
-.hero-invested {
-  margin: 0.4rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--fm-text-muted);
-}
-/* KPI grid fills the hero's right half: two return bases + 1D + holdings count.
-   Replaces the old toggle so both Absolute and XIRR are visible at once. */
-.hero-kpis {
-  flex: 1;
-  min-width: 16rem;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--fm-space-4) var(--fm-space-5);
-  align-content: center;
-}
-.kpi {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  align-items: flex-start;
-}
-.kpi-val {
-  font-size: 1.25rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.kpi-na {
-  font-size: 0.6875rem;
-  color: var(--fm-text-subtle);
-}
-/* On a phone the hero stacks; one KPI per row keeps the numbers readable. */
-@media (max-width: 480px) {
-  .hero-kpis {
-    grid-template-columns: 1fr;
-  }
-}
-
-.holding-name {
-  display: flex;
-  flex-direction: column;
-}
-.holding-name small {
-  color: var(--fm-text-muted);
-  font-size: 0.6875rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-:deep(.holdings .num) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-/* On a narrow screen the table scrolls within its card rather than widening
-   the page. */
-:deep(.holdings .p-datatable-table-container) {
-  overflow-x: auto;
-}
-
-/* Top-holdings rows drill into the scheme detail. */
-:deep(.clickable-rows .p-datatable-tbody > tr) {
-  cursor: pointer;
-}
 .muted {
   color: var(--fm-text-muted);
 }
 
-/* Re-flow to a single column on narrow viewports. */
-@media (max-width: 1024px) {
-  .span-3,
-  .span-4,
-  .span-6,
-  .span-8 {
-    grid-column: span 6;
+/* While data loads (initial / investor switch), blur the figures so the
+   momentary zeros read as "loading", not as real values. */
+.dashboard.is-loading .hero-net,
+.dashboard.is-loading .stat-strip,
+.dashboard.is-loading .asset-summary .rows {
+  filter: blur(7px);
+  pointer-events: none;
+  user-select: none;
+  animation: data-pulse 1.1s ease-in-out infinite;
+}
+@keyframes data-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.72;
   }
 }
-@media (max-width: 768px) {
-  .span-3,
+@media (prefers-reduced-motion: reduce) {
+  .dashboard.is-loading .hero-net,
+  .dashboard.is-loading .stat-strip,
+  .dashboard.is-loading .asset-summary .rows {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+/* ---- responsive ---- */
+@media (max-width: 1024px) {
   .span-4,
-  .span-6,
-  .span-8,
-  .span-12 {
+  .span-8 {
     grid-column: span 12;
   }
 }
-/* Phone: trim the chrome so content keeps the width. */
 @media (max-width: 640px) {
   .dashboard {
     padding: var(--fm-space-4);
-  }
-  .bento {
     gap: var(--fm-space-4);
   }
   .card {
     padding: var(--fm-space-4);
+  }
+  .stat-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--fm-space-4) var(--fm-space-3);
+  }
+  .stat:nth-child(odd) {
+    padding-left: 0;
+    border-left: none;
+  }
+  .hero-value {
+    font-size: 2.2rem;
   }
 }
 </style>
