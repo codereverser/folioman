@@ -35,6 +35,9 @@ def test_force_includes_django_dynamic_imports_and_app_packages():
     assert "--include-package-data=django" in joined
     assert "--include-package=folioman_app" in joined
     assert "--include-package-data=folioman_app" in joined
+    # Point the Django plugin at the desktop settings so it traces INSTALLED_APPS
+    # (silences its warning; future-proofs string-referenced apps).
+    assert "--module-parameter=django-settings-module=folioman_app.settings.desktop" in joined
 
 
 def test_bundles_casparser_isin_database():

@@ -91,6 +91,11 @@ def build_command(*, onefile: bool) -> list[str]:
         "--output-filename=folioman",
         "--company-name=Folioman",
         "--product-name=Folioman",
+        # Tell Nuitka's Django plugin which settings to introspect (INSTALLED_APPS,
+        # etc.). The desktop binary runs on these settings; the whole-package
+        # includes below already cover today's apps, so this mainly silences the
+        # plugin's warning and future-proofs string-referenced apps.
+        "--module-parameter=django-settings-module=folioman_app.settings.desktop",
     ]
     if onefile:
         cmd.append("--onefile")  # single self-extracting binary (Linux/Windows)
