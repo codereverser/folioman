@@ -30,6 +30,7 @@ function backendOk() {
 describe('roster store', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.unstubAllEnvs()
     localStorage.clear()
     setActivePinia(createPinia())
   })
@@ -47,7 +48,8 @@ describe('roster store', () => {
     expect(roster.groups[1].investors.map((i) => i.id)).toEqual([20])
   })
 
-  it('falls back to seed data when the backend is unreachable', async () => {
+  it('seeds demo data on failure in dev (offline frontend shell)', async () => {
+    vi.stubEnv('DEV', true)
     mockGet.mockResolvedValue({ error: { detail: 'boom' } } as never)
     const roster = useRosterStore()
     await roster.load()
@@ -55,6 +57,18 @@ describe('roster store', () => {
     expect(roster.usingSeed).toBe(true)
     expect(roster.investors.length).toBeGreaterThan(0)
     expect(roster.error).not.toBeNull()
+  })
+
+  it('never fabricates data on failure in production — surfaces the error instead', async () => {
+    vi.stubEnv('DEV', false)
+    mockGet.mockResolvedValue({ error: { detail: 'boom' } } as never)
+    const roster = useRosterStore()
+    await roster.load()
+
+    expect(roster.usingSeed).toBe(false)
+    expect(roster.investors).toHaveLength(0)
+    expect(roster.error).not.toBeNull()
+    expect(roster.loaded).toBe(true) // loaded-but-errored → UI shows "unreachable"
   })
 
   it('ensureLoaded loads once, reload always refetches', async () => {

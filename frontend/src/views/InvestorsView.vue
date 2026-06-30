@@ -41,6 +41,16 @@ const familyOptions = computed(() => [
 const agg = computed(() => metrics.rosterAggregate.value)
 const hasFamilies = computed(() => roster.families.length > 0)
 
+// Roster loaded but a request errored and nothing came back → the server is
+// unreachable (vs a genuinely empty roster). Show an honest retry state.
+const unreachable = computed(
+  () => roster.loaded && roster.error !== null && roster.investors.length === 0,
+)
+function retry(): void {
+  void roster.reload()
+  void metrics.loadRosterAggregate()
+}
+
 // Group by family by default when families exist; advisors can flatten to a pure
 // searchable/sortable list.
 const grouped = ref(false)
@@ -419,7 +429,19 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
       </div>
     </section>
 
-    <div v-if="roster.isEmpty" class="empty">
+    <div v-if="unreachable" class="empty">
+      <i class="pi pi-cloud-off" />
+      <p>Can’t reach the server.</p>
+      <p class="muted">
+        Your data is safe — the app just couldn’t load it. Check that the folioman server is
+        running, then retry.
+      </p>
+      <div class="empty-actions">
+        <Button label="Retry" icon="pi pi-refresh" :loading="roster.loading" @click="retry" />
+      </div>
+    </div>
+
+    <div v-else-if="roster.isEmpty" class="empty">
       <i class="pi pi-inbox" />
       <p>No investors yet.</p>
       <p class="muted">

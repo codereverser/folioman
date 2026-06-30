@@ -78,12 +78,21 @@ export const useRosterStore = defineStore('roster', () => {
       usingSeed.value = false
       loaded.value = true
     } catch (e) {
-      // Fail soft to seed data: the advisor shell remains usable offline / in dev.
-      families.value = [...SEED_FAMILIES]
-      investors.value = [...SEED_INVESTORS]
-      usingSeed.value = true
-      loaded.value = true
       error.value = e instanceof Error ? e.message : 'unknown error'
+      loaded.value = true
+      if (import.meta.env.DEV) {
+        // Dev/offline only: seed so the frontend shell stays usable without a
+        // backend. NEVER in a production build — a self-hosted instance with a
+        // transient outage (deploy, restart, cold start) must show an honest
+        // "server unreachable" state, not fabricated investors over real data.
+        families.value = [...SEED_FAMILIES]
+        investors.value = [...SEED_INVESTORS]
+        usingSeed.value = true
+      } else {
+        families.value = []
+        investors.value = []
+        usingSeed.value = false
+      }
     } finally {
       loading.value = false
     }
