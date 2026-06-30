@@ -169,7 +169,7 @@ const allocationData = computed(() =>
           <p class="hero-invested">Invested {{ formatInrCompact(summary.invested) }}</p>
         </div>
         <SelectButton
-          v-if="valuationReady && loadCharts"
+          v-if="loadCharts && summary.valueSeries?.length"
           class="hero-range"
           :model-value="range"
           :options="ranges"
@@ -182,7 +182,23 @@ const allocationData = computed(() =>
         <span v-else class="range-placeholder" aria-hidden="true" />
       </div>
 
-      <template v-if="!valuationReady">
+      <!-- A series exists → show the chart even while the latest day or two are still
+           revaluing (it fills in when the worker finishes); just flag it's catching up. -->
+      <template v-if="loadCharts && summary.valueSeries?.length">
+        <PortfolioValueChart
+          :data="summary.valueSeries"
+          :granularity="valueGranularity"
+          :window="valueWindow"
+        />
+        <p v-if="!valuationReady" class="chart-progress">
+          Catching up the latest days — showing through your last computed day.
+          <RouterLink class="navs-link" :to="{ name: 'settings', params: { tab: 'navs' } }"
+            >Check NAV freshness →</RouterLink
+          >
+        </p>
+      </template>
+      <!-- No series yet, still computing → progress placeholder. -->
+      <template v-else-if="!valuationReady">
         <div class="chart-placeholder value-placeholder" aria-hidden="true" />
         <p class="chart-progress">
           Portfolio valuation in progress — refresh in a bit. Showing values as of your latest
@@ -192,17 +208,12 @@ const allocationData = computed(() =>
           >
         </p>
       </template>
-      <p v-else-if="loadCharts && !summary.valueSeries?.length" class="chart-progress">
+      <!-- Ready, but no day-wise history (snapshot-only holdings). -->
+      <p v-else-if="loadCharts" class="chart-progress">
         No day-wise history yet — snapshot holdings (a demat eCAS) count toward net worth but not
         the trend. Import a transaction statement (a CAS or a broker tradebook) to build the
         history.
       </p>
-      <PortfolioValueChart
-        v-else-if="loadCharts"
-        :data="summary.valueSeries"
-        :granularity="valueGranularity"
-        :window="valueWindow"
-      />
       <div v-else class="chart-placeholder value-placeholder" aria-hidden="true" />
     </article>
 
