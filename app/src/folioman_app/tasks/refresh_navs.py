@@ -39,6 +39,7 @@ from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
 from folioman_app.models import Holding, NAVHistory, Security, Transaction
 from folioman_app.services.trading_calendar import (
+    completed_trading_day,
     last_trading_day,
     trading_days,
     trading_days_between,
@@ -190,12 +191,6 @@ def _fetch_point(security: Security, clients: _FeedClients):
     return None
 
 
-def _latest_fetch_day() -> date_cls:
-    """Most recent trading day *before* today. NAVs/closes are never fetched for the
-    current day (intraday, or not yet declared) — only completed trading sessions."""
-    return last_trading_day(timezone.localdate() - timedelta(days=1))
-
-
 def _prime_bulk(clients: _FeedClients) -> tuple[dict, dict]:
     """Fetch the day's whole-market snapshots once: AMFI NAVAll + NSE bhavcopy.
 
@@ -221,7 +216,7 @@ def _prime_bulk(clients: _FeedClients) -> tuple[dict, dict]:
         # stepping further back over any unmodelled holiday until a bhavcopy exists.
         bhav = nse_bhavcopy.warmed_client()
         try:
-            day = _latest_fetch_day()
+            day = completed_trading_day(timezone.localdate())
             for _ in range(_BHAVCOPY_LOOKBACK):
                 closes = nse_bhavcopy.fetch_close_by_symbol(day, client=bhav)
                 if closes:
@@ -544,7 +539,7 @@ def _bulk_backfill_equity(candidates: list[tuple], cutoff: date_cls, summary: di
     fetched = False
     try:
         # Never fetch today's (incomplete) session — cap at the last completed day.
-        for day in trading_days(start, min(cutoff, _latest_fetch_day())):
+        for day in trading_days(start, min(cutoff, completed_trading_day(timezone.localdate()))):
             if fetched:
                 _SLEEP(_REQUEST_SPACING)
             fetched = True

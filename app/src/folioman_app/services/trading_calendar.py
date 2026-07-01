@@ -29,6 +29,17 @@ def trading_days_between(start: date, end: date) -> int:
     return days
 
 
+def completed_trading_day(today: date) -> date:
+    """The most recent trading day whose NAV/close can exist — always before ``today``.
+
+    A price for trading day T publishes only after T ends (MF NAVs late evening to
+    next morning; equity closes after the session), so the freshest value a feed can
+    hold is the previous trading day's. NAV fetching and freshness both baseline here
+    rather than on ``today``.
+    """
+    return last_trading_day(today - timedelta(days=1))
+
+
 def trading_days(start: date, end: date):
     """Yield each weekday in ``[start, end]`` inclusive (holidays not modelled)."""
     cur = start

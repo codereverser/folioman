@@ -30,7 +30,7 @@ from django.utils import timezone
 from folioman_core.models import SecurityType
 
 from folioman_app.models import NAVHistory, Security
-from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
+from folioman_app.services.trading_calendar import completed_trading_day, trading_days_between
 from folioman_app.tasks.valuation_ticks import REVALUE_HOURS
 
 _QUOTE_TYPES = {
@@ -39,11 +39,6 @@ _QUOTE_TYPES = {
     SecurityType.BOND.value,
     SecurityType.FOREIGN_EQUITY.value,
 }
-
-
-def _completed_trading_day(today) -> object:
-    """The most recent trading day whose NAVs can exist — always before today."""
-    return last_trading_day(today - timedelta(days=1))
 
 
 def _feed_code(security: Security) -> str:
@@ -96,7 +91,7 @@ def build_nav_freshness(investors) -> dict:
         .values("security_id")
         .annotate(latest=Max("date"), first=Min("date"), points=Count("id"))
     }
-    cutoff = _completed_trading_day(timezone.localdate())
+    cutoff = completed_trading_day(timezone.localdate())
     _order = {"stale": 0, "pending": 1, "closed": 2, "grace": 3, "no_feed": 4, "fresh": 5}
 
     rows = []
