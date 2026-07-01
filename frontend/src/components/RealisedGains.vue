@@ -6,15 +6,7 @@ import ColumnGroup from 'primevue/columngroup'
 import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
 import Row from 'primevue/row'
-import IntegrityBadge from '@/components/IntegrityBadge.vue'
 import type { CapitalGainRow, CapitalGains } from '@/composables/useCapitalGains'
-import {
-  integrityMeta,
-  hasIncompleteHistory,
-  incompleteHistoryFix,
-  incompleteHistoryReason,
-  remediation,
-} from '@/integrity/status'
 import type { IntegrityRow } from '@/stores/integrity'
 import { formatDate, formatInr, formatUnits } from '@/utils/format'
 
@@ -137,16 +129,6 @@ function holdingPeriod(acquired: string, sold: string): string {
   const rem = months % 12
   if (years === 0) return `${rem}m`
   return rem === 0 ? `${years}y` : `${years}y ${rem}m`
-}
-
-// "Left out" rows reuse the shared integrity vocabulary so the wording matches
-// the Data integrity screen exactly (incl. demat-inherent vs fixable snapshot).
-function excludedReason(row: IntegrityRow): string {
-  return incompleteHistoryReason(row.issues) ?? integrityMeta(row.status).tooltip
-}
-function excludedFix(row: IntegrityRow): string | null {
-  if (hasIncompleteHistory(row.issues)) return incompleteHistoryFix()
-  return remediation(row.status, { folioType: row.folioType })
 }
 </script>
 
@@ -283,26 +265,12 @@ function excludedFix(row: IntegrityRow): string | null {
       </p>
     </section>
 
-    <section v-if="excluded.length" class="excluded">
-      <header class="ex-head-row">
-        <h2>
-          Left out <span class="count">{{ excluded.length }}</span>
-        </h2>
-        <RouterLink :to="integrityTo" class="review-link">Review in Data integrity →</RouterLink>
-      </header>
-      <ul class="excluded-list">
-        <li v-for="row in excluded" :key="`${row.securityId}-${row.folioId}`">
-          <div class="ex-head">
-            <span class="ex-name">{{ row.name }}</span>
-            <IntegrityBadge :status="row.status" size="sm" />
-          </div>
-          <p class="ex-reason">
-            {{ excludedReason(row) }}
-            <span v-if="excludedFix(row)" class="ex-fix">{{ excludedFix(row) }}</span>
-          </p>
-        </li>
-      </ul>
-    </section>
+    <Message v-if="excluded.length" severity="warn" :closable="false" class="left-out">
+      <strong>{{ excluded.length }}</strong>
+      {{ excluded.length === 1 ? 'holding was' : 'holdings were' }} left out because their history
+      isn’t tax-ready, so this worksheet is incomplete.
+      <RouterLink :to="integrityTo" class="review-link">Review in Data integrity →</RouterLink>
+    </Message>
   </div>
 </template>
 
@@ -469,51 +437,16 @@ h2 {
   color: var(--fm-text-subtle);
 }
 
-.ex-head-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--fm-space-3);
+.left-out {
+  font-size: 0.875rem;
 }
 .review-link {
-  font-size: 0.875rem;
+  margin-left: 0.35rem;
   color: var(--p-primary-color);
   text-decoration: none;
+  white-space: nowrap;
 }
 .review-link:hover {
   text-decoration: underline;
-}
-.excluded-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--fm-space-3);
-}
-.excluded-list li {
-  padding: var(--fm-space-3);
-  border: 1px solid var(--fm-border-subtle);
-  border-radius: var(--fm-radius-lg);
-  background: var(--fm-surface);
-}
-.ex-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--fm-space-2);
-}
-.ex-name {
-  font-weight: 600;
-}
-.ex-reason {
-  margin: 0.3rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--fm-text-muted);
-}
-.ex-fix {
-  display: block;
-  margin-top: 0.15rem;
-  color: var(--fm-text-subtle);
 }
 </style>
