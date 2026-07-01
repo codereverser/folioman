@@ -124,7 +124,7 @@ def test_export_via_api(client, make_investor):
     assert body["title"] == "Capital-gains worksheet (for review)"
     disclaimer = body["disclaimer"].lower()
     assert "tax advice" in disclaimer
-    assert "qualified tax professional" in disclaimer
+    assert "tax pro" in disclaimer
 
 
 def test_export_empty_when_no_disposals(client, make_investor):

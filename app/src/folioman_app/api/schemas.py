@@ -669,14 +669,10 @@ class SchemeDetailOut(Schema):
 # professionally-checked return. The worksheet's free — this is about posture, not
 # price: it's a draft you take to your tax professional, never a tax filing.
 TAX_WORKSHEET_DISCLAIMER = (
-    "Heads up — this isn't tax advice. folioman builds a capital-gains worksheet "
-    "from the transactions you import, so you and your tax professional have a "
-    "starting point. It doesn't file anything, it's no substitute for a qualified "
-    "tax professional, and we can't promise the numbers are right or complete — a "
-    "misparsed or incomplete statement can throw them off. Always check every "
-    "figure with a qualified tax professional before you file. Provided as-is, no "
-    "warranty; we're not liable for any filing, penalty, or loss that comes from "
-    "using it."
+    "Quick heads up: This is just a draft to help you and your tax pro get started. "
+    "It's not tax advice or a filing. The numbers are based on what you've imported; "
+    "they might be off if something was missing or misread. Always double-check before you file! "
+    "No warranty—use at your own risk."
 )
 
 
