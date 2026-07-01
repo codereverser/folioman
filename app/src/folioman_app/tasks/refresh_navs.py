@@ -190,6 +190,12 @@ def _fetch_point(security: Security, clients: _FeedClients):
     return None
 
 
+def _latest_fetch_day() -> date_cls:
+    """Most recent trading day *before* today. NAVs/closes are never fetched for the
+    current day (intraday, or not yet declared) — only completed trading sessions."""
+    return last_trading_day(timezone.localdate() - timedelta(days=1))
+
+
 def _prime_bulk(clients: _FeedClients) -> tuple[dict, dict]:
     """Fetch the day's whole-market snapshots once: AMFI NAVAll + NSE bhavcopy.
 
@@ -211,12 +217,11 @@ def _prime_bulk(clients: _FeedClients) -> tuple[dict, dict]:
     try:
         # Its own warmed session (not clients.nse, which the per-symbol fallback
         # owns): on the happy path the fallback never runs, so this is the pass's
-        # only NSE warm-up. Today's bhavcopy isn't published until after the close,
-        # so step back to the most recent day that has one — that day's close is the
-        # latest available price anyway (same as the per-symbol feed's last row).
+        # only NSE warm-up. Start from the last completed trading day (never today),
+        # stepping further back over any unmodelled holiday until a bhavcopy exists.
         bhav = nse_bhavcopy.warmed_client()
         try:
-            day = last_trading_day(timezone.localdate())
+            day = _latest_fetch_day()
             for _ in range(_BHAVCOPY_LOOKBACK):
                 closes = nse_bhavcopy.fetch_close_by_symbol(day, client=bhav)
                 if closes:
@@ -538,7 +543,8 @@ def _bulk_backfill_equity(candidates: list[tuple], cutoff: date_cls, summary: di
     client = nse_bhavcopy.warmed_client()
     fetched = False
     try:
-        for day in trading_days(start, cutoff):
+        # Never fetch today's (incomplete) session — cap at the last completed day.
+        for day in trading_days(start, min(cutoff, _latest_fetch_day())):
             if fetched:
                 _SLEEP(_REQUEST_SPACING)
             fetched = True

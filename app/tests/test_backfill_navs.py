@@ -364,7 +364,7 @@ def test_backfill_equity_bulk_scatters_one_bhavcopy_across_symbols(
     inv = make_investor()
     rel = _nse_equity(name="Reliance", isin="INE002A01018", symbol="RELIANCE")
     infy = _nse_equity(name="Infosys", isin="INE009A01021", symbol="INFY")
-    recent = dt.date.today() - dt.timedelta(days=2)
+    recent = dt.date.today() - dt.timedelta(days=7)
     make_holding(investor=inv, security=rel, units=Decimal("10"), as_of_date=recent)
     make_holding(investor=inv, security=infy, units=Decimal("20"), as_of_date=recent)
 
@@ -403,7 +403,7 @@ def test_backfill_equity_bulk_leaves_uncovered_symbol_to_per_symbol(
     inv = make_investor()
     rel = _nse_equity(name="Reliance", isin="INE002A01018", symbol="RELIANCE")
     infy = _nse_equity(name="Infosys", isin="INE009A01021", symbol="INFY")
-    recent = dt.date.today() - dt.timedelta(days=2)
+    recent = dt.date.today() - dt.timedelta(days=7)
     make_holding(investor=inv, security=rel, units=Decimal("10"), as_of_date=recent)
     make_holding(investor=inv, security=infy, units=Decimal("20"), as_of_date=recent)
 
