@@ -178,11 +178,15 @@ class _DummyClient:
 
 @pytest.fixture(autouse=True)
 def _no_nse_warmup(monkeypatch):
-    """backfill_missing_equity_history warms a real NSE session (cookie wall);
-    stub it so the batch path never touches the network in tests."""
-    from folioman_core.price_feeds import nse_history
+    """The equity batch warms a real NSE session (cookie wall) and, when the bulk
+    switch fires, downloads bhavcopies — stub both so the batch never touches the
+    network. Bhavcopy defaults to empty (bulk covers nothing → per-symbol path);
+    bulk-path tests override ``fetch_close_by_symbol`` with data."""
+    from folioman_core.price_feeds import nse_bhavcopy, nse_history
 
     monkeypatch.setattr(nse_history, "warmed_client", lambda: _DummyClient())
+    monkeypatch.setattr(nse_bhavcopy, "warmed_client", lambda: _DummyClient())
+    monkeypatch.setattr(nse_bhavcopy, "fetch_close_by_symbol", lambda *_a, **_k: {})
 
 
 def test_backfill_equity_uses_nse_first(monkeypatch):
@@ -298,3 +302,113 @@ def test_backfill_missing_equity_bounds_since_snapshot_when_no_transaction(
     )
     backfill_missing_equity_history()
     assert captured["start"] == dt.date(2020, 12, 31)
+
+
+# --- bhavcopy bulk backfill + the per-symbol-vs-bulk cost switch ---
+
+
+def test_prefer_bulk_true_when_span_shallow_and_many_symbols():
+    from folioman_app.tasks.refresh_navs import _prefer_bulk
+
+    cutoff = dt.date(2026, 7, 1)  # Wednesday
+    since = dt.date(2026, 6, 29)  # Monday → span is 3 trading days
+    many = [(None, since, None) for _ in range(5)]
+    assert _prefer_bulk(many, cutoff) is True  # 3 bhavcopy files < 5 per-symbol pulls
+
+
+def test_prefer_bulk_false_when_any_symbol_needs_deep_history():
+    from folioman_app.tasks.refresh_navs import _prefer_bulk
+
+    cutoff = dt.date(2026, 7, 1)
+    deep = [(None, dt.date(2018, 1, 1), None), (None, dt.date(2019, 1, 1), None)]
+    assert _prefer_bulk(deep, cutoff) is False  # ~2000 bhavcopy files ≫ ~17 chunked pulls
+
+
+def _nse_equity(*, name, isin, symbol) -> Security:
+    return Security.objects.create(
+        security_type=SecurityType.EQUITY.value,
+        name=name,
+        isin=isin,
+        symbol=symbol,
+        exchange="NSE",
+    )
+
+
+def test_backfill_equity_bulk_scatters_one_bhavcopy_across_symbols(
+    monkeypatch, make_investor, make_holding
+):
+    """When bulk is cheaper, each day's bhavcopy is fetched once and its closes
+    scattered to every symbol that needs it — no per-symbol history calls."""
+    import folioman_app.tasks.refresh_navs as rn
+    from folioman_app.tasks.refresh_navs import backfill_missing_equity_history
+    from folioman_core.price_feeds import nse_bhavcopy, nse_history
+
+    monkeypatch.setattr(rn, "_prefer_bulk", lambda *_a, **_k: True)
+
+    calls = {"n": 0}
+
+    def _bhav(on, *, client=None):
+        calls["n"] += 1
+        return {
+            "RELIANCE": NAVPoint(date=on, nav=Decimal("1400")),
+            "INFY": NAVPoint(date=on, nav=Decimal("1550")),
+        }
+
+    monkeypatch.setattr(nse_bhavcopy, "fetch_close_by_symbol", _bhav)
+
+    def _forbidden(*_a, **_k):
+        raise AssertionError("per-symbol NSE history hit despite bhavcopy bulk")
+
+    monkeypatch.setattr(nse_history, "fetch_history", _forbidden)
+
+    inv = make_investor()
+    rel = _nse_equity(name="Reliance", isin="INE002A01018", symbol="RELIANCE")
+    infy = _nse_equity(name="Infosys", isin="INE009A01021", symbol="INFY")
+    recent = dt.date.today() - dt.timedelta(days=2)
+    make_holding(investor=inv, security=rel, units=Decimal("10"), as_of_date=recent)
+    make_holding(investor=inv, security=infy, units=Decimal("20"), as_of_date=recent)
+
+    summary = backfill_missing_equity_history()
+
+    assert calls["n"] >= 1
+    assert summary["securities"] == 2
+    assert NAVHistory.objects.filter(security=rel, source="nse-bhavcopy").exists()
+    assert NAVHistory.objects.filter(security=infy, source="nse-bhavcopy").exists()
+
+
+def test_backfill_equity_bulk_leaves_uncovered_symbol_to_per_symbol(
+    monkeypatch, make_investor, make_holding
+):
+    """A symbol absent from the bhavcopy (bond / suspended / not-yet-listed) isn't
+    marked handled, so it still backfills via the per-symbol feed."""
+    import folioman_app.tasks.refresh_navs as rn
+    from folioman_app.tasks.refresh_navs import backfill_missing_equity_history
+    from folioman_core.price_feeds import nse_bhavcopy, nse_history
+
+    monkeypatch.setattr(rn, "_prefer_bulk", lambda *_a, **_k: True)
+    monkeypatch.setattr(
+        nse_bhavcopy,
+        "fetch_close_by_symbol",
+        lambda on, **_: {"RELIANCE": NAVPoint(date=on, nav=Decimal("1400"))},  # INFY absent
+    )
+
+    seen = {}
+
+    def _nse(symbol, *, start=None, end=None, client=None):
+        seen["symbol"] = symbol
+        return _history((str(dt.date.today() - dt.timedelta(days=2)), "1550"))
+
+    monkeypatch.setattr(nse_history, "fetch_history", _nse)
+
+    inv = make_investor()
+    rel = _nse_equity(name="Reliance", isin="INE002A01018", symbol="RELIANCE")
+    infy = _nse_equity(name="Infosys", isin="INE009A01021", symbol="INFY")
+    recent = dt.date.today() - dt.timedelta(days=2)
+    make_holding(investor=inv, security=rel, units=Decimal("10"), as_of_date=recent)
+    make_holding(investor=inv, security=infy, units=Decimal("20"), as_of_date=recent)
+
+    backfill_missing_equity_history()
+
+    assert NAVHistory.objects.filter(security=rel, source="nse-bhavcopy").exists()  # bulk
+    assert seen["symbol"] == "INFY"  # the uncovered symbol fell through to per-symbol
+    assert NAVHistory.objects.filter(security=infy, source="nse").exists()

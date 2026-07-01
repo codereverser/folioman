@@ -19,6 +19,7 @@ import time
 from collections.abc import Iterable
 from datetime import date as date_cls
 from datetime import timedelta
+from math import ceil
 
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Min
@@ -37,7 +38,11 @@ from folioman_core.price_feeds.errors import NAVFetchError
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
 from folioman_app.models import Holding, NAVHistory, Security, Transaction
-from folioman_app.services.trading_calendar import last_trading_day, trading_days_between
+from folioman_app.services.trading_calendar import (
+    last_trading_day,
+    trading_days,
+    trading_days_between,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -412,86 +417,187 @@ def backfill_equity_history(
     return len(to_create)
 
 
-def _backfill_missing(qs, *, backfill_one, force: bool = False) -> dict:
+# NSE security-wise history is fetched in ≤1-year chunks (see nse_history), so a
+# per-symbol backfill costs that many requests — the yardstick the bulk switch beats.
+_NSE_CHUNK_DAYS = 365
+
+
+def _backfill_candidate(security: Security, cutoff: date_cls, force: bool):
+    """``(since, latest)`` if ``security`` needs a history backfill, else ``None``.
+
+    ``since`` is the earliest date the valuation series must reach — the earliest
+    of any transaction date and any holding snapshot's as_of_date (a snapshot-only
+    equity must still price back to its statement date). Skips only when the stored
+    series is current at the head AND reaches that span start; a head-only check let
+    a shallow series look "fresh" forever, leaving a freshly imported holding's first
+    trade unpriced, so the tail check self-heals it.
+    """
+    txn_first = Transaction.objects.filter(security=security).aggregate(d=Min("date"))["d"]
+    hold_first = Holding.objects.filter(security=security).aggregate(d=Min("as_of_date"))["d"]
+    candidates = [d for d in (txn_first, hold_first) if d is not None]
+    since = min(candidates) if candidates else None
+    bounds = NAVHistory.objects.filter(security=security).aggregate(lo=Min("date"), hi=Max("date"))
+    latest, earliest = bounds["hi"], bounds["lo"]
+    behind = trading_days_between(latest, cutoff) if latest is not None else None
+    reaches_back = since is None or (
+        earliest is not None and earliest <= since + _BACKFILL_TAIL_GRACE
+    )
+    if not force and behind is not None and behind <= _HISTORY_FRESH_TRADING_DAYS and reaches_back:
+        return None
+    return since, latest
+
+
+def _run_backfill_one(security, since, latest, backfill_one, summary) -> None:
+    """Per-security backfill via ``backfill_one``, updating ``summary`` and the
+    feed-closed flag (reopen on data, close a code that responds with no history)."""
+    try:
+        written = backfill_one(security, since=since)
+    except (NAVFetchError, PriceFetchError) as exc:
+        logger.warning(
+            "backfill failed for security %s (%s) since=%s: %s",
+            security.id,
+            security.name,
+            since,
+            exc,
+        )
+        summary["errors"] += 1  # transient: leave it feed-pending, retry next cycle
+        return
+    if written:
+        summary["securities"] += 1
+        summary["points"] += written
+        if security.nav_feed_closed:  # data arrived → reopen a previously-dead code
+            logger.info("security %s (%s): feed reopened", security.id, security.name)
+            security.nav_feed_closed = False
+            security.save(update_fields=["nav_feed_closed", "updated_at"])
+    elif latest is None and not security.nav_feed_closed:
+        # The feed responded (no error) with no history for a security we hold NO
+        # price for: the code/ticker is dead (matured/delisted/unmappable), not slow.
+        # Flag it so valuation degrades it instead of erroring + retrying forever.
+        logger.warning(
+            "security %s (%s): feed returned no history — marking closed",
+            security.id,
+            security.name,
+        )
+        security.nav_feed_closed = True
+        security.save(update_fields=["nav_feed_closed", "updated_at"])
+        summary["closed"] += 1
+
+
+def _bhavcopy_eligible(security: Security) -> bool:
+    """Whether an equity can be priced from the NSE bhavcopy (NSE-listed, symboled)."""
+    return bool(
+        security.symbol
+        and security.security_type != SecurityType.FOREIGN_EQUITY.value
+        and security.exchange in ("", "NSE")
+    )
+
+
+def _prefer_bulk(candidates: list[tuple], cutoff: date_cls) -> bool:
+    """Bulk (one bhavcopy per trading day over the span) vs per-symbol history.
+
+    Bulk cost is the number of trading days in ``[min_since, cutoff]`` — one file
+    covers *every* symbol that day. Per-symbol cost is the sum of ≤1-year history
+    chunks each symbol needs. Bulk wins for a shallow span across many symbols (the
+    intermittent-catch-up case); per-symbol wins when even one symbol needs deep
+    history (its old ``since`` blows up the span).
+    """
+    min_since = min(since for _, since, _ in candidates)
+    bulk_cost = trading_days_between(min_since - timedelta(days=1), cutoff)
+    per_symbol_cost = sum(
+        max(1, ceil((cutoff - since).days / _NSE_CHUNK_DAYS)) for _, since, _ in candidates
+    )
+    return 0 < bulk_cost < per_symbol_cost
+
+
+def _bulk_backfill_equity(candidates: list[tuple], cutoff: date_cls, summary: dict) -> set[int]:
+    """Backfill NSE-listed ``candidates`` from the daily bhavcopy: fetch each trading
+    day in the (shallow) span once and scatter its closes across every symbol that
+    needs it. Returns the security ids it covered (symbol seen in a bhavcopy)."""
+    start = min(since for _, since, _ in candidates)
+    state: dict[int, list] = {}
+    by_symbol: dict[str, list[int]] = {}
+    for security, since, _latest in candidates:
+        existing = set(NAVHistory.objects.filter(security=security).values_list("date", flat=True))
+        state[security.id] = [security, since, existing]
+        by_symbol.setdefault(security.symbol.upper(), []).append(security.id)
+
+    handled: set[int] = set()
+    written_ids: set[int] = set()
+    to_create: list[NAVHistory] = []
+    client = nse_bhavcopy.warmed_client()
+    fetched = False
+    try:
+        for day in trading_days(start, cutoff):
+            if fetched:
+                _SLEEP(_REQUEST_SPACING)
+            fetched = True
+            for symbol, point in nse_bhavcopy.fetch_close_by_symbol(day, client=client).items():
+                for sec_id in by_symbol.get(symbol, ()):
+                    handled.add(sec_id)  # symbol trades → this security is bhavcopy-covered
+                    security, since, existing = state[sec_id]
+                    if day >= since and day not in existing:
+                        to_create.append(
+                            NAVHistory(
+                                security=security, date=day, nav=point.nav, source="nse-bhavcopy"
+                            )
+                        )
+                        existing.add(day)
+                        written_ids.add(sec_id)
+    finally:
+        client.close()
+
+    NAVHistory.objects.bulk_create(to_create)
+    summary["securities"] += len(written_ids)
+    summary["points"] += len(to_create)
+    for sec_id in written_ids:  # data arrived → reopen a previously-dead code
+        security = state[sec_id][0]
+        if security.nav_feed_closed:
+            security.nav_feed_closed = False
+            security.save(update_fields=["nav_feed_closed", "updated_at"])
+    return handled
+
+
+def _backfill_missing(qs, *, backfill_one, force: bool = False, bulk_backfill=None) -> dict:
     """Shared history-backfill loop for any feed (MF NAV or equity quote).
 
-    For each security, skip when its stored series already reaches (within a
-    trading-day grace of) the last trading day — otherwise re-pull from its
-    earliest transaction and insert every missing date, so a series goes fully
-    gap-free even if the app only ran intermittently. ``backfill_one`` is the
-    per-security writer (:func:`backfill_nav_history` / :func:`backfill_equity_history`).
+    Collects the securities that need a backfill (see :func:`_backfill_candidate`),
+    then — when ``bulk_backfill`` is supplied (equity) and a whole-market snapshot is
+    cheaper than per-symbol pulls — routes the eligible ones through it, per-symbol
+    for the rest. MF passes no ``bulk_backfill``, so it stays per-scheme (one mfapi
+    call already serves a fund's full history).
 
-    ``force=True`` ignores the freshness skip and re-pulls every security — used
-    to repair interior holes the freshness check (which only looks at the latest
-    stored date) can't detect."""
+    ``force=True`` ignores the freshness skip and re-pulls every security — to repair
+    interior holes the head-only freshness check can't detect. Bulk is skipped under
+    ``force`` (a forced deep re-pull is exactly the per-symbol-favourable case)."""
     summary = {"securities": 0, "points": 0, "errors": 0, "skipped": 0, "closed": 0}
-    today = timezone.localdate()
-    cutoff = last_trading_day(today)
-    fetched = False
+    cutoff = last_trading_day(timezone.localdate())
+    needing: list[tuple] = []
     for security in qs:
-        # Cover the whole span the valuation series needs: the earliest of any
-        # transaction date and any holding snapshot's as_of_date. A snapshot-only
-        # equity (no transactions) must still backfill back to its statement date,
-        # else the series is unpriced before it.
-        txn_first = Transaction.objects.filter(security=security).aggregate(d=Min("date"))["d"]
-        hold_first = Holding.objects.filter(security=security).aggregate(d=Min("as_of_date"))["d"]
-        candidates = [d for d in (txn_first, hold_first) if d is not None]
-        since = min(candidates) if candidates else None
-        # Skip only when the series is current at the head AND reaches back to the
-        # span start. The head-only check alone let a shallow series (recent daily
-        # refreshes, but no deep history) look "fresh" forever, so a freshly imported
-        # stock kept its first 2018 trade unpriced. Checking the tail self-heals it.
-        bounds = NAVHistory.objects.filter(security=security).aggregate(
-            lo=Min("date"), hi=Max("date")
-        )
-        latest, earliest = bounds["hi"], bounds["lo"]
-        behind = trading_days_between(latest, cutoff) if latest is not None else None
-        reaches_back = since is None or (
-            earliest is not None and earliest <= since + _BACKFILL_TAIL_GRACE
-        )
-        if (
-            not force
-            and behind is not None
-            and behind <= _HISTORY_FRESH_TRADING_DAYS
-            and reaches_back
-        ):
+        got = _backfill_candidate(security, cutoff, force)
+        if got is None:
             summary["skipped"] += 1
             continue
+        needing.append((security, got[0], got[1]))
+    if not needing:
+        return summary
+
+    if bulk_backfill is not None and not force:
+        eligible = [c for c in needing if c[1] is not None and _bhavcopy_eligible(c[0])]
+        if eligible and _prefer_bulk(eligible, cutoff):
+            logger.info(
+                "equity backfill: %d symbols over a shallow span → bhavcopy bulk "
+                "(cheaper than per-symbol history)",
+                len(eligible),
+            )
+            handled = bulk_backfill(eligible, cutoff, summary)
+            needing = [c for c in needing if c[0].id not in handled]
+
+    fetched = False
+    for security, since, latest in needing:
         if fetched:
             _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
         fetched = True
-        try:
-            written = backfill_one(security, since=since)
-        except (NAVFetchError, PriceFetchError) as exc:
-            logger.warning(
-                "backfill failed for security %s (%s) since=%s: %s",
-                security.id,
-                security.name,
-                since,
-                exc,
-            )
-            summary["errors"] += 1  # transient: leave it feed-pending, retry next cycle
-            continue
-        if written:
-            summary["securities"] += 1
-            summary["points"] += written
-            if security.nav_feed_closed:  # data arrived → reopen a previously-dead code
-                logger.info("security %s (%s): feed reopened", security.id, security.name)
-                security.nav_feed_closed = False
-                security.save(update_fields=["nav_feed_closed", "updated_at"])
-        elif latest is None and not security.nav_feed_closed:
-            # The feed responded (no error) with no history for a security we hold NO
-            # price for: the code/ticker is dead (matured/delisted/unmappable), not
-            # slow. Flag it so valuation degrades it instead of erroring + retrying
-            # the feed forever.
-            logger.warning(
-                "security %s (%s): feed returned no history — marking closed",
-                security.id,
-                security.name,
-            )
-            security.nav_feed_closed = True
-            security.save(update_fields=["nav_feed_closed", "updated_at"])
-            summary["closed"] += 1
+        _run_backfill_one(security, since, latest, backfill_one, summary)
     return summary
 
 
@@ -524,10 +630,14 @@ def backfill_missing_history(
 def backfill_missing_equity_history(
     *, securities: Iterable[Security] | None = None, force: bool = False
 ) -> dict:
-    """Backfill equity / ETF / bond price history via Yahoo, bounded by earliest
-    transaction. Same freshness / gap / ``force`` semantics as the MF backfill —
-    without this, quote-type holdings have at most a single latest point and so
-    contribute nothing to the *historical* valuation series."""
+    """Backfill equity / ETF / bond price history, bounded by earliest transaction.
+
+    Same freshness / gap / ``force`` semantics as the MF backfill — without this,
+    quote-type holdings have at most a single latest point and so contribute nothing
+    to the *historical* valuation series. When many symbols each need only a shallow
+    catch-up, one bhavcopy per day is cheaper than per-symbol history, so the loop
+    routes them through :func:`_bulk_backfill_equity`; per-symbol (NSE-first, Yahoo
+    fallback) covers deep history and non-NSE names."""
     qs = (
         securities
         if securities is not None
@@ -542,7 +652,9 @@ def backfill_missing_equity_history(
         backfill_one = functools.partial(
             backfill_equity_history, nse_client=nse_client, yahoo_client=yahoo_client
         )
-        return _backfill_missing(qs, backfill_one=backfill_one, force=force)
+        return _backfill_missing(
+            qs, backfill_one=backfill_one, force=force, bulk_backfill=_bulk_backfill_equity
+        )
     finally:
         nse_client.close()
         yahoo_client.close()

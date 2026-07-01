@@ -27,3 +27,12 @@ def trading_days_between(start: date, end: date) -> int:
             days += 1
         cur += timedelta(days=1)
     return days
+
+
+def trading_days(start: date, end: date):
+    """Yield each weekday in ``[start, end]`` inclusive (holidays not modelled)."""
+    cur = start
+    while cur <= end:
+        if cur.weekday() < 5:
+            yield cur
+        cur += timedelta(days=1)
