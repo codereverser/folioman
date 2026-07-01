@@ -25,7 +25,9 @@ import httpx
 from folioman_core.models.nav import NAVPoint
 from folioman_core.price_feeds.errors import NAVFetchError
 
-BASE_URL = "https://www.amfiindia.com"
+# The portal host serves NAVAll.txt reliably; the www host is frequently
+# unreachable (connection timeouts), so it isn't used.
+BASE_URL = "https://portal.amfiindia.com"
 _NAVALL_PATH = "/spages/NAVAll.txt"
 DEFAULT_TIMEOUT = 60.0  # the file is a few MB — generous for a cold connect
 

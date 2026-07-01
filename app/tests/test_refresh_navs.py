@@ -28,11 +28,17 @@ def _no_request_spacing(monkeypatch):
     monkeypatch.setattr(refresh_navs_mod, "_SLEEP", lambda *_a, **_k: None)
 
 
+class _DummyClient:
+    def close(self):
+        pass
+
+
 @pytest.fixture(autouse=True)
 def _no_bulk_by_default(monkeypatch):
     """Default the whole-market snapshots to empty so existing tests exercise the
     per-security path and never touch the network. Bulk-path tests override these."""
     monkeypatch.setattr(refresh_navs_mod.amfi_bulk, "fetch_all_latest", lambda **_: {})
+    monkeypatch.setattr(refresh_navs_mod.nse_bhavcopy, "warmed_client", lambda: _DummyClient())
     monkeypatch.setattr(
         refresh_navs_mod.nse_bhavcopy, "fetch_close_by_symbol", lambda *_a, **_k: {}
     )

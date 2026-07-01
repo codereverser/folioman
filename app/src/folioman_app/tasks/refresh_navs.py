@@ -69,6 +69,9 @@ _BACKFILL_TAIL_GRACE = timedelta(days=7)
 # Window pulled to read an equity's *latest* close off the last row of its NSE
 # security-wise history — wide enough to clear a long weekend / holiday run.
 _QUOTE_LOOKBACK_DAYS = 10
+# How many trading days back to look for the most recent published bhavcopy — today's
+# isn't out until after the close, and a holiday run can sit a few days behind.
+_BHAVCOPY_LOOKBACK = 5
 _SLEEP = time.sleep
 
 
@@ -208,12 +211,20 @@ def _prime_bulk(clients: _FeedClients) -> tuple[dict, dict]:
     try:
         # Its own warmed session (not clients.nse, which the per-symbol fallback
         # owns): on the happy path the fallback never runs, so this is the pass's
-        # only NSE warm-up.
-        on = last_trading_day(timezone.localdate())
-        eq_map = {
-            sym: (p.date, p.nav, "nse-bhavcopy")
-            for sym, p in nse_bhavcopy.fetch_close_by_symbol(on).items()
-        }
+        # only NSE warm-up. Today's bhavcopy isn't published until after the close,
+        # so step back to the most recent day that has one — that day's close is the
+        # latest available price anyway (same as the per-symbol feed's last row).
+        bhav = nse_bhavcopy.warmed_client()
+        try:
+            day = last_trading_day(timezone.localdate())
+            for _ in range(_BHAVCOPY_LOOKBACK):
+                closes = nse_bhavcopy.fetch_close_by_symbol(day, client=bhav)
+                if closes:
+                    eq_map = {sym: (p.date, p.nav, "nse-bhavcopy") for sym, p in closes.items()}
+                    break
+                day = last_trading_day(day - timedelta(days=1))
+        finally:
+            bhav.close()
     except Exception as exc:  # best-effort: any bhavcopy failure → per-symbol quotes
         logger.warning("NSE bhavcopy unavailable — falling back per-symbol: %s", exc)
     return mf_map, eq_map
