@@ -83,6 +83,47 @@ def test_attribute_dividends_idempotent(make_investor):
     assert inv.transactions.filter(security=sec, transaction_type="dividend").count() == 1
 
 
+def test_attribute_dividends_reprices_after_bonus(make_investor):
+    """A bonus applied after a dividend was attributed must re-price it on the
+    bonus-adjusted share count — re-running attribution corrects the stored row."""
+    inv = make_investor()
+    _import_equity(inv, units="55", on="2024-01-15")
+    from folioman_app.models import AppliedCorporateAction, Folio, Security
+
+    sec = Security.objects.get(isin=_ISIN)
+    folio = Folio.objects.get(investor=inv, number=_DEMAT)
+    CorporateActionReference.objects.create(
+        security=sec,
+        isin=_ISIN,
+        symbol="RELIANCE",
+        exchange="NSE",
+        ex_date=dt.date(2024, 8, 1),
+        subject="Interim Dividend - Rs 10 Per Share",
+        parsed_type=CorpActionType.DIVIDEND.value,
+        amount=Decimal("10"),
+        needs_review=False,
+        source="NSE",
+    )
+    assert attribute_dividends_for_folio(inv, folio, sec) == 1
+    div = inv.transactions.get(security=sec, transaction_type="dividend")
+    assert div.amount == Decimal("550")  # 55 shares x Rs 10
+
+    # 1:1 bonus before the dividend ex-date → 55 becomes 110 on the demat.
+    AppliedCorporateAction.objects.create(
+        investor=inv,
+        folio=folio,
+        security=sec,
+        kind=CorpActionType.BONUS.value,
+        ex_date=dt.date(2024, 6, 1),
+        unit_multiplier=Decimal("2"),
+        source_ref=f"manual:bonus:2024-06-01:{_ISIN}",
+    )
+    assert attribute_dividends_for_folio(inv, folio, sec) == 1  # re-priced, not duplicated
+    assert inv.transactions.filter(security=sec, transaction_type="dividend").count() == 1
+    div.refresh_from_db()
+    assert div.amount == Decimal("1100")  # 110 shares x Rs 10
+
+
 def test_reconcile_triggers_dividend_attribution(make_investor):
     inv = make_investor()
     _import_equity(inv)

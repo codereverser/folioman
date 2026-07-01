@@ -234,6 +234,43 @@ def test_apply_bonus_rejects_nonpositive():
         apply_bonus([], bonus_units=Decimal("0"), effective_date=date(2024, 6, 1), security=_EQUITY)
 
 
+def _buy_in(units: str, *, on: date, folio: str) -> Transaction:
+    return Transaction(
+        security=_EQUITY,
+        date=on,
+        type=TransactionType.BUY,
+        units=units,
+        nav_or_price="100",
+        amount=str(Decimal(units) * Decimal("100")),
+        source=TransactionSource.MANUAL,
+        folio_number=folio,
+    )
+
+
+def test_bonus_credits_each_folio_its_own_shares():
+    """A security-wide bonus lands in the demat that holds the shares, so per-folio
+    held-units reflect it. Regression: a folio-less bonus row was silently dropped
+    by per-folio consumers (dividend attribution), leaving dividends on the
+    pre-bonus count."""
+    from folioman_core.corporate_actions import held_units_asof
+
+    txns = apply_bonus_from_multiplier(
+        [
+            _buy_in("100", on=date(2021, 1, 1), folio="A"),
+            _buy_in("50", on=date(2021, 1, 1), folio="B"),
+        ],
+        unit_multiplier=Decimal("2"),  # 1:1 bonus
+        effective_date=date(2024, 6, 1),
+        security=_EQUITY,
+        source_ref="b1",
+    )
+    ex = date(2024, 9, 1)
+    assert held_units_asof(txns, _EQUITY, ex, folio_number="A") == Decimal("200")
+    assert held_units_asof(txns, _EQUITY, ex, folio_number="B") == Decimal("100")
+    bonus_folios = sorted(t.folio_number for t in txns if t.type is TransactionType.BONUS)
+    assert bonus_folios == ["A", "B"]
+
+
 def test_record_dividend_rejects_nonpositive():
     with pytest.raises(ValueError, match="dividend amount"):
         record_dividend(amount=Decimal("0"), effective_date=date(2024, 6, 1), security=_EQUITY)

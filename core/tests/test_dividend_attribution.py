@@ -78,6 +78,47 @@ def test_attribute_dividends_skips_when_already_attributed():
     assert rows == []
 
 
+def test_attribute_dividends_after_bonus_uses_adjusted_units():
+    """A bonus (even one applied after the shares) inflates the ex-date holding, so
+    a later dividend is attributed on the adjusted count — not the as-traded one."""
+    from folioman_core.corporate_action_subject import CorpActionType
+    from folioman_core.corporate_actions import (
+        CorporateActionApplyEvent,
+        apply_corporate_action_events,
+    )
+
+    txns = apply_corporate_action_events(
+        [_buy("55", date(2020, 1, 1))],
+        [
+            CorporateActionApplyEvent(
+                kind=CorpActionType.BONUS,
+                ex_date=date(2024, 6, 1),
+                security=_EQUITY,
+                unit_multiplier=Decimal("2"),  # 1:1 → 55 becomes 110
+                source_ref="ca:bonus",
+            )
+        ],
+    )
+    schedule = [
+        DividendScheduleRow(
+            reference_id=9,
+            ex_date=date(2025, 1, 1),
+            record_date=None,
+            dividend_per_share=Decimal("5"),
+        )
+    ]
+    rows = attribute_dividends_for_folio(
+        txns,
+        security=_EQUITY,
+        folio_number=_FOLIO,
+        schedule=schedule,
+        existing_source_refs=set(),
+    )
+    assert len(rows) == 1
+    assert rows[0].units_held == Decimal("110")
+    assert rows[0].amount == Decimal("550")
+
+
 def test_attribute_dividends_skips_zero_holdings():
     schedule = [
         DividendScheduleRow(

@@ -63,7 +63,13 @@ def _folio_snapshot_only(investor: Investor, security: Security, folio: Folio) -
 
 @db_transaction.atomic
 def attribute_dividends_for_folio(investor: Investor, folio: Folio, security: Security) -> int:
-    """Write missing ``DIVIDEND`` rows for one equity folio. Returns rows created."""
+    """Reconcile attributed ``DIVIDEND`` rows for one equity folio to the ledger.
+
+    Upserts rather than only creating: a corporate action that changes the units
+    held on an ex-date (e.g. a bonus that lands after the shares) must re-price the
+    already-attributed dividends, and drop any whose entitlement fell to zero.
+    Returns the number of rows created, re-priced, or removed.
+    """
     if security.security_type != SecurityType.EQUITY.value:
         return 0
     if not _folio_has_ledger(investor, security, folio):
@@ -76,43 +82,71 @@ def attribute_dividends_for_folio(investor: Investor, folio: Folio, security: Se
         return 0
 
     # Units held at each ex-date come from the corporate-action-adjusted projection,
-    # so a dividend is attributed on the split-adjusted share count, not the as-traded one.
+    # so a dividend is attributed on the split/bonus-adjusted share count, not the
+    # as-traded one. Recompute the full set (no skip) to correct existing rows.
     cores = compute_ledger(investor, security, folio=folio)
-    existing = {
-        ref
-        for ref in investor.transactions.filter(security=security, folio=folio)
-        .exclude(source_ref="")
-        .values_list("source_ref", flat=True)
-    }
     core_security = to_core_security(security)
     folio_number = folio.number or ""
-    attributions = compute_dividend_attributions(
-        cores,
-        security=core_security,
-        folio_number=folio_number,
-        schedule=schedule,
-        existing_source_refs=existing,
-    )
-
-    created = 0
-    for row in attributions:
-        core = attribution_to_transaction(row, security=core_security)
-        Transaction.objects.create(
-            investor=investor,
+    desired = {
+        row.source_ref: attribution_to_transaction(row, security=core_security)
+        for row in compute_dividend_attributions(
+            cores,
+            security=core_security,
+            folio_number=folio_number,
+            schedule=schedule,
+            existing_source_refs=set(),
+        )
+    }
+    existing = {
+        txn.source_ref: txn
+        for txn in investor.transactions.filter(
             security=security,
             folio=folio,
-            date=core.date,
             transaction_type=TransactionType.DIVIDEND.value,
-            units=core.units,
-            nav_or_price=core.nav_or_price,
-            amount=core.amount,
-            currency=core.currency,
             source=TransactionSource.CORPORATE_ACTION.value,
-            source_ref=core.source_ref,
-            cost_basis_complete=True,
+            source_ref__startswith="dividend:ca-ref:",
         )
-        created += 1
-    return created
+    }
+
+    changed = 0
+    for ref, core in desired.items():
+        txn = existing.get(ref)
+        if txn is None:
+            Transaction.objects.create(
+                investor=investor,
+                security=security,
+                folio=folio,
+                date=core.date,
+                transaction_type=TransactionType.DIVIDEND.value,
+                units=core.units,
+                nav_or_price=core.nav_or_price,
+                amount=core.amount,
+                currency=core.currency,
+                source=TransactionSource.CORPORATE_ACTION.value,
+                source_ref=ref,
+                cost_basis_complete=True,
+            )
+            changed += 1
+        elif txn.amount != core.amount or txn.date != core.date:
+            txn.amount = core.amount
+            txn.date = core.date
+            txn.save(update_fields=["amount", "date"])
+            changed += 1
+
+    # Entitlement dropped to zero (e.g. a reverse split / buyback re-based history) —
+    # the stale attributed row no longer matches any schedule entitlement.
+    stale = set(existing) - set(desired)
+    if stale:
+        investor.transactions.filter(
+            security=security,
+            folio=folio,
+            transaction_type=TransactionType.DIVIDEND.value,
+            source=TransactionSource.CORPORATE_ACTION.value,
+            source_ref__in=stale,
+        ).delete()
+        changed += len(stale)
+
+    return changed
 
 
 def attribute_dividends_for_security(investor: Investor, security: Security) -> int:

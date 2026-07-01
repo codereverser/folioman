@@ -132,6 +132,29 @@ def held_units_asof(
     return net_units_from_transactions(subset)
 
 
+def _named_folios(transactions: Sequence[Transaction], security: Security) -> list[str]:
+    """Distinct non-blank folio numbers with rows for ``security``, sorted.
+
+    A security's equity rows all carry their demat folio number; folio-less rows
+    are the pre-folio / MF-style case. Bonus distribution walks the named folios
+    so each demat gets its own bonus row; an empty result means fall back to a
+    single folio-agnostic row (the historical behaviour, still right for one folio).
+    """
+    return sorted(
+        {
+            t.folio_number
+            for t in transactions
+            if _same_security(t.security, security) and t.folio_number
+        }
+    )
+
+
+def _sole_folio(transactions: Sequence[Transaction], security: Security) -> str:
+    """The one folio holding ``security``, or "" when zero or many hold it."""
+    named = _named_folios(transactions, security)
+    return named[0] if len(named) == 1 else ""
+
+
 def _stable_source_ref(core: Transaction) -> str:
     """Fallback provenance key when the event left ``source_ref`` blank."""
     ident = core.security.isin or core.security.symbol or core.security.name
@@ -299,25 +322,34 @@ def apply_bonus_from_multiplier(
     if ref and any(txn.source_ref == ref for txn in transactions):
         # Idempotent re-apply: a prior run already recorded this bonus row.
         return _sort_transactions(list(transactions))
-    held = held_units_asof(transactions, security, effective_date)
-    if held <= _ZERO:
-        return _sort_transactions(list(transactions))
-    if ratio is not None and _issues_whole_shares(security):
-        a, b = ratio
-        # Exact integer numerator (held * a), then floor the division by b.
-        bonus_units = (held * Decimal(a) / Decimal(b)).to_integral_value(rounding=ROUND_FLOOR)
-    else:
-        bonus_units = held * (unit_multiplier - 1)
-    if bonus_units <= _ZERO:
-        # Holding too small to earn even one whole bonus share.
-        return _sort_transactions(list(transactions))
-    return apply_bonus(
-        transactions,
-        bonus_units=bonus_units,
-        effective_date=effective_date,
-        security=security,
-        source_ref=source_ref,
-    )
+
+    # Bonus shares land in the demat that holds the underlying, so credit each
+    # folio its own row (whole-share flooring is per registrar account too). No
+    # named folios → one folio-agnostic row, exactly the pre-folio behaviour.
+    folios = _named_folios(transactions, security) or [""]
+    result = list(transactions)
+    for folio_number in folios:
+        held = held_units_asof(result, security, effective_date, folio_number=folio_number)
+        if held <= _ZERO:
+            continue
+        if ratio is not None and _issues_whole_shares(security):
+            a, b = ratio
+            # Exact integer numerator (held * a), then floor the division by b.
+            bonus_units = (held * Decimal(a) / Decimal(b)).to_integral_value(rounding=ROUND_FLOOR)
+        else:
+            bonus_units = held * (unit_multiplier - 1)
+        if bonus_units <= _ZERO:
+            # Holding too small to earn even one whole bonus share.
+            continue
+        result = apply_bonus(
+            result,
+            bonus_units=bonus_units,
+            effective_date=effective_date,
+            security=security,
+            source_ref=source_ref,
+            folio_number=folio_number,
+        )
+    return _sort_transactions(result)
 
 
 def apply_bonus(
@@ -327,8 +359,14 @@ def apply_bonus(
     effective_date: date,
     security: Security,
     source_ref: str = "",
+    folio_number: str = "",
 ) -> list[Transaction]:
-    """Record bonus shares at zero cost."""
+    """Record bonus shares at zero cost.
+
+    ``folio_number`` credits the bonus to the demat/folio that holds the shares,
+    so per-folio consumers (dividend attribution) see it. Left blank the row is
+    folio-agnostic — correct only when the security sits in a single folio.
+    """
     if bonus_units <= _ZERO:
         msg = "bonus_units must be positive"
         raise ValueError(msg)
@@ -342,6 +380,7 @@ def apply_bonus(
         amount=_ZERO,
         source=TransactionSource.CORPORATE_ACTION,
         source_ref=source_ref,
+        folio_number=folio_number,
     )
     if not bonus.source_ref:
         bonus = bonus.model_copy(update={"source_ref": _stable_source_ref(bonus)})
@@ -433,6 +472,7 @@ def apply_rights(
     effective_date: date,
     security: Security,
     source_ref: str = "",
+    folio_number: str = "",
 ) -> list[Transaction]:
     """Record a rights issue as a dated buy at the issue price."""
     if units <= _ZERO or price < _ZERO:
@@ -447,6 +487,7 @@ def apply_rights(
         amount=units * price,
         source=TransactionSource.CORPORATE_ACTION,
         source_ref=source_ref or "rights",
+        folio_number=folio_number,
     )
     return _sort_transactions([*transactions, rights])
 
@@ -459,6 +500,7 @@ def apply_buyback(
     effective_date: date,
     security: Security,
     source_ref: str = "",
+    folio_number: str = "",
 ) -> list[Transaction]:
     """Record a buyback as a sell at the offer price."""
     if units <= _ZERO or price <= _ZERO:
@@ -472,6 +514,7 @@ def apply_buyback(
         nav_or_price=price,
         source=TransactionSource.CORPORATE_ACTION,
         source_ref=source_ref or "buyback",
+        folio_number=folio_number,
     )
     return _sort_transactions([*transactions, buyback])
 
@@ -562,6 +605,7 @@ def apply_corporate_action_events(
                 effective_date=event.ex_date,
                 security=event.security,
                 source_ref=ref,
+                folio_number=_sole_folio(txns, event.security),
             )
         elif event.kind is CorpActionType.BUYBACK:
             if event.rights_units is None or event.rights_price is None:
@@ -574,6 +618,7 @@ def apply_corporate_action_events(
                 effective_date=event.ex_date,
                 security=event.security,
                 source_ref=ref,
+                folio_number=_sole_folio(txns, event.security),
             )
         elif event.kind is CorpActionType.DEMERGER:
             # A demerger leaves the parent's units untouched — the child shares are
