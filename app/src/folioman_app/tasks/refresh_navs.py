@@ -24,7 +24,15 @@ from django.db import IntegrityError, transaction
 from django.db.models import Max, Min
 from django.utils import timezone
 from folioman_core.models import SecurityType
-from folioman_core.price_feeds import captnemo, coingecko, mfapi, nse_history, yfinance_feed
+from folioman_core.price_feeds import (
+    amfi_bulk,
+    captnemo,
+    coingecko,
+    mfapi,
+    nse_bhavcopy,
+    nse_history,
+    yfinance_feed,
+)
 from folioman_core.price_feeds.errors import NAVFetchError
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
@@ -74,6 +82,13 @@ class _FeedClients:
         self._captnemo = None
         self._nse = None
         self._yahoo = None
+        self._amfi = None
+
+    @property
+    def amfi(self):
+        if self._amfi is None:
+            self._amfi = amfi_bulk.shared_client()
+        return self._amfi
 
     @property
     def mfapi(self):
@@ -100,7 +115,7 @@ class _FeedClients:
         return self._yahoo
 
     def close(self) -> None:
-        for client in (self._mfapi, self._captnemo, self._nse, self._yahoo):
+        for client in (self._mfapi, self._captnemo, self._nse, self._yahoo, self._amfi):
             if client is not None:
                 client.close()
 
@@ -167,24 +182,81 @@ def _fetch_point(security: Security, clients: _FeedClients):
     return None
 
 
+def _prime_bulk(clients: _FeedClients) -> tuple[dict, dict]:
+    """Fetch the day's whole-market snapshots once: AMFI NAVAll + NSE bhavcopy.
+
+    Returns ``(mf_map, eq_map)`` of ``{id: (date, nav, source)}`` — MF keyed by
+    AMFI code or ISIN, equity by NSE symbol. Either map is empty on a feed outage,
+    so :func:`refresh_navs` transparently falls back to a per-security fetch. This
+    is the whole point: one request for the entire MF universe and one for the
+    entire cash market, instead of one per security every day.
+    """
+    mf_map: dict[str, tuple] = {}
+    eq_map: dict[str, tuple] = {}
+    try:
+        mf_map = {
+            key: (p.date, p.nav, "amfi")
+            for key, p in amfi_bulk.fetch_all_latest(client=clients.amfi).items()
+        }
+    except NAVFetchError as exc:
+        logger.warning("AMFI bulk NAV unavailable — falling back per-scheme: %s", exc)
+    try:
+        # Its own warmed session (not clients.nse, which the per-symbol fallback
+        # owns): on the happy path the fallback never runs, so this is the pass's
+        # only NSE warm-up.
+        on = last_trading_day(timezone.localdate())
+        eq_map = {
+            sym: (p.date, p.nav, "nse-bhavcopy")
+            for sym, p in nse_bhavcopy.fetch_close_by_symbol(on).items()
+        }
+    except Exception as exc:  # best-effort: any bhavcopy failure → per-symbol quotes
+        logger.warning("NSE bhavcopy unavailable — falling back per-symbol: %s", exc)
+    return mf_map, eq_map
+
+
+def _bulk_point(security: Security, mf_map: dict, eq_map: dict):
+    """Today's (date, nav, source) from the pre-fetched bulk maps, or None."""
+    stype = security.security_type
+    if stype == SecurityType.MF.value:
+        for key in (security.amfi_code, security.isin):
+            if key and key in mf_map:
+                return mf_map[key]
+    elif (
+        stype in _QUOTE_TYPES
+        and stype != SecurityType.FOREIGN_EQUITY.value
+        and security.symbol
+        and security.exchange in ("", "NSE")
+    ):
+        return eq_map.get(security.symbol.upper())
+    return None
+
+
 def refresh_navs(*, securities: Iterable[Security] | None = None) -> dict:
     qs = Security.objects.all() if securities is None else securities
     summary = {"updated": 0, "skipped": 0, "errors": 0}
-    fetched = False
     clients = _FeedClients()
+    live_fetched = False
     try:
+        mf_map, eq_map = _prime_bulk(clients)
         for security in qs:
-            if fetched:
-                _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
-            fetched = True
-            try:
-                point = _fetch_point(security, clients)
-            except (NAVFetchError, PriceFetchError) as exc:
-                logger.warning(
-                    "NAV refresh failed for security %s (%s): %s", security.id, security.name, exc
-                )
-                summary["errors"] += 1
-                continue
+            point = _bulk_point(security, mf_map, eq_map)
+            if point is None:
+                # No bulk hit (foreign equity, crypto, a delisted symbol, or a bulk
+                # outage) → fetch this one live, spacing only the live calls.
+                if live_fetched:
+                    _SLEEP(_REQUEST_SPACING)
+                live_fetched = True
+                try:
+                    point = _fetch_point(security, clients)
+                except (NAVFetchError, PriceFetchError) as exc:
+                    logger.warning(
+                        "NAV refresh failed for security %s (%s): %s",
+                        security.id,
+                        security.name,
+                        exc,
+                    )
+                    summary["errors"] += 1
+                    continue
             if point is None:
                 logger.debug(
                     "NAV refresh: no feed for security %s (%s)", security.id, security.name

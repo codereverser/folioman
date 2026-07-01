@@ -28,6 +28,16 @@ def _no_request_spacing(monkeypatch):
     monkeypatch.setattr(refresh_navs_mod, "_SLEEP", lambda *_a, **_k: None)
 
 
+@pytest.fixture(autouse=True)
+def _no_bulk_by_default(monkeypatch):
+    """Default the whole-market snapshots to empty so existing tests exercise the
+    per-security path and never touch the network. Bulk-path tests override these."""
+    monkeypatch.setattr(refresh_navs_mod.amfi_bulk, "fetch_all_latest", lambda **_: {})
+    monkeypatch.setattr(
+        refresh_navs_mod.nse_bhavcopy, "fetch_close_by_symbol", lambda *_a, **_k: {}
+    )
+
+
 @pytest.fixture
 def mocked_feeds(monkeypatch):
     monkeypatch.setattr(
@@ -71,6 +81,61 @@ def test_refresh_writes_navhistory_per_type(mocked_feeds):
     assert NAVHistory.objects.get(security=mf, date=_TODAY).nav == Decimal("75.5")
     assert NAVHistory.objects.get(security=eq, date=_TODAY).nav == Decimal("2850")
     assert NAVHistory.objects.get(security=crypto, date=_TODAY).source == "coingecko"
+
+
+def test_refresh_prices_from_bulk_maps_without_per_security_calls(monkeypatch):
+    """MF resolves from the AMFI NAVAll snapshot, equity from the NSE bhavcopy —
+    the per-security feeds are never called (2 requests instead of N+M)."""
+    monkeypatch.setattr(
+        refresh_navs_mod.amfi_bulk,
+        "fetch_all_latest",
+        lambda **_: {
+            "122639": NAVPoint(date=_TODAY, nav=Decimal("75.5")),
+            "INE002A01018": NAVPoint(date=_TODAY, nav=Decimal("2850")),
+        },
+    )
+    monkeypatch.setattr(
+        refresh_navs_mod.nse_bhavcopy,
+        "fetch_close_by_symbol",
+        lambda *_a, **_k: {"RELIANCE": NAVPoint(date=_TODAY, nav=Decimal("2850"))},
+    )
+
+    def _must_not_call(*_a, **_k):
+        raise AssertionError("per-security feed hit despite bulk data")
+
+    monkeypatch.setattr(mfapi, "fetch_latest_nav", _must_not_call)
+    monkeypatch.setattr(nse_history, "fetch_history", _must_not_call)
+    monkeypatch.setattr(yfinance_feed, "fetch_quote", _must_not_call)
+
+    mf = Security.objects.create(
+        security_type=SecurityType.MF.value, name="Fund", amfi_code="122639"
+    )
+    eq = Security.objects.create(
+        security_type=SecurityType.EQUITY.value,
+        name="Reliance",
+        isin="INE002A01018",
+        symbol="RELIANCE",
+    )
+
+    summary = refresh_navs()
+
+    assert summary["updated"] == 2 and summary["errors"] == 0
+    assert NAVHistory.objects.get(security=mf, date=_TODAY).source == "amfi"
+    point = NAVHistory.objects.get(security=eq, date=_TODAY)
+    assert point.nav == Decimal("2850") and point.source == "nse-bhavcopy"
+
+
+def test_refresh_falls_back_per_security_when_absent_from_bulk(mocked_feeds):
+    """A scheme missing from the bulk snapshot (new / obscure) still prices via the
+    per-scheme feed — the bulk maps are empty here (autouse default)."""
+    mf = Security.objects.create(
+        security_type=SecurityType.MF.value, name="New Fund", amfi_code="999999"
+    )
+
+    summary = refresh_navs()
+
+    assert summary["updated"] == 1
+    assert NAVHistory.objects.get(security=mf, date=_TODAY).nav == Decimal("75.5")  # mfapi latest
 
 
 def test_equity_prices_nse_first_even_when_yahoo_throttles(monkeypatch):
