@@ -72,7 +72,7 @@ wheels = [
 
 [[package]]
 name = "casparser"
-version = "1.2.0"
+version = "1.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "casparser-isin" },
@@ -83,9 +83,9 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3a/c1/888059e2c1d5c8b4683540b9cd0fc47ba40244e2439199104b66c7879013/casparser-1.2.0.tar.gz", hash = "sha256:8868b45df75e43b34bcab3008aef91969bc997457906a5297e0611eb4e50743b", size = 77343, upload-time = "2026-06-17T05:31:08.582Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/45/f7/05266a72fb90e859305b6e2256cf59cd03c733c3d9ecc01156fcbe8d0145/casparser-1.2.1.tar.gz", hash = "sha256:33a051145e35be6dda282817a1c4b3883783024ab3aea9b03e47a21f08775b89", size = 77614, upload-time = "2026-06-24T12:50:04.125Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/92/09/9502f87f69c8bd61ca1f8b2cf9018a9ddf95cc0f5e3736555ccb243092d5/casparser-1.2.0-py3-none-any.whl", hash = "sha256:c82ffa72465a082bba3697268b17c6bfd82fa3849d15dde02f2137ea8adfefb4", size = 87039, upload-time = "2026-06-17T05:31:07.343Z" },
+    { url = "https://files.pythonhosted.org/packages/0c/36/204138260c1b487b7b3220957545deac1a30d978afc96e48d218dc2010f7/casparser-1.2.1-py3-none-any.whl", hash = "sha256:1475798d0cd2c4f2614f5679cc33fa93ee6b3317a890accda19fbffb9ee2d8f1", size = 87319, upload-time = "2026-06-24T12:50:03.002Z" },
 ]
 
 [[package]]
@@ -454,7 +454,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "casparser", specifier = ">=1.1.0" },
+    { name = "casparser", specifier = ">=1.2.1" },
     { name = "casparser-isin", specifier = ">=2026.6.9" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.7" },
