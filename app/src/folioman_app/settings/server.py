@@ -14,12 +14,12 @@ auth are wired up at the API layer. The optional
 
 from __future__ import annotations
 
-import os
 from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
 
+from folioman_app._env import env
 from folioman_app.settings._logging import make_logging
 from folioman_app.settings.base import *
 from folioman_app.settings.base import DEV_SECRET_KEY
@@ -27,28 +27,21 @@ from folioman_app.settings.base import DEV_SECRET_KEY
 DEBUG = False
 
 # Comma-separated hostnames, e.g. "folioman.example.com,10.0.0.5".
-ALLOWED_HOSTS = [
-    host.strip() for host in os.environ.get("FOLIOMAN_ALLOWED_HOSTS", "").split(",") if host.strip()
-]
+ALLOWED_HOSTS = [h.strip() for h in env.list("FOLIOMAN_ALLOWED_HOSTS", []) if h.strip()]
 
+# Postgres via a single 12-factor DATABASE_URL — required. env.dj_db_url raises at
+# import when it's unset, so a misconfigured server fails closed instead of silently
+# falling back. Compose builds it from the db service; Render injects it.
+# CONN_MAX_AGE: persistent connections (0 = close each request); 60s is safe behind
+# a pooling proxy or modest concurrency.
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ.get("FOLIOMAN_DB_NAME", "folioman"),
-        "USER": os.environ.get("FOLIOMAN_DB_USER", "folioman"),
-        "PASSWORD": os.environ.get("FOLIOMAN_DB_PASSWORD", ""),
-        "HOST": os.environ.get("FOLIOMAN_DB_HOST", "127.0.0.1"),
-        "PORT": os.environ.get("FOLIOMAN_DB_PORT", "5432"),
-        # Persistent connections; 0 closes after each request. 60s is a safe
-        # default behind a connection-pooling proxy or modest concurrency.
-        "CONN_MAX_AGE": int(os.environ.get("FOLIOMAN_DB_CONN_MAX_AGE", "60")),
-    }
+    "default": env.dj_db_url("DATABASE_URL", conn_max_age=env.int("FOLIOMAN_DB_CONN_MAX_AGE", 60))
 }
 
 # JWT bearer auth on every API route (api/auth.py reads this flag per-request).
 # Read from env (default jwt) only so the guard below can reject an operator who
 # explicitly tries to weaken it — server mode must never be "local".
-FOLIOMAN_API_AUTH = os.environ.get("FOLIOMAN_API_AUTH", "jwt")
+FOLIOMAN_API_AUTH = env.str("FOLIOMAN_API_AUTH", "jwt")
 
 # --- Fail-closed startup guards --------------------------------------------
 # These run at settings-import time, which gunicorn does on boot — so they are a
@@ -66,7 +59,7 @@ if FOLIOMAN_API_AUTH != "jwt":
 
 # #2 Forgeable JWTs: ninja_jwt signs tokens with SECRET_KEY. If the dev fallback
 #    leaks into production, anyone can mint valid tokens. Require a real key.
-if not os.environ.get("FOLIOMAN_SECRET_KEY") or SECRET_KEY == DEV_SECRET_KEY:
+if not env.str("FOLIOMAN_SECRET_KEY", "") or SECRET_KEY == DEV_SECRET_KEY:
     msg = (
         "Server mode requires FOLIOMAN_SECRET_KEY to be set to a real, non-dev value "
         "(it signs JWTs). Refusing to start with the insecure dev fallback."
@@ -85,17 +78,17 @@ NINJA_JWT = {
 # The container entrypoint autogenerates one and prints it to the console on first
 # boot; an operator may pin a stable value via this env var. Empty ⇒ the setup
 # endpoint falls back to its zero-users gate only (dev / non-Docker runs).
-FOLIOMAN_SETUP_TOKEN = os.environ.get("FOLIOMAN_SETUP_TOKEN", "")
+FOLIOMAN_SETUP_TOKEN = env.str("FOLIOMAN_SETUP_TOKEN", "")
 
 # Writable casparser-isin DB path (a mounted volume) so the daily updater can
 # refresh it in place. Unset → use the bundled DB read-only, no auto-update.
 # ensure_isin_db() (called from run_scheduler / the web entrypoint) seeds it.
-_isin_db = os.environ.get("FOLIOMAN_ISIN_DB")
+_isin_db = env.str("FOLIOMAN_ISIN_DB", "")
 FOLIOMAN_ISIN_DB_PATH = Path(_isin_db) if _isin_db else None
 
 # Console always (so `docker logs` captures output); plus a rotating file when
 # FOLIOMAN_LOG_DIR is set (e.g. a mounted volume). No telemetry, ever.
-_log_dir = os.environ.get("FOLIOMAN_LOG_DIR")
+_log_dir = env.str("FOLIOMAN_LOG_DIR", "")
 LOGGING = make_logging(
     Path(_log_dir) / "folioman.log" if _log_dir else None,
     console=True,

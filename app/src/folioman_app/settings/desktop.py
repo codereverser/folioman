@@ -16,19 +16,18 @@ desktop launcher creates it on first run before `django.setup()`.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from platformdirs import user_data_dir
 
+from folioman_app._env import env
 from folioman_app.settings._logging import make_logging
-from folioman_app.settings._sqlite import sqlite_concurrency_options
 from folioman_app.settings.base import *
 
 # Writable per-OS user-data dir, env-overridable. The desktop launcher sets
 # FOLIOMAN_DATA_DIR to this same resolved path and mkdirs it before django.setup,
 # so settings import never touches the filesystem (logging uses delay=True).
-DATA_DIR = Path(os.environ.get("FOLIOMAN_DATA_DIR") or user_data_dir("folioman", "folioman"))
+DATA_DIR = Path(env.str("FOLIOMAN_DATA_DIR", "") or user_data_dir("folioman", "folioman"))
 
 # Desktop ships as a built binary; never run with DEBUG on.
 DEBUG = False
@@ -43,15 +42,10 @@ FOLIOMAN_API_AUTH = "local"
 # and the request thread share the DB.
 FOLIOMAN_RUN_SCHEDULER = True
 
-# WAL + busy_timeout + IMMEDIATE so the request thread and the in-process scheduler
-# thread share this file without "database is locked" (see _sqlite.py for the why).
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": DATA_DIR / "folioman.sqlite3",
-        "OPTIONS": sqlite_concurrency_options(),
-    }
-}
+# Inherit base's SQLite engine + WAL/busy-timeout OPTIONS (the shared _sqlite.py
+# config that lets the request thread and the in-process scheduler thread share the
+# file without "database is locked"); only the file location moves to the data dir.
+DATABASES = {"default": {**DATABASES["default"], "NAME": DATA_DIR / "folioman.sqlite3"}}
 
 # Local file logging only (no console — desktop runs as a windowed app); the
 # data dir is ensured to exist before the first log record is written.
