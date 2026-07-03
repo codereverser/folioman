@@ -16,9 +16,9 @@ apps. Logging (local files) is configured per run mode.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from folioman_app._env import env
 from folioman_app.settings._logging import make_logging
 from folioman_app.settings._sqlite import sqlite_concurrency_options
 
@@ -30,8 +30,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Named so server.py can refuse to boot if this dev fallback ever reaches a
 # networked deployment (it signs JWTs — see the startup guard in server.py).
 DEV_SECRET_KEY = "dev-insecure-change-me-set-a-real-key-in-production"
-SECRET_KEY = os.environ.get("FOLIOMAN_SECRET_KEY", DEV_SECRET_KEY)
-DEBUG = os.environ.get("FOLIOMAN_DEBUG", "0") == "1"
+SECRET_KEY = env.str("FOLIOMAN_SECRET_KEY", DEV_SECRET_KEY)
+DEBUG = env.bool("FOLIOMAN_DEBUG", False)
 ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1"]
 
 INSTALLED_APPS = [
@@ -67,25 +67,25 @@ FOLIOMAN_API_AUTH = "local"
 # only; hand-entering transactions ships in the multi-asset release. The
 # endpoint and create_manual_transaction() stay in the tree — flip this on
 # (FOLIOMAN_MANUAL_TXNS=1) to re-enable, no code change needed.
-MANUAL_TRANSACTIONS_ENABLED = os.environ.get("FOLIOMAN_MANUAL_TXNS", "0") == "1"
+MANUAL_TRANSACTIONS_ENABLED = env.bool("FOLIOMAN_MANUAL_TXNS", False)
 
 # Hosted-demo read-only mode. When on (FOLIOMAN_DEMO=1), DemoReadOnlyMiddleware
 # refuses every state-changing API request with 403 — server-side, so it holds no
 # matter what the frontend exposes. Off everywhere by default; the demo deployment
 # (and `seed_demo`-backed stacks) flip it on. Auth-token routes stay open so the
 # JWT demo can still issue read tokens.
-DEMO_MODE = os.environ.get("FOLIOMAN_DEMO", "0") == "1"
+DEMO_MODE = env.bool("FOLIOMAN_DEMO", False)
 
 # Day-wise valuation scheduler. Off by default (base/server) — the server runs one
 # dedicated `manage.py run_scheduler` process, never one per gunicorn worker. The
 # desktop settings flip it on so the single PyWebView process runs it in a thread.
 # Env override (FOLIOMAN_RUN_SCHEDULER=1) for a dev runserver that wants it inline.
-FOLIOMAN_RUN_SCHEDULER = os.environ.get("FOLIOMAN_RUN_SCHEDULER", "0") == "1"
+FOLIOMAN_RUN_SCHEDULER = env.bool("FOLIOMAN_RUN_SCHEDULER", False)
 
 # Dev / test logging: console only, so a bare `manage.py runserver` (the dev
 # loop) actually shows scheduler + valuation job logs. desktop.py / server.py
 # override this with their rotating-file configs.
-LOGGING = make_logging(console=True, level=os.environ.get("FOLIOMAN_LOG_LEVEL", "INFO"))
+LOGGING = make_logging(console=True, level=env.str("FOLIOMAN_LOG_LEVEL", "INFO"))
 
 ROOT_URLCONF = "folioman_app.urls"
 
@@ -102,7 +102,7 @@ WSGI_APPLICATION = "folioman_app.wsgi.application"
 
 # Product version surfaced in the UI (Settings → About). Single source of truth;
 # the desktop/server shells can override via the FOLIOMAN_VERSION env var.
-FOLIOMAN_VERSION = os.environ.get("FOLIOMAN_VERSION", "1.0.0")
+FOLIOMAN_VERSION = env.str("FOLIOMAN_VERSION", "1.0.0")
 
 # Placeholder database. desktop.py points NAME at a user-data SQLite file;
 # server.py switches to Postgres. Tests use the in-memory SQLite test DB.
@@ -137,7 +137,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # BASE_DIR = .../app/src/folioman_app → repo root is three parents up. A packaged
 # desktop build sets FOLIOMAN_FRONTEND_DIST explicitly.
 _REPO_ROOT = BASE_DIR.parent.parent.parent
-FRONTEND_DIST = os.environ.get("FOLIOMAN_FRONTEND_DIST") or str(_REPO_ROOT / "frontend" / "dist")
+FRONTEND_DIST = env.str("FOLIOMAN_FRONTEND_DIST", "") or str(_REPO_ROOT / "frontend" / "dist")
 
 if Path(FRONTEND_DIST).is_dir():
     # Serve dist/ contents at the site root: /assets/*, /sw.js, /manifest, and
@@ -154,16 +154,14 @@ FERNET_KEY_AUTOGEN = False
 FERNET_KEY_REQUIRED = False
 # Dev / test fallback only — like the dev SECRET_KEY, never used in production
 # (real keys come from env or the generated desktop key file). Insecure on purpose.
-DEV_FERNET_KEY = os.environ.get(
-    "FOLIOMAN_FERNET_KEY", "lxS4L-1mmiEwlCCHsqgXzByglZ7TWlgcV3XeG7mTmY0="
-)
+DEV_FERNET_KEY = env.str("FOLIOMAN_FERNET_KEY", "lxS4L-1mmiEwlCCHsqgXzByglZ7TWlgcV3XeG7mTmY0=")
 
 # --- CAS/eCAS upload size cap ----------------------------------------------
 # A real CAS/eCAS PDF is well under a megabyte; this cap exists so a hostile or
 # accidental multi-GB upload can't be read into memory and OOM the server. The
 # whole file is loaded (file.read()) to parse, so this is the load-bearing guard
 # — Django's DATA_UPLOAD_MAX_MEMORY_SIZE does not bound multipart file parts.
-MAX_UPLOAD_BYTES = int(os.environ.get("FOLIOMAN_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+MAX_UPLOAD_BYTES = env.int("FOLIOMAN_MAX_UPLOAD_BYTES", 25 * 1024 * 1024)
 
 # --- casparser-isin database -----------------------------------------------
 # Writable location for the ISIN/AMFI reference DB so the daily updater can refresh
