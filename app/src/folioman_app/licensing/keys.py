@@ -14,9 +14,10 @@ everything stays on the free tier.
 from __future__ import annotations
 
 import base64
-import os
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from folioman_app._env import env
 
 # Filled in by the developer after `generate_license_keypair`. Intentionally
 # empty in the repo — no real signing public key is committed by tooling.
@@ -25,7 +26,7 @@ EMBEDDED_LICENSE_PUBLIC_KEY_B64 = ""
 
 def get_license_public_key_b64() -> str:
     """Base64 ed25519 public key, or '' when licensing is not configured."""
-    return os.environ.get("FOLIOMAN_LICENSE_PUBLIC_KEY", EMBEDDED_LICENSE_PUBLIC_KEY_B64).strip()
+    return env.str("FOLIOMAN_LICENSE_PUBLIC_KEY", EMBEDDED_LICENSE_PUBLIC_KEY_B64).strip()
 
 
 def generate_keypair() -> tuple[str, str]:

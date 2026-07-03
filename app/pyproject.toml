@@ -23,6 +23,9 @@ dependencies = [
     # ProcessorFormatter. Both pure Python, Nuitka-safe.
     "structlog>=24.4",
     "rich>=13.7",
+    # 12-factor config: typed env reads + DATABASE_URL parsing (env.dj_db_url).
+    # The [django] extra pulls dj-database-url. Pure Python, Nuitka-safe.
+    "environs[django]>=11",
 ]
 
 # Server-mode-only runtime deps. The desktop Nuitka build excludes these:

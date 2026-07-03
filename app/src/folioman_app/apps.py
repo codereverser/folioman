@@ -8,6 +8,8 @@ import sys
 from django.apps import AppConfig
 from django.conf import settings
 
+from folioman_app._env import env
+
 # Management commands during which the in-process scheduler must NOT auto-start
 # (migrations, tests, schema/asset tooling, or the dedicated scheduler process).
 _NO_SCHEDULER_COMMANDS = {
@@ -53,7 +55,7 @@ class FoliomanAppConfig(AppConfig):
         # then starts it explicitly so it also owns the shutdown on window close.
         # Without this, ready() (run during django.setup) would start the catch-up
         # tick against a not-yet-migrated DB on a fresh install.
-        if os.environ.get("FOLIOMAN_DEFER_SCHEDULER") == "1":
+        if env.bool("FOLIOMAN_DEFER_SCHEDULER", False):
             return
         argv1 = sys.argv[1] if len(sys.argv) > 1 else ""
         if argv1 in _NO_SCHEDULER_COMMANDS:

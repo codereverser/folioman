@@ -13,13 +13,14 @@ the new (documented, not automated).
 
 from __future__ import annotations
 
-import os
 import stat
 from functools import lru_cache
 from pathlib import Path
 
 from cryptography.fernet import Fernet
 from django.conf import settings
+
+from folioman_app._env import env
 
 
 class FernetKeyUnavailable(RuntimeError):
@@ -36,7 +37,7 @@ def _generate_key_file(path: Path) -> bytes:
 
 def resolve_fernet_key() -> bytes:
     """Return the raw Fernet key bytes, or raise ``FernetKeyUnavailable``."""
-    env_key = os.environ.get("FOLIOMAN_FERNET_KEY")
+    env_key = env.str("FOLIOMAN_FERNET_KEY", "")
     if env_key:
         return env_key.encode()
 
