@@ -1,0 +1,81 @@
+# Render Blueprint — TRIAL deploy of the Folioman self-hosted server.
+# On a trial branch (not main yet). To try it:
+#   1. Render dashboard → New → Blueprint → pick this repo + branch.
+#   2. Set FOLIOMAN_FERNET_KEY (marked sync:false) when prompted — see below.
+#
+# Free-tier facts (verified against Render docs):
+#   - Web (Docker) is free: 750 instance-hours/mo shared across the workspace, spins
+#     down after ~15 min idle (~1 min cold start), ephemeral filesystem.
+#   - Free Postgres: 1 GB, single instance, NO backups/pooling, and it EXPIRES 30
+#     days after creation (+14-day grace before deletion). Export before it lapses.
+#   - Background workers are NOT available on free — they need a paid (starter+)
+#     instance. So the valuation scheduler is commented out below. The app still
+#     boots, serves, and imports without it; enable the worker (paid) for the
+#     periodic auto-refresh tick.
+
+databases:
+  - name: folioman-db
+    databaseName: folioman
+    user: folioman
+    plan: free
+    # Omit the version to take Render's default (>=16). Django is version-agnostic
+    # here; it need not match the compose stack's Postgres 17.
+
+services:
+  - type: web
+    name: folioman
+    runtime: docker
+    plan: free
+    region: oregon # change to frankfurt / singapore / ohio / virginia as needed
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: . # build context is the repo root (matches the compose setup)
+    healthCheckPath: /api/health
+    autoDeploy: false # deploy manually during the trial
+    envVars:
+      - key: FOLIOMAN_API_AUTH
+        value: jwt # server mode refuses to start on anything else
+      - key: FOLIOMAN_SECRET_KEY
+        generateValue: true # random high-entropy value; also signs JWTs
+      - key: FOLIOMAN_FERNET_KEY
+        # PAN-encryption key — must be a VALID Fernet key, so it can't be auto-generated.
+        # Generate one and paste it into the Render dashboard:
+        #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+        sync: false
+      - key: FOLIOMAN_SETUP_TOKEN
+        generateValue: true # first-admin setup token; read it from the Render dashboard
+      - key: FOLIOMAN_ALLOWED_HOSTS
+        fromService:
+          type: web
+          name: folioman
+          property: host # → folioman.onrender.com (add a custom domain here too if you map one)
+      # Server settings read a single 12-factor DATABASE_URL (env.dj_db_url). Render
+      # only exposes the DB host inside connectionString — not as host/port fields —
+      # so this URL is the clean, fully-automated wiring (no manual host paste).
+      - key: DATABASE_URL
+        fromDatabase:
+          name: folioman-db
+          property: connectionString
+
+  # --- Background valuation worker (30s pending tick + 6-hourly revalue) --------
+  # Render background workers require a PAID instance (no free plan). Uncomment and
+  # pick a plan to enable periodic auto-refresh. DO NOT scale beyond 1 — the pending
+  # select is unguarded, so two workers would double-process the same investor.
+  # - type: worker
+  #   name: folioman-scheduler
+  #   runtime: docker
+  #   plan: starter
+  #   region: oregon
+  #   dockerfilePath: ./server/Dockerfile
+  #   dockerContext: .
+  #   dockerCommand: python -m folioman_server run-scheduler
+  #   autoDeploy: false
+  #   envVars:
+  #     - key: FOLIOMAN_API_AUTH
+  #       value: jwt
+  #     # Share the web service's secrets so JWT signing + PAN decryption match.
+  #     - key: FOLIOMAN_SECRET_KEY
+  #       fromService: { type: web, name: folioman, envVarKey: FOLIOMAN_SECRET_KEY }
+  #     - key: FOLIOMAN_FERNET_KEY
+  #       fromService: { type: web, name: folioman, envVarKey: FOLIOMAN_FERNET_KEY }
+  #     - key: DATABASE_URL
+  #       fromDatabase: { name: folioman-db, property: connectionString }
