@@ -14,16 +14,15 @@ x-folioman-env: &folioman-env
   # Required — no safe defaults; compose errors if unset (see .env.example).
   FOLIOMAN_SECRET_KEY: ${FOLIOMAN_SECRET_KEY:?set FOLIOMAN_SECRET_KEY in server/.env}
   FOLIOMAN_FERNET_KEY: ${FOLIOMAN_FERNET_KEY:?set FOLIOMAN_FERNET_KEY in server/.env}
-  FOLIOMAN_DB_PASSWORD: ${FOLIOMAN_DB_PASSWORD:?set FOLIOMAN_DB_PASSWORD in server/.env}
   # Hostnames the browser will use to reach the app (comma-separated).
   FOLIOMAN_ALLOWED_HOSTS: ${FOLIOMAN_ALLOWED_HOSTS:-localhost,127.0.0.1}
   # Hosted-demo read-only mode (0/1). When 1, DemoReadOnlyMiddleware refuses every
   # state-changing API request server-side (see folioman_app/middleware.py).
   FOLIOMAN_DEMO: ${FOLIOMAN_DEMO:-0}
-  # Postgres connection — host is the compose service name.
-  FOLIOMAN_DB_HOST: db
-  FOLIOMAN_DB_NAME: ${FOLIOMAN_DB_NAME:-folioman}
-  FOLIOMAN_DB_USER: ${FOLIOMAN_DB_USER:-folioman}
+  # Postgres connection as a single 12-factor URL (host is the compose service name).
+  # Built from the same vars the db service uses. NOTE: a password with URL-reserved
+  # characters (@ : / #) must be percent-encoded here — prefer a URL-safe password.
+  DATABASE_URL: postgresql://${FOLIOMAN_DB_USER:-folioman}:${FOLIOMAN_DB_PASSWORD:?set FOLIOMAN_DB_PASSWORD in server/.env}@db:5432/${FOLIOMAN_DB_NAME:-folioman}
 
 services:
   app:

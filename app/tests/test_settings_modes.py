@@ -55,7 +55,7 @@ def test_server_postgres_and_jwt_from_env(monkeypatch):
 
     # Set env BEFORE importing server: its module-level startup guard refuses to
     # import without a real secret. base is reloaded so SECRET_KEY recomputes.
-    monkeypatch.setenv("FOLIOMAN_DB_NAME", "folio_test")
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@dbhost:5432/folio_test")
     monkeypatch.setenv("FOLIOMAN_ALLOWED_HOSTS", "folioman.example.com, 10.0.0.5")
     monkeypatch.setenv("FOLIOMAN_SECRET_KEY", "x" * 50)
     importlib.reload(base)
@@ -64,7 +64,7 @@ def test_server_postgres_and_jwt_from_env(monkeypatch):
         importlib.reload(server)
         db = server.DATABASES["default"]
         assert db["ENGINE"] == "django.db.backends.postgresql"
-        assert db["NAME"] == "folio_test"
+        assert db["NAME"] == "folio_test"  # parsed from DATABASE_URL
         assert server.ALLOWED_HOSTS == ["folioman.example.com", "10.0.0.5"]
         # JWT token policy present; ninja_jwt is intentionally NOT a Django app.
         assert "ACCESS_TOKEN_LIFETIME" in server.NINJA_JWT
@@ -72,10 +72,9 @@ def test_server_postgres_and_jwt_from_env(monkeypatch):
         assert server.FOLIOMAN_API_AUTH == "jwt"  # bearer tokens required
         assert server.DEBUG is False
     finally:
-        monkeypatch.delenv("FOLIOMAN_DB_NAME", raising=False)
         monkeypatch.delenv("FOLIOMAN_ALLOWED_HOSTS", raising=False)
-        # Keep FOLIOMAN_SECRET_KEY set through the restoring reloads (the guard
-        # would otherwise refuse to import); monkeypatch clears it at teardown.
+        # Keep FOLIOMAN_SECRET_KEY and DATABASE_URL set through the restoring reloads
+        # (server refuses to import without either); monkeypatch clears them at teardown.
         importlib.reload(base)
         importlib.reload(server)
 
