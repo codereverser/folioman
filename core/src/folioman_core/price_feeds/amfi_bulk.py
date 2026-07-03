@@ -17,7 +17,8 @@ Non-data lines (the header, blanks, bare section names) have fewer than five
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from collections import defaultdict
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -29,6 +30,8 @@ from folioman_core.price_feeds.errors import NAVFetchError
 # unreachable (connection timeouts), so it isn't used.
 BASE_URL = "https://portal.amfiindia.com"
 _NAVALL_PATH = "/spages/NAVAll.txt"
+# Historical NAV report — all schemes across a date range in one file (~0.9 MB/day).
+_HISTORY_PATH = "/DownloadNAVHistoryReport_Po.aspx"
 DEFAULT_TIMEOUT = 60.0  # the file is a few MB — generous for a cold connect
 
 # Free public feed: retry only transient failures (timeouts, 429/5xx), fail fast
@@ -38,7 +41,14 @@ _BACKOFF_BASE = 0.5
 _TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504})
 _SLEEP = time.sleep
 
-__all__ = ["NAVFetchError", "fetch_all_latest", "parse_navall", "shared_client"]
+__all__ = [
+    "NAVFetchError",
+    "fetch_all_latest",
+    "fetch_range",
+    "parse_nav_history",
+    "parse_navall",
+    "shared_client",
+]
 
 
 def shared_client() -> httpx.Client:
@@ -80,6 +90,44 @@ def parse_navall(text: str) -> dict[str, NAVPoint]:
             if key and key != "-":
                 out.setdefault(key, point)
     return out
+
+
+def fetch_range(
+    frmdt: date, todt: date, *, client: httpx.Client | None = None
+) -> dict[str, list[NAVPoint]]:
+    """Every scheme's NAVs across ``[frmdt, todt]``, keyed by AMFI code and each ISIN.
+
+    One request backfills a whole date-range gap for the entire MF universe, instead
+    of a per-scheme call each. The report caps at ~90 days per request; callers keep
+    the window small (a fortnight-ish catch-up) since the file grows ~0.9 MB/day.
+    """
+    path = f"{_HISTORY_PATH}?frmdt={frmdt:%d-%b-%Y}&todt={todt:%d-%b-%Y}"
+    return parse_nav_history(_fetch_text(path, client=client))
+
+
+def parse_nav_history(text: str) -> dict[str, list[NAVPoint]]:
+    """Parse the NAV history report into ``{amfi_code | isin: [NAVPoint, ...]}``.
+
+    Columns differ from NAVAll.txt (name comes second, ISINs third/fourth):
+    ``Scheme Code;Scheme Name;ISIN Div Payout/Growth;ISIN Div Reinvestment;NAV;
+    Repurchase;Sale;Date``. Points accumulate per key across the requested dates.
+    """
+    out: dict[str, list[NAVPoint]] = defaultdict(list)
+    for line in text.splitlines():
+        if line.count(";") < 7:  # header, blank, or a bare AMC/scheme-type name
+            continue
+        parts = line.split(";")
+        code, _name, isin_a, isin_b, raw_nav, _repurchase, _sale, raw_date = parts[:8]
+        try:
+            nav = Decimal(raw_nav.strip())
+            when = datetime.strptime(raw_date.strip(), "%d-%b-%Y").date()
+        except (ValueError, InvalidOperation):
+            continue
+        point = NAVPoint(date=when, nav=nav)
+        for key in (code.strip(), isin_a.strip(), isin_b.strip()):
+            if key and key != "-":
+                out[key].append(point)
+    return dict(out)
 
 
 def _fetch_text(

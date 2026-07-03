@@ -37,6 +37,7 @@ from folioman_core.price_feeds import (
 from folioman_core.price_feeds.errors import NAVFetchError
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
 
+from folioman_app._env import env
 from folioman_app.models import Holding, NAVHistory, Security, Transaction
 from folioman_app.services.trading_calendar import (
     completed_trading_day,
@@ -431,17 +432,23 @@ def backfill_equity_history(
 # NSE security-wise history is fetched in ≤1-year chunks (see nse_history), so a
 # per-symbol backfill costs that many requests — the yardstick the bulk switch beats.
 _NSE_CHUNK_DAYS = 365
+# A fund that reaches back but is only this many trading days behind at the head is a
+# short catch-up: fill every such fund's gap with ONE AMFI range-report call instead
+# of a per-scheme call each. Beyond it (a longer absence / fresh import) per-scheme is
+# right — and the range file grows ~0.9 MB/day, so the window stays bounded.
+_MF_BULK_MAX_LAG = env.int("FOLIOMAN_MF_BULK_MAX_LAG", 14)
 
 
 def _backfill_candidate(security: Security, cutoff: date_cls, force: bool):
-    """``(since, latest)`` if ``security`` needs a history backfill, else ``None``.
+    """``(since, latest, reaches_back)`` if ``security`` needs a backfill, else ``None``.
 
     ``since`` is the earliest date the valuation series must reach — the earliest
     of any transaction date and any holding snapshot's as_of_date (a snapshot-only
-    equity must still price back to its statement date). Skips only when the stored
-    series is current at the head AND reaches that span start; a head-only check let
-    a shallow series look "fresh" forever, leaving a freshly imported holding's first
-    trade unpriced, so the tail check self-heals it.
+    equity must still price back to its statement date). ``reaches_back`` is whether
+    the stored series already extends to that span start (so the only gap is a recent
+    head lag — the bulk paths' favourable case). Skips only when the series is current
+    at the head AND reaches back; a head-only check let a shallow series look "fresh"
+    forever, leaving a freshly imported holding's first trade unpriced.
     """
     txn_first = Transaction.objects.filter(security=security).aggregate(d=Min("date"))["d"]
     hold_first = Holding.objects.filter(security=security).aggregate(d=Min("as_of_date"))["d"]
@@ -455,7 +462,7 @@ def _backfill_candidate(security: Security, cutoff: date_cls, force: bool):
     )
     if not force and behind is not None and behind <= _HISTORY_FRESH_TRADING_DAYS and reaches_back:
         return None
-    return since, latest
+    return since, latest, reaches_back
 
 
 def _run_backfill_one(security, since, latest, backfill_one, summary) -> None:
@@ -512,22 +519,31 @@ def _prefer_bulk(candidates: list[tuple], cutoff: date_cls) -> bool:
     intermittent-catch-up case); per-symbol wins when even one symbol needs deep
     history (its old ``since`` blows up the span).
     """
-    min_since = min(since for _, since, _ in candidates)
+    min_since = min(since for _, since, _, _ in candidates)
     bulk_cost = trading_days_between(min_since - timedelta(days=1), cutoff)
     per_symbol_cost = sum(
-        max(1, ceil((cutoff - since).days / _NSE_CHUNK_DAYS)) for _, since, _ in candidates
+        max(1, ceil((cutoff - since).days / _NSE_CHUNK_DAYS)) for _, since, _, _ in candidates
     )
     return 0 < bulk_cost < per_symbol_cost
 
 
-def _bulk_backfill_equity(candidates: list[tuple], cutoff: date_cls, summary: dict) -> set[int]:
-    """Backfill NSE-listed ``candidates`` from the daily bhavcopy: fetch each trading
-    day in the (shallow) span once and scatter its closes across every symbol that
-    needs it. Returns the security ids it covered (symbol seen in a bhavcopy)."""
-    start = min(since for _, since, _ in candidates)
+def _bulk_backfill_equity(needing: list[tuple], cutoff: date_cls, summary: dict) -> set[int]:
+    """Bhavcopy bulk-backfill for the NSE-listed subset of ``needing``, when a shallow
+    span across many symbols is cheaper than per-symbol history. Fetches each trading
+    day in the span once and scatters its closes. Returns the security ids it covered
+    (empty when bulk isn't preferred, so everything falls to per-symbol)."""
+    candidates = [c for c in needing if c[1] is not None and _bhavcopy_eligible(c[0])]
+    if not candidates or not _prefer_bulk(candidates, cutoff):
+        return set()
+    logger.info(
+        "equity backfill: %d symbols over a shallow span → bhavcopy bulk "
+        "(cheaper than per-symbol history)",
+        len(candidates),
+    )
+    start = min(since for _, since, _, _ in candidates)
     state: dict[int, list] = {}
     by_symbol: dict[str, list[int]] = {}
-    for security, since, _latest in candidates:
+    for security, since, _latest, _rb in candidates:
         existing = set(NAVHistory.objects.filter(security=security).values_list("date", flat=True))
         state[security.id] = [security, since, existing]
         by_symbol.setdefault(security.symbol.upper(), []).append(security.id)
@@ -569,18 +585,70 @@ def _bulk_backfill_equity(candidates: list[tuple], cutoff: date_cls, summary: di
     return handled
 
 
+def _bulk_backfill_mf(needing: list[tuple], cutoff: date_cls, summary: dict) -> set[int]:
+    """AMFI range-report bulk-backfill for MF funds that only lag at the head.
+
+    A fund that reaches back and is behind by ≤ :data:`_MF_BULK_MAX_LAG` trading days
+    is a short catch-up: one range-report call (all schemes over the union head span)
+    fills every such fund, instead of a per-scheme captnemo call each. Returns the ids
+    it covered (found in the report); ``set()`` when fewer than two funds qualify (a
+    single fund is one call either way) so they fall to per-scheme."""
+    eligible: list[tuple] = []
+    for security, _since, latest, reaches_back in needing:
+        if security.security_type != SecurityType.MF.value or latest is None or not reaches_back:
+            continue  # fresh / deep hole → per-scheme (one call serves its full history)
+        if 0 < trading_days_between(latest, cutoff) <= _MF_BULK_MAX_LAG:
+            eligible.append((security, latest))
+    if len(eligible) < 2:
+        return set()
+
+    start = min(latest for _, latest in eligible) + timedelta(days=1)
+    logger.info(
+        "MF backfill: %d funds lag ≤%d trading days → one AMFI range report "
+        "(cheaper than per-scheme)",
+        len(eligible),
+        _MF_BULK_MAX_LAG,
+    )
+    try:
+        history = amfi_bulk.fetch_range(start, cutoff)
+    except NAVFetchError as exc:
+        logger.warning("AMFI range report unavailable — falling back per-scheme: %s", exc)
+        return set()
+
+    handled: set[int] = set()
+    written_ids: set[int] = set()
+    to_create: list[NAVHistory] = []
+    for security, latest in eligible:
+        points = history.get(security.amfi_code) or history.get(security.isin)
+        if points is None:
+            continue  # not in the report → leave it for the per-scheme feed
+        handled.add(security.id)
+        existing = set(NAVHistory.objects.filter(security=security).values_list("date", flat=True))
+        for p in points:
+            if latest < p.date <= cutoff and p.date not in existing:
+                to_create.append(
+                    NAVHistory(security=security, date=p.date, nav=p.nav, source="amfi")
+                )
+                existing.add(p.date)
+                written_ids.add(security.id)
+
+    NAVHistory.objects.bulk_create(to_create)
+    summary["securities"] += len(written_ids)
+    summary["points"] += len(to_create)
+    return handled
+
+
 def _backfill_missing(qs, *, backfill_one, force: bool = False, bulk_backfill=None) -> dict:
     """Shared history-backfill loop for any feed (MF NAV or equity quote).
 
     Collects the securities that need a backfill (see :func:`_backfill_candidate`),
-    then — when ``bulk_backfill`` is supplied (equity) and a whole-market snapshot is
-    cheaper than per-symbol pulls — routes the eligible ones through it, per-symbol
-    for the rest. MF passes no ``bulk_backfill``, so it stays per-scheme (one mfapi
-    call already serves a fund's full history).
+    then — when a ``bulk_backfill`` is supplied and finds a cheaper whole-market path
+    for some of them — routes those through it and per-scheme for the rest. Each bulk
+    fn decides its own eligibility + cost tradeoff and returns the ids it handled.
 
-    ``force=True`` ignores the freshness skip and re-pulls every security — to repair
-    interior holes the head-only freshness check can't detect. Bulk is skipped under
-    ``force`` (a forced deep re-pull is exactly the per-symbol-favourable case)."""
+    ``force=True`` ignores the freshness skip and re-pulls every security per-scheme —
+    to repair interior holes the head-only freshness check can't detect (bulk paths
+    only fill the recent head lag, so they're skipped under force)."""
     summary = {"securities": 0, "points": 0, "errors": 0, "skipped": 0, "closed": 0}
     cutoff = last_trading_day(timezone.localdate())
     needing: list[tuple] = []
@@ -589,23 +657,16 @@ def _backfill_missing(qs, *, backfill_one, force: bool = False, bulk_backfill=No
         if got is None:
             summary["skipped"] += 1
             continue
-        needing.append((security, got[0], got[1]))
+        needing.append((security, *got))
     if not needing:
         return summary
 
     if bulk_backfill is not None and not force:
-        eligible = [c for c in needing if c[1] is not None and _bhavcopy_eligible(c[0])]
-        if eligible and _prefer_bulk(eligible, cutoff):
-            logger.info(
-                "equity backfill: %d symbols over a shallow span → bhavcopy bulk "
-                "(cheaper than per-symbol history)",
-                len(eligible),
-            )
-            handled = bulk_backfill(eligible, cutoff, summary)
-            needing = [c for c in needing if c[0].id not in handled]
+        handled = bulk_backfill(needing, cutoff, summary)
+        needing = [c for c in needing if c[0].id not in handled]
 
     fetched = False
-    for security, since, latest in needing:
+    for security, since, latest, _rb in needing:
         if fetched:
             _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
         fetched = True
@@ -618,8 +679,10 @@ def backfill_missing_history(
 ) -> dict:
     """Backfill MF NAV history, each fund bounded by its earliest transaction.
 
-    See :func:`_backfill_missing` for the freshness / gap / ``force`` semantics
-    (mfapi serves the full per-scheme series in one call)."""
+    Many funds lagging only a short head gap catch up via one AMFI range-report call
+    (see :func:`_bulk_backfill_mf`); the rest go per-scheme (one call serves a fund's
+    full history). See :func:`_backfill_missing` for the freshness / gap / ``force``
+    semantics."""
     qs = (
         securities
         if securities is not None
@@ -633,7 +696,9 @@ def backfill_missing_history(
         backfill_one = functools.partial(
             backfill_nav_history, mfapi_client=mfapi_client, captnemo_client=captnemo_client
         )
-        return _backfill_missing(qs, backfill_one=backfill_one, force=force)
+        return _backfill_missing(
+            qs, backfill_one=backfill_one, force=force, bulk_backfill=_bulk_backfill_mf
+        )
     finally:
         mfapi_client.close()
         captnemo_client.close()
