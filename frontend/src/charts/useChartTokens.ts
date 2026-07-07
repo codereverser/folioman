@@ -14,6 +14,7 @@ export interface ChartTokens {
   verified: string
   gain: string
   loss: string
+  warn: string
   assetPalette: string[]
 }
 
@@ -31,6 +32,7 @@ function readTokens(): ChartTokens {
     verified: readVar('--fm-verified'),
     gain: readVar('--fm-gain'),
     loss: readVar('--fm-loss'),
+    warn: readVar('--fm-warn'),
     assetPalette: [
       readVar('--fm-asset-equity'),
       readVar('--fm-asset-debt'),

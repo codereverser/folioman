@@ -125,6 +125,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/CapitalGainsView.vue'),
   },
   {
+    path: '/investors/:investorId/income',
+    name: 'income',
+    component: () => import('@/views/IncomeView.vue'),
+  },
+  {
     // Old path before the "Capital Gains" reframe — keep deep links working.
     path: '/investors/:investorId/tax',
     redirect: (to) => ({ name: 'capital-gains', params: { investorId: to.params.investorId } }),

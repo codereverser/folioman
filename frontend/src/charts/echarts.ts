@@ -4,7 +4,7 @@
  */
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { PieChart, LineChart, ScatterChart } from 'echarts/charts'
+import { PieChart, LineChart, ScatterChart, BarChart } from 'echarts/charts'
 import {
   TooltipComponent,
   LegendComponent,
@@ -18,6 +18,7 @@ use([
   PieChart,
   LineChart,
   ScatterChart,
+  BarChart,
   TooltipComponent,
   LegendComponent,
   GridComponent,

@@ -65,6 +65,11 @@ const navLinks = computed<NavLink[]>(() => {
       icon: 'pi pi-file-edit',
       to: { name: 'capital-gains', params: { investorId } },
     })
+    links.push({
+      label: 'Income',
+      icon: 'pi pi-wallet',
+      to: { name: 'income', params: { investorId } },
+    })
   }
   if (ui.selectedFamilyId !== null) {
     links.push({
@@ -98,6 +103,7 @@ const MOBILE_TABS = new Set([
   'Dashboard',
   'Integrity',
   'Capital Gains',
+  'Income',
   'Family',
   'Settings',
 ])

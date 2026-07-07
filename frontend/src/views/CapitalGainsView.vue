@@ -6,7 +6,9 @@ import Checkbox from 'primevue/checkbox'
 import Message from 'primevue/message'
 import Select from 'primevue/select'
 import RealisedGains from '@/components/RealisedGains.vue'
+import FyBarChart, { type FyBarPoint, type FyBarSeries } from '@/components/charts/FyBarChart.vue'
 import { useCapitalGains } from '@/composables/useCapitalGains'
+import { useChartTokens } from '@/charts/useChartTokens'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 import { toCsv, downloadText } from '@/utils/csv'
@@ -28,6 +30,8 @@ const {
   fyOptions,
   includeUnreconciled,
   gains,
+  byFy,
+  currentFy,
   report,
   loading,
   error,
@@ -36,7 +40,19 @@ const {
   worksheetRowCount,
   excluded,
   build,
+  loadSeries,
 } = useCapitalGains(investorId)
+
+const tokens = useChartTokens()
+// LTCG green, STCG amber (signals the higher-tax slice); both are gains.
+const cgSeries = computed<FyBarSeries[]>(() => [
+  { key: 'ltcg', label: 'LTCG', color: tokens.value.gain },
+  { key: 'stcg', label: 'STCG', color: tokens.value.warn },
+])
+const cgPoints = computed<FyBarPoint[]>(() =>
+  byFy.value.map((p) => ({ fy: p.fy, values: { ltcg: Number(p.ltcg), stcg: Number(p.stcg) } })),
+)
+const hasCgChart = computed(() => cgPoints.value.length > 1)
 
 // A fresh build must be re-acknowledged before the worksheet can be downloaded.
 const acknowledged = ref(false)
@@ -44,6 +60,9 @@ async function rebuild(): Promise<void> {
   acknowledged.value = false
   await build()
 }
+// FY drives only the worksheet/table; the year-over-year chart is FY-independent, so
+// it reloads on investor or reconciled-toggle change — not on every FY switch.
+watch([investorId, includeUnreconciled], () => void loadSeries(), { immediate: true })
 watch([investorId, fy, includeUnreconciled], () => void rebuild(), { immediate: true })
 
 const canDownload = computed(() => acknowledged.value && worksheetRowCount.value > 0)
@@ -94,6 +113,16 @@ function back(): void {
     <Message v-if="error" severity="error" :closable="false">
       Couldn’t compute capital gains for {{ fy }}. {{ error }}
     </Message>
+
+    <section v-if="hasCgChart" class="cg-chart-card">
+      <h2>Realised gains by year</h2>
+      <FyBarChart
+        :points="cgPoints"
+        :series="cgSeries"
+        :current-fy="currentFy"
+        @select="(y) => (fy = y)"
+      />
+    </section>
 
     <RealisedGains
       v-if="built && !loading"
@@ -211,6 +240,16 @@ function back(): void {
 
 .disclaimer {
   font-size: 0.8125rem;
+}
+.cg-chart-card {
+  padding: var(--fm-space-5);
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-xl);
+  background: var(--fm-surface);
+}
+.cg-chart-card h2 {
+  margin: 0 0 var(--fm-space-3);
+  font-size: 1.05rem;
 }
 /* Loading shimmer that sketches the realised-gains summary + table. */
 .cg-skeleton {

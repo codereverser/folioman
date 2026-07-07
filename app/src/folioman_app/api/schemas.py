@@ -720,3 +720,65 @@ class Schedule112AResponse(Schema):
     title: str = "Capital-gains worksheet (for review)"
     is_draft: bool = True
     disclaimer: str = TAX_WORKSHEET_DISCLAIMER
+
+
+class IncomeRow(Schema):
+    """One security's recurring income for the FY (ITR Schedule OS shape).
+
+    Carries both bases so the UI can flip accrued/received without a refetch —
+    for dividends the two are equal (received basis)."""
+
+    security_id: int
+    name: str
+    asset_type: str  # security_type: equity / etf / fd / bond …
+    kind: str  # dividend | interest | coupon
+    accrued: Decimal
+    received: Decimal
+    # (value - invested) yield, when a per-security cost basis is available; null
+    # in Phase 1 (computing it portfolio-wide is deferred).
+    yield_on_cost: float | None = None
+
+
+class IncomeKindGroup(Schema):
+    """Income for one kind (dividend / interest), with its own subtotal + basis."""
+
+    kind: str
+    basis: str  # "received" (dividends) | "accrued" (interest)
+    accrued_total: Decimal
+    received_total: Decimal
+    rows: list[IncomeRow] = Field(default_factory=list)
+
+
+class IncomeQuarter(Schema):
+    """A 234C dividend period total (ITR Schedule OS quarterly breakup)."""
+
+    label: str
+    amount: Decimal
+
+
+class IncomeReportOut(Schema):
+    """Recurring income for one FY, grouped by kind — a read to review, not a
+    filing. Dividends now; interest arrives with multi-asset support."""
+
+    fy: str
+    groups: list[IncomeKindGroup] = Field(default_factory=list)
+    accrued_total: Decimal
+    received_total: Decimal
+    dividend_quarters: list[IncomeQuarter] = Field(default_factory=list)
+    disclaimer: str = TAX_WORKSHEET_DISCLAIMER
+
+
+class IncomeFyPoint(Schema):
+    """One FY's income totals for the year-over-year stacked bar chart."""
+
+    fy: str
+    dividends: Decimal
+    interest: Decimal
+
+
+class CapitalGainsFyPoint(Schema):
+    """One FY's realised STCG/LTCG for the year-over-year bar chart (loss = negative)."""
+
+    fy: str
+    stcg: Decimal
+    ltcg: Decimal

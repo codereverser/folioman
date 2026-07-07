@@ -22,6 +22,7 @@ from folioman_app.api.investors import router as investors_router
 from folioman_app.api.jobs import router as jobs_router
 from folioman_app.api.meta import router as meta_router
 from folioman_app.api.navs import router as navs_router
+from folioman_app.api.reports import router as reports_router
 from folioman_app.api.setup import router as setup_router
 from folioman_app.api.tokens import router as tokens_router
 
@@ -37,5 +38,6 @@ api.add_router("/investors", investors_router)
 api.add_router("/imports", cas_router)  # /imports/cas, /imports/cas/preview (PAN-resolved)
 api.add_router("/investors", imports_router)  # /investors/{id}/imports/... (job reads + csv)
 api.add_router("/investors", exports_router)  # /investors/{id}/exports/...
+api.add_router("/investors", reports_router)  # /investors/{id}/reports/...
 api.add_router("/investors", integrity_router)  # /investors/{id}/integrity/...
 api.add_router("/families", families_router)

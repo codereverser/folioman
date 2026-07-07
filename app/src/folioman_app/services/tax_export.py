@@ -17,7 +17,7 @@ from decimal import ROUND_HALF_EVEN, Decimal
 
 from folioman_core.reconciliation import IntegrityStatus
 from folioman_core.tax import compute_gain_lines, compute_schedule_112a, get_policy
-from folioman_core.tax.india import india_fy_range
+from folioman_core.tax.india import india_fy_label, india_fy_range
 from folioman_core.tax.models import Term
 from folioman_core.tax.schedule_112a import SCHEDULE_112A_CSV_COLUMNS
 
@@ -137,6 +137,47 @@ def build_capital_gains(
         "exempt_total": exempt.quantize(_Q2, rounding=ROUND_HALF_EVEN),
         "rows": rows,
     }
+
+
+def build_capital_gains_by_fy(
+    investor: Investor,
+    *,
+    include_unreconciled: bool = False,
+    fmv_lookup: Callable | None = None,
+) -> list[dict]:
+    """STCG/LTCG totals for every FY with a realised disposal — drives the CG chart.
+
+    Computes disposals once (same gating as ``build_capital_gains``) and buckets
+    each by the FY it was sold in, so a loss year yields a negative total.
+    Ascending by FY so the chart reads left-to-right in time.
+    """
+    fmv = fmv_lookup if fmv_lookup is not None else _default_fmv
+    transactions = _tax_ready_transactions(investor, include_unreconciled=include_unreconciled)
+    gain_lines = compute_gain_lines(
+        transactions,
+        get_policy("IN"),
+        fmv_lookup=fmv,
+        demerger_reductions=demerger_reductions(investor),
+    )
+
+    stcg: dict[str, Decimal] = {}
+    ltcg: dict[str, Decimal] = {}
+    for line in gain_lines:
+        fy = india_fy_label(line.disposal.sold_on)
+        if line.term is Term.SHORT:
+            stcg[fy] = stcg.get(fy, Decimal("0")) + line.gain
+        elif line.term is Term.LONG:
+            ltcg[fy] = ltcg.get(fy, Decimal("0")) + line.gain
+        # Term.EXEMPT (e.g. a pre-Oct-2024 buyback) isn't chargeable — omit it.
+
+    return [
+        {
+            "fy": fy,
+            "stcg": stcg.get(fy, Decimal("0")).quantize(_Q2, rounding=ROUND_HALF_EVEN),
+            "ltcg": ltcg.get(fy, Decimal("0")).quantize(_Q2, rounding=ROUND_HALF_EVEN),
+        }
+        for fy in sorted(set(stcg) | set(ltcg))
+    ]
 
 
 def build_schedule_112a(

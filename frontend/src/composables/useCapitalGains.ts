@@ -7,6 +7,7 @@ import { currentFy, fyOptions } from '@/utils/fy'
 export type CapitalGains = Schemas['CapitalGainsOut']
 export type CapitalGainRow = Schemas['CapitalGainRow']
 export type Schedule112A = Schemas['Schedule112AResponse']
+export type CapitalGainsFyPoint = Schemas['CapitalGainsFyPoint']
 
 /**
  * Realised capital gains for one investor + FY: the STCG/LTCG view (a read) plus
@@ -21,6 +22,7 @@ export function useCapitalGains(investorId: Ref<number>) {
   const fy = ref(currentFy())
   const includeUnreconciled = ref(false)
   const gains = ref<CapitalGains | null>(null)
+  const byFy = ref<CapitalGainsFyPoint[]>([]) // STCG/LTCG per FY, for the year-over-year chart
   const report = ref<Schedule112A | null>(null) // 112A worksheet, for the CSV download
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -67,6 +69,19 @@ export function useCapitalGains(investorId: Ref<number>) {
     void integrity.load(investorId.value)
   }
 
+  /** The year-over-year STCG/LTCG chart series — independent of the selected FY, so
+   *  it loads on investor / reconciled-toggle change, not on every FY switch.
+   *  Best-effort: a failure just empties the chart and leaves the FY view intact. */
+  async function loadSeries(): Promise<void> {
+    const series = await api.GET('/api/investors/{investor_id}/reports/capital-gains-by-fy', {
+      params: {
+        path: { investor_id: investorId.value },
+        query: { include_unreconciled: includeUnreconciled.value },
+      },
+    })
+    byFy.value = series && !series.error ? (series.data ?? []) : []
+  }
+
   // Holdings that can't enter the worksheet: no full history (snapshot), an
   // unresolved unit mismatch, or a mismatch the user acknowledged.
   const excluded = computed<IntegrityRow[]>(() =>
@@ -79,6 +94,8 @@ export function useCapitalGains(investorId: Ref<number>) {
     fyOptions: fyOptions(),
     includeUnreconciled,
     gains,
+    byFy,
+    currentFy: currentFy(),
     report,
     loading,
     error,
@@ -87,5 +104,6 @@ export function useCapitalGains(investorId: Ref<number>) {
     worksheetRowCount,
     excluded,
     build,
+    loadSeries,
   }
 }

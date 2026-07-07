@@ -725,6 +725,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/investors/{investor_id}/reports/capital-gains-by-fy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capital Gains By Fy
+         * @description Realised STCG/LTCG across every FY with a disposal (drives the CG chart).
+         */
+        get: operations["folioman_app_api_reports_capital_gains_by_fy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/reports/income": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Income
+         * @description Recurring income for one FY — dividends grouped by kind, with a 234C
+         *     quarterly split. A read to review, not a filed return.
+         */
+        get: operations["folioman_app_api_reports_income"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/reports/income-by-fy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Income By Fy
+         * @description Income totals across every FY with data (drives the stacked bar chart).
+         */
+        get: operations["folioman_app_api_reports_income_by_fy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/investors/{investor_id}/reports/income.csv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Income Csv
+         * @description Income for one FY as a Schedule OS-shaped CSV, on the requested basis.
+         */
+        get: operations["folioman_app_api_reports_income_csv"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/investors/{investor_id}/securities": {
         parameters: {
             query?: never;
@@ -1032,6 +1113,18 @@ export interface components {
             units: string;
         };
         /**
+         * CapitalGainsFyPoint
+         * @description One FY's realised STCG/LTCG for the year-over-year bar chart (loss = negative).
+         */
+        CapitalGainsFyPoint: {
+            /** Fy */
+            fy: string;
+            /** Ltcg */
+            ltcg: string;
+            /** Stcg */
+            stcg: string;
+        };
+        /**
          * CapitalGainsOut
          * @description Realised capital gains for one FY — STCG/LTCG split for listed equity and
          *     equity-oriented mutual funds.
@@ -1039,7 +1132,7 @@ export interface components {
         CapitalGainsOut: {
             /**
              * Disclaimer
-             * @default Quick heads up: This is just a draft to help you and your tax pro get started. It's not tax advice or a filing. The numbers are based on what you’ve imported; they might be off if something was missing or misread. Always double-check before you file! No warranty—use at your own risk.
+             * @default Quick heads up: This is just a draft to help you and your tax pro get started. It's not tax advice or a filing. The numbers are based on what you've imported; they might be off if something was missing or misread. Always double-check before you file! No warranty—use at your own risk.
              */
             disclaimer: string;
             /** Fy */
@@ -1440,6 +1533,89 @@ export interface components {
             reason: string;
             /** Security Name */
             security_name: string;
+        };
+        /**
+         * IncomeFyPoint
+         * @description One FY's income totals for the year-over-year stacked bar chart.
+         */
+        IncomeFyPoint: {
+            /** Dividends */
+            dividends: string;
+            /** Fy */
+            fy: string;
+            /** Interest */
+            interest: string;
+        };
+        /**
+         * IncomeKindGroup
+         * @description Income for one kind (dividend / interest), with its own subtotal + basis.
+         */
+        IncomeKindGroup: {
+            /** Accrued Total */
+            accrued_total: string;
+            /** Basis */
+            basis: string;
+            /** Kind */
+            kind: string;
+            /** Received Total */
+            received_total: string;
+            /** Rows */
+            rows?: components["schemas"]["IncomeRow"][];
+        };
+        /**
+         * IncomeQuarter
+         * @description A 234C dividend period total (ITR Schedule OS quarterly breakup).
+         */
+        IncomeQuarter: {
+            /** Amount */
+            amount: string;
+            /** Label */
+            label: string;
+        };
+        /**
+         * IncomeReportOut
+         * @description Recurring income for one FY, grouped by kind — a read to review, not a
+         *     filing. Dividends now; interest arrives with multi-asset support.
+         */
+        IncomeReportOut: {
+            /** Accrued Total */
+            accrued_total: string;
+            /**
+             * Disclaimer
+             * @default Quick heads up: This is just a draft to help you and your tax pro get started. It's not tax advice or a filing. The numbers are based on what you've imported; they might be off if something was missing or misread. Always double-check before you file! No warranty—use at your own risk.
+             */
+            disclaimer: string;
+            /** Dividend Quarters */
+            dividend_quarters?: components["schemas"]["IncomeQuarter"][];
+            /** Fy */
+            fy: string;
+            /** Groups */
+            groups?: components["schemas"]["IncomeKindGroup"][];
+            /** Received Total */
+            received_total: string;
+        };
+        /**
+         * IncomeRow
+         * @description One security's recurring income for the FY (ITR Schedule OS shape).
+         *
+         *     Carries both bases so the UI can flip accrued/received without a refetch —
+         *     for dividends the two are equal (received basis).
+         */
+        IncomeRow: {
+            /** Accrued */
+            accrued: string;
+            /** Asset Type */
+            asset_type: string;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Received */
+            received: string;
+            /** Security Id */
+            security_id: number;
+            /** Yield On Cost */
+            yield_on_cost?: number | null;
         };
         /** IntegrityStatusOut */
         IntegrityStatusOut: {
@@ -1893,7 +2069,7 @@ export interface components {
             columns: string[];
             /**
              * Disclaimer
-             * @default Quick heads up: This is just a draft to help you and your tax pro get started. It's not tax advice or a filing. The numbers are based on what you’ve imported; they might be off if something was missing or misread. Always double-check before you file! No warranty—use at your own risk.
+             * @default Quick heads up: This is just a draft to help you and your tax pro get started. It's not tax advice or a filing. The numbers are based on what you've imported; they might be off if something was missing or misread. Always double-check before you file! No warranty—use at your own risk.
              */
             disclaimer: string;
             /** Fy */
@@ -3345,6 +3521,99 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["IntegrityStatusOut"];
                 };
+            };
+        };
+    };
+    folioman_app_api_reports_capital_gains_by_fy: {
+        parameters: {
+            query?: {
+                include_unreconciled?: boolean;
+            };
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CapitalGainsFyPoint"][];
+                };
+            };
+        };
+    };
+    folioman_app_api_reports_income: {
+        parameters: {
+            query: {
+                fy: string;
+            };
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeReportOut"];
+                };
+            };
+        };
+    };
+    folioman_app_api_reports_income_by_fy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncomeFyPoint"][];
+                };
+            };
+        };
+    };
+    folioman_app_api_reports_income_csv: {
+        parameters: {
+            query: {
+                fy: string;
+                basis?: string;
+            };
+            header?: never;
+            path: {
+                investor_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

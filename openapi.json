@@ -207,6 +207,32 @@
         "title": "CapitalGainRow",
         "type": "object"
       },
+      "CapitalGainsFyPoint": {
+        "description": "One FY's realised STCG/LTCG for the year-over-year bar chart (loss = negative).",
+        "properties": {
+          "fy": {
+            "title": "Fy",
+            "type": "string"
+          },
+          "ltcg": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Ltcg",
+            "type": "string"
+          },
+          "stcg": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Stcg",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fy",
+          "stcg",
+          "ltcg"
+        ],
+        "title": "CapitalGainsFyPoint",
+        "type": "object"
+      },
       "CapitalGainsOut": {
         "description": "Realised capital gains for one FY \u2014 STCG/LTCG split for listed equity and\nequity-oriented mutual funds.",
         "properties": {
@@ -1142,6 +1168,187 @@
           "created_at"
         ],
         "title": "ImportQuarantineOut",
+        "type": "object"
+      },
+      "IncomeFyPoint": {
+        "description": "One FY's income totals for the year-over-year stacked bar chart.",
+        "properties": {
+          "dividends": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Dividends",
+            "type": "string"
+          },
+          "fy": {
+            "title": "Fy",
+            "type": "string"
+          },
+          "interest": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Interest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fy",
+          "dividends",
+          "interest"
+        ],
+        "title": "IncomeFyPoint",
+        "type": "object"
+      },
+      "IncomeKindGroup": {
+        "description": "Income for one kind (dividend / interest), with its own subtotal + basis.",
+        "properties": {
+          "accrued_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Accrued Total",
+            "type": "string"
+          },
+          "basis": {
+            "title": "Basis",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "received_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Received Total",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/IncomeRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          }
+        },
+        "required": [
+          "kind",
+          "basis",
+          "accrued_total",
+          "received_total"
+        ],
+        "title": "IncomeKindGroup",
+        "type": "object"
+      },
+      "IncomeQuarter": {
+        "description": "A 234C dividend period total (ITR Schedule OS quarterly breakup).",
+        "properties": {
+          "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "amount"
+        ],
+        "title": "IncomeQuarter",
+        "type": "object"
+      },
+      "IncomeReportOut": {
+        "description": "Recurring income for one FY, grouped by kind \u2014 a read to review, not a\nfiling. Dividends now; interest arrives with multi-asset support.",
+        "properties": {
+          "accrued_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Accrued Total",
+            "type": "string"
+          },
+          "disclaimer": {
+            "default": "Quick heads up: This is just a draft to help you and your tax pro get started. It's not tax advice or a filing. The numbers are based on what you've imported; they might be off if something was missing or misread. Always double-check before you file! No warranty\u2014use at your own risk.",
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "dividend_quarters": {
+            "items": {
+              "$ref": "#/components/schemas/IncomeQuarter"
+            },
+            "title": "Dividend Quarters",
+            "type": "array"
+          },
+          "fy": {
+            "title": "Fy",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/IncomeKindGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "received_total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Received Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fy",
+          "accrued_total",
+          "received_total"
+        ],
+        "title": "IncomeReportOut",
+        "type": "object"
+      },
+      "IncomeRow": {
+        "description": "One security's recurring income for the FY (ITR Schedule OS shape).\n\nCarries both bases so the UI can flip accrued/received without a refetch \u2014\nfor dividends the two are equal (received basis).",
+        "properties": {
+          "accrued": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Accrued",
+            "type": "string"
+          },
+          "asset_type": {
+            "title": "Asset Type",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "received": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Received",
+            "type": "string"
+          },
+          "security_id": {
+            "title": "Security Id",
+            "type": "integer"
+          },
+          "yield_on_cost": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yield On Cost"
+          }
+        },
+        "required": [
+          "security_id",
+          "name",
+          "asset_type",
+          "kind",
+          "accrued",
+          "received"
+        ],
+        "title": "IncomeRow",
         "type": "object"
       },
       "IntegrityStatusOut": {
@@ -5181,6 +5388,177 @@
         "summary": "Unacknowledge",
         "tags": [
           "integrity"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/reports/capital-gains-by-fy": {
+      "get": {
+        "description": "Realised STCG/LTCG across every FY with a disposal (drives the CG chart).",
+        "operationId": "folioman_app_api_reports_capital_gains_by_fy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_unreconciled",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Unreconciled",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CapitalGainsFyPoint"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Capital Gains By Fy",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/reports/income": {
+      "get": {
+        "description": "Recurring income for one FY \u2014 dividends grouped by kind, with a 234C\nquarterly split. A read to review, not a filed return.",
+        "operationId": "folioman_app_api_reports_income",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": true,
+            "schema": {
+              "title": "Fy",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncomeReportOut"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Income",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/reports/income-by-fy": {
+      "get": {
+        "description": "Income totals across every FY with data (drives the stacked bar chart).",
+        "operationId": "folioman_app_api_reports_income_by_fy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IncomeFyPoint"
+                  },
+                  "title": "Response",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Income By Fy",
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/api/investors/{investor_id}/reports/income.csv": {
+      "get": {
+        "description": "Income for one FY as a Schedule OS-shaped CSV, on the requested basis.",
+        "operationId": "folioman_app_api_reports_income_csv",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "investor_id",
+            "required": true,
+            "schema": {
+              "title": "Investor Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fy",
+            "required": true,
+            "schema": {
+              "title": "Fy",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "basis",
+            "required": false,
+            "schema": {
+              "default": "accrued",
+              "title": "Basis",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "summary": "Income Csv",
+        "tags": [
+          "reports"
         ]
       }
     },
