@@ -22,10 +22,7 @@ pytestmark = pytest.mark.django_db
 def _stub_feeds(monkeypatch):
     """No network: the job's NAV-ensure step is a no-op; tests seed NAVHistory."""
     monkeypatch.setattr(valuation_jobs, "refresh_navs", lambda **kw: {"updated": 0})
-    monkeypatch.setattr(valuation_jobs, "backfill_missing_history", lambda **kw: {"points": 0})
-    monkeypatch.setattr(
-        valuation_jobs, "backfill_missing_equity_history", lambda **kw: {"points": 0}
-    )
+    monkeypatch.setattr(valuation_jobs, "extend_tails", lambda **kw: {"securities": 0})
 
 
 def _values(investor) -> dict[dt.date, Decimal]:
@@ -321,8 +318,8 @@ def test_process_pending_primes_navs_once_globally(
     )
     monkeypatch.setattr(
         valuation_jobs,
-        "backfill_missing_history",
-        lambda **kw: (calls.__setitem__("backfill", calls["backfill"] + 1), {"points": 0})[1],
+        "extend_tails",
+        lambda **kw: (calls.__setitem__("backfill", calls["backfill"] + 1), {"securities": 0})[1],
     )
     mf = make_security(security_type=SecurityType.MF.value)
     NAVHistory.objects.create(security=mf, date=dt.date(2025, 1, 1), nav=Decimal("10"))

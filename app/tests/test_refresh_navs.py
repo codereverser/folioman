@@ -9,10 +9,9 @@ from types import SimpleNamespace
 import pytest
 from django.core.management import call_command
 from folioman_app.models import NAVHistory, Security
-from folioman_app.services.trading_calendar import last_trading_day
 from folioman_app.tasks import refresh_navs as refresh_navs_mod
 from folioman_app.tasks.import_csv import create_manual_transaction
-from folioman_app.tasks.refresh_navs import backfill_missing_history, refresh_navs
+from folioman_app.tasks.refresh_navs import backfill_nav_history, extend_tails, refresh_navs
 from folioman_core.models import NAVPoint, Quote, SecurityType
 from folioman_core.price_feeds import captnemo, coingecko, mfapi, nse_history, yfinance_feed
 from folioman_core.price_feeds.yfinance_feed import PriceFetchError
@@ -248,31 +247,49 @@ def test_refresh_records_feed_errors(monkeypatch):
     assert NAVHistory.objects.count() == 0
 
 
-def test_backfill_fills_a_multi_day_gap(monkeypatch):
-    """A fund days behind is brought fully current — every missing date is inserted,
-    not just the newest point. This is what keeps a fortnight-old desktop gapless."""
+def _held_mf(make_investor, *, amfi_code, closed=False) -> Security:
+    """An MF with a transaction so the batch treats it as held — the close/reopen paths
+    only fire for something we actually hold."""
+    create_manual_transaction(
+        make_investor(),
+        {
+            "security_type": "mf",
+            "name": "F",
+            "amfi_code": amfi_code,
+            "folio_number": f"MF{amfi_code}",
+            "date": dt.date(2024, 1, 1),
+            "transaction_type": "buy",
+            "units": Decimal("1"),
+            "price": Decimal("10"),
+        },
+    )
+    sec = Security.objects.get(amfi_code=amfi_code)
+    if closed:
+        sec.nav_feed_closed = True
+        sec.save(update_fields=["nav_feed_closed"])
+    return sec
+
+
+def test_extend_tails_fills_a_multi_day_gap(monkeypatch):
+    """A fund days behind is brought current — from the day after its last stored NAV."""
     today = dt.date.today()
     old = today - dt.timedelta(days=10)
-    points = []
-    d = old
-    while d <= today:
-        points.append(NAVPoint(date=d, nav=Decimal("11")))
-        d += dt.timedelta(days=1)
+    points = [NAVPoint(date=old + dt.timedelta(days=i), nav=Decimal("11")) for i in range(11)]
     monkeypatch.setattr(
         mfapi, "fetch_nav_history", lambda code, **_: SimpleNamespace(points=points, isin="")
     )
     mf = Security.objects.create(security_type=SecurityType.MF.value, name="F", amfi_code="100001")
     NAVHistory.objects.create(security=mf, date=old, nav=Decimal("10"))  # only old point on file
 
-    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+    summary = extend_tails(securities=Security.objects.filter(id=mf.id))
 
-    assert summary["skipped"] == 0  # behind by >1 trading day → not skipped
-    assert NAVHistory.objects.filter(security=mf).count() == len(points)  # gap filled to today
+    assert summary["skipped"] == 0  # behind at the head → not skipped
     assert NAVHistory.objects.filter(security=mf, date=today).exists()
 
 
-def test_backfill_skips_a_fund_current_to_last_trading_day(monkeypatch):
-    """A fund already current (within the trading-day grace) isn't re-fetched."""
+def test_extend_tails_skips_a_fund_current_to_the_last_session(monkeypatch):
+    from folioman_app.services.trading_calendar import completed_trading_day
+
     calls = {"n": 0}
 
     def _spy(code, **_):
@@ -282,55 +299,24 @@ def test_backfill_skips_a_fund_current_to_last_trading_day(monkeypatch):
     monkeypatch.setattr(mfapi, "fetch_nav_history", _spy)
     mf = Security.objects.create(security_type=SecurityType.MF.value, name="F", amfi_code="100002")
     NAVHistory.objects.create(
-        security=mf, date=last_trading_day(dt.date.today()), nav=Decimal("10")
+        security=mf, date=completed_trading_day(dt.date.today()), nav=Decimal("10")
     )
 
-    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+    summary = extend_tails(securities=Security.objects.filter(id=mf.id))
 
     assert summary["skipped"] == 1
-    assert calls["n"] == 0  # current → no network call
+    assert calls["n"] == 0  # current to the last completed session → no fetch
 
 
-def test_backfill_force_refetches_a_current_fund_to_repair_interior_holes(monkeypatch):
-    """--force re-pulls even a fund whose latest point is current, filling earlier
-    missing dates the freshness check can't detect."""
-    cutoff = last_trading_day(dt.date.today())
-    gap_day = cutoff - dt.timedelta(days=7)
-    monkeypatch.setattr(
-        mfapi,
-        "fetch_nav_history",
-        lambda code, **_: SimpleNamespace(
-            points=[
-                NAVPoint(date=gap_day, nav=Decimal("9")),
-                NAVPoint(date=cutoff, nav=Decimal("10")),
-            ],
-            isin="",
-        ),
-    )
-    mf = Security.objects.create(security_type=SecurityType.MF.value, name="F", amfi_code="100003")
-    NAVHistory.objects.create(security=mf, date=cutoff, nav=Decimal("10"))  # current → would skip
-
-    # Without force: current, so skipped — the interior hole stays.
-    assert backfill_missing_history(securities=Security.objects.filter(id=mf.id))["skipped"] == 1
-    assert not NAVHistory.objects.filter(security=mf, date=gap_day).exists()
-
-    # With force: re-pulled, the earlier missing date is filled.
-    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id), force=True)
-    assert summary["skipped"] == 0
-    assert NAVHistory.objects.filter(security=mf, date=gap_day).exists()
-
-
-def test_backfill_flags_dead_code_as_closed(monkeypatch):
-    """The feed responds with NO history for a fund we hold no NAV for → its code is
-    dead (matured/delisted). Flag nav_feed_closed so valuation degrades it."""
+def test_extend_tails_flags_dead_code_as_closed(monkeypatch, make_investor):
+    """The feed responds with NO history for a held fund → its code is dead
+    (matured/delisted). Flag nav_feed_closed so valuation degrades it."""
     monkeypatch.setattr(
         mfapi, "fetch_nav_history", lambda code, **_: SimpleNamespace(points=[], isin="")
     )
-    mf = Security.objects.create(
-        security_type=SecurityType.MF.value, name="Matured CEF", amfi_code="999999"
-    )
+    mf = _held_mf(make_investor, amfi_code="999999")
 
-    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+    summary = extend_tails(securities=Security.objects.filter(id=mf.id))
 
     assert summary["closed"] == 1
     mf.refresh_from_db()
@@ -338,25 +324,23 @@ def test_backfill_flags_dead_code_as_closed(monkeypatch):
     assert NAVHistory.objects.filter(security=mf).count() == 0
 
 
-def test_backfill_feed_error_does_not_flag_closed(monkeypatch):
+def test_extend_tails_feed_error_does_not_flag_closed(monkeypatch, make_investor):
     """A transient feed error must NOT be mistaken for a dead code — stays retryable."""
 
     def _boom(code, **_):
         raise mfapi.NAVFetchError("mfapi 502")
 
     monkeypatch.setattr(mfapi, "fetch_nav_history", _boom)
-    mf = Security.objects.create(
-        security_type=SecurityType.MF.value, name="Fund", amfi_code="122639"
-    )
+    mf = _held_mf(make_investor, amfi_code="122639")
 
-    summary = backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+    summary = extend_tails(securities=Security.objects.filter(id=mf.id))
 
     assert summary["errors"] == 1 and summary["closed"] == 0
     mf.refresh_from_db()
     assert mf.nav_feed_closed is False
 
 
-def test_backfill_reopens_closed_code_when_data_returns(monkeypatch):
+def test_extend_tails_reopens_closed_code_when_data_returns(monkeypatch, make_investor):
     """Self-healing: a previously-dead code that starts returning data is reopened."""
     monkeypatch.setattr(
         mfapi,
@@ -365,11 +349,9 @@ def test_backfill_reopens_closed_code_when_data_returns(monkeypatch):
             points=[NAVPoint(date=_TODAY, nav=Decimal("10"))], isin=""
         ),
     )
-    mf = Security.objects.create(
-        security_type=SecurityType.MF.value, name="Fund", amfi_code="122639", nav_feed_closed=True
-    )
+    mf = _held_mf(make_investor, amfi_code="122639", closed=True)
 
-    backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+    extend_tails(securities=Security.objects.filter(id=mf.id))
 
     mf.refresh_from_db()
     assert mf.nav_feed_closed is False
@@ -397,7 +379,7 @@ def test_backfill_prefers_captnemo_when_isin_known(monkeypatch):
         security_type=SecurityType.MF.value, name="F", amfi_code="100010", isin="INF000X00010"
     )
 
-    backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+    backfill_nav_history(mf)
 
     assert mfapi_calls["n"] == 0  # captnemo served it; mfapi never called
     point = NAVHistory.objects.get(security=mf, date=_TODAY)
@@ -423,7 +405,7 @@ def test_backfill_falls_back_to_mfapi_when_captnemo_fails(monkeypatch):
         security_type=SecurityType.MF.value, name="F", amfi_code="100011", isin="INF000X00011"
     )
 
-    backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+    backfill_nav_history(mf)
 
     point = NAVHistory.objects.get(security=mf, date=_TODAY)
     assert point.nav == Decimal("43")
@@ -444,7 +426,7 @@ def test_backfill_learns_isin_from_mfapi_meta(monkeypatch):
         security_type=SecurityType.MF.value, name="F", amfi_code="100012"
     )  # no isin yet
 
-    backfill_missing_history(securities=Security.objects.filter(id=mf.id))
+    backfill_nav_history(mf)
 
     mf.refresh_from_db()
     assert mf.isin == "INF000X00012"  # learned from mfapi meta

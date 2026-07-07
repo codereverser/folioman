@@ -59,11 +59,6 @@ _QUOTE_TYPES = {
 # backfill doesn't hammer a free public API. Indirected through ``_SLEEP`` so
 # tests stub it; ``_REQUEST_SPACING`` is module-level so a caller can tune it.
 _REQUEST_SPACING = 0.15  # seconds between live fetches
-# Backfill grace: skip a fund whose latest NAV is within this many *trading* days of
-# the last trading day (today's NAV may not be out yet / a fund can declare late).
-# Beyond it we re-pull the full history and fill every missing date — so a desktop
-# opened once a fortnight catches up gaplessly instead of leaving weeks of holes.
-_HISTORY_FRESH_TRADING_DAYS = 1
 # The stored series counts as reaching the span start if its earliest date is within
 # this of the first transaction/holding — the first trade may fall on a holiday a few
 # days before the first available close, so an exact match isn't required.
@@ -439,30 +434,40 @@ _NSE_CHUNK_DAYS = 365
 _MF_BULK_MAX_LAG = env.int("FOLIOMAN_MF_BULK_MAX_LAG", 14)
 
 
-def _backfill_candidate(security: Security, cutoff: date_cls, force: bool):
-    """``(since, latest, reaches_back)`` if ``security`` needs a backfill, else ``None``.
-
-    ``since`` is the earliest date the valuation series must reach — the earliest
-    of any transaction date and any holding snapshot's as_of_date (a snapshot-only
-    equity must still price back to its statement date). ``reaches_back`` is whether
-    the stored series already extends to that span start (so the only gap is a recent
-    head lag — the bulk paths' favourable case). Skips only when the series is current
-    at the head AND reaches back; a head-only check let a shallow series look "fresh"
-    forever, leaving a freshly imported holding's first trade unpriced.
-    """
+def _span_start(security: Security) -> date_cls | None:
+    """Earliest date the valuation series must reach — the earliest of any transaction
+    date and any holding snapshot's as_of_date (a snapshot-only equity must still price
+    back to its statement date). ``None`` when nothing is held or traded."""
     txn_first = Transaction.objects.filter(security=security).aggregate(d=Min("date"))["d"]
     hold_first = Holding.objects.filter(security=security).aggregate(d=Min("as_of_date"))["d"]
-    candidates = [d for d in (txn_first, hold_first) if d is not None]
-    since = min(candidates) if candidates else None
+    dates = [d for d in (txn_first, hold_first) if d is not None]
+    return min(dates) if dates else None
+
+
+def _tail_candidate(security: Security, cutoff: date_cls):
+    """``(fetch_start, latest, reaches_back)`` to extend the head, or ``None`` when the
+    series is already current to ``cutoff`` (the last completed trading day).
+
+    ``fetch_start`` is the day after the last stored NAV — the tail to fetch — or the
+    span start when nothing is stored yet. Size-agnostic (1 day or 100); it never
+    re-pulls from the first transaction for a head gap — interior holes are the gap
+    filler's job. ``reaches_back`` (does the series already cover the span start) only
+    sizes the MF bulk choice.
+    """
     bounds = NAVHistory.objects.filter(security=security).aggregate(lo=Min("date"), hi=Max("date"))
     latest, earliest = bounds["hi"], bounds["lo"]
-    behind = trading_days_between(latest, cutoff) if latest is not None else None
-    reaches_back = since is None or (
-        earliest is not None and earliest <= since + _BACKFILL_TAIL_GRACE
-    )
-    if not force and behind is not None and behind <= _HISTORY_FRESH_TRADING_DAYS and reaches_back:
-        return None
-    return since, latest, reaches_back
+    if latest is not None:
+        if latest >= cutoff:
+            return None  # head current to the last completed session
+        since = _span_start(security)
+        reaches_back = since is None or (
+            earliest is not None and earliest <= since + _BACKFILL_TAIL_GRACE
+        )
+        return latest + timedelta(days=1), latest, reaches_back
+    since = _span_start(security)  # nothing stored yet → first fill from the span start
+    if since is None:
+        return None  # nothing to price
+    return since, None, True
 
 
 def _run_backfill_one(security, since, latest, backfill_one, summary) -> None:
@@ -638,100 +643,140 @@ def _bulk_backfill_mf(needing: list[tuple], cutoff: date_cls, summary: dict) -> 
     return handled
 
 
-def _backfill_missing(qs, *, backfill_one, force: bool = False, bulk_backfill=None) -> dict:
-    """Shared history-backfill loop for any feed (MF NAV or equity quote).
+def _empty_summary() -> dict:
+    return {"securities": 0, "points": 0, "errors": 0, "skipped": 0, "closed": 0}
 
-    Collects the securities that need a backfill (see :func:`_backfill_candidate`),
-    then — when a ``bulk_backfill`` is supplied and finds a cheaper whole-market path
-    for some of them — routes those through it and per-scheme for the rest. Each bulk
-    fn decides its own eligibility + cost tradeoff and returns the ids it handled.
 
-    ``force=True`` ignores the freshness skip and re-pulls every security per-scheme —
-    to repair interior holes the head-only freshness check can't detect (bulk paths
-    only fill the recent head lag, so they're skipped under force)."""
-    summary = {"securities": 0, "points": 0, "errors": 0, "skipped": 0, "closed": 0}
-    cutoff = last_trading_day(timezone.localdate())
+def _merge_summary(into: dict, other: dict) -> dict:
+    for k, v in other.items():
+        into[k] = into.get(k, 0) + v
+    return into
+
+
+def _priceable(securities: Iterable[Security] | None) -> list[Security]:
+    if securities is not None:
+        return list(securities)
+    types = [SecurityType.MF.value, *_QUOTE_TYPES]
+    return list(Security.objects.filter(security_type__in=types))
+
+
+def _extend_tail_batch(qs, *, backfill_one, bulk_backfill) -> dict:
+    """Extend each security's head from its last stored NAV to the last completed
+    session. Many shallow tails route through ``bulk_backfill`` (bhavcopy / AMFI range);
+    the rest go per-scheme. A series already current to the cutoff is skipped."""
+    summary = _empty_summary()
+    cutoff = completed_trading_day(timezone.localdate())
     needing: list[tuple] = []
     for security in qs:
-        got = _backfill_candidate(security, cutoff, force)
+        got = _tail_candidate(security, cutoff)
         if got is None:
             summary["skipped"] += 1
             continue
-        needing.append((security, *got))
+        needing.append((security, *got))  # (security, fetch_start, latest, reaches_back)
     if not needing:
         return summary
 
-    if bulk_backfill is not None and not force:
-        handled = bulk_backfill(needing, cutoff, summary)
-        needing = [c for c in needing if c[0].id not in handled]
+    handled = bulk_backfill(needing, cutoff, summary)
+    needing = [c for c in needing if c[0].id not in handled]
 
     fetched = False
-    for security, since, latest, _rb in needing:
+    for security, fetch_start, latest, _rb in needing:
         if fetched:
             _SLEEP(_REQUEST_SPACING)  # space consecutive live calls
         fetched = True
-        _run_backfill_one(security, since, latest, backfill_one, summary)
+        _run_backfill_one(security, fetch_start, latest, backfill_one, summary)
     return summary
 
 
-def backfill_missing_history(
-    *, securities: Iterable[Security] | None = None, force: bool = False
-) -> dict:
-    """Backfill MF NAV history, each fund bounded by its earliest transaction.
-
-    Many funds lagging only a short head gap catch up via one AMFI range-report call
-    (see :func:`_bulk_backfill_mf`); the rest go per-scheme (one call serves a fund's
-    full history). See :func:`_backfill_missing` for the freshness / gap / ``force``
-    semantics."""
-    qs = (
-        securities
-        if securities is not None
-        else Security.objects.filter(security_type=SecurityType.MF.value)
-    )
-    # One pooled connection per feed for the whole batch (per-fund clients would
-    # re-handshake TLS for every scheme). captnemo leads, mfapi backstops.
+def _extend_tail_mf(securities: list[Security]) -> dict:
+    if not securities:
+        return _empty_summary()
+    # One pooled connection per feed for the batch. captnemo leads, mfapi backstops.
     mfapi_client = mfapi.shared_client()
     captnemo_client = captnemo.shared_client()
     try:
         backfill_one = functools.partial(
             backfill_nav_history, mfapi_client=mfapi_client, captnemo_client=captnemo_client
         )
-        return _backfill_missing(
-            qs, backfill_one=backfill_one, force=force, bulk_backfill=_bulk_backfill_mf
+        return _extend_tail_batch(
+            securities, backfill_one=backfill_one, bulk_backfill=_bulk_backfill_mf
         )
     finally:
         mfapi_client.close()
         captnemo_client.close()
 
 
-def backfill_missing_equity_history(
-    *, securities: Iterable[Security] | None = None, force: bool = False
-) -> dict:
-    """Backfill equity / ETF / bond price history, bounded by earliest transaction.
-
-    Same freshness / gap / ``force`` semantics as the MF backfill — without this,
-    quote-type holdings have at most a single latest point and so contribute nothing
-    to the *historical* valuation series. When many symbols each need only a shallow
-    catch-up, one bhavcopy per day is cheaper than per-symbol history, so the loop
-    routes them through :func:`_bulk_backfill_equity`; per-symbol (NSE-first, Yahoo
-    fallback) covers deep history and non-NSE names."""
-    qs = (
-        securities
-        if securities is not None
-        else Security.objects.filter(security_type__in=sorted(_QUOTE_TYPES))
-    )
-    # Warm one NSE session for the whole batch (the security-wise feed sits behind
-    # a cookie wall) rather than re-warming per security, and pool one Yahoo
-    # connection for the fallback.
+def _extend_tail_equity(securities: list[Security]) -> dict:
+    if not securities:
+        return _empty_summary()
+    # One warmed NSE session (cookie wall) + one pooled Yahoo connection for the batch.
     nse_client = nse_history.warmed_client()
     yahoo_client = yfinance_feed.shared_client()
     try:
         backfill_one = functools.partial(
             backfill_equity_history, nse_client=nse_client, yahoo_client=yahoo_client
         )
-        return _backfill_missing(
-            qs, backfill_one=backfill_one, force=force, bulk_backfill=_bulk_backfill_equity
+        return _extend_tail_batch(
+            securities, backfill_one=backfill_one, bulk_backfill=_bulk_backfill_equity
         )
     finally:
         nse_client.close()
         yahoo_client.close()
+
+
+def extend_tails(securities: Iterable[Security] | None = None) -> dict:
+    """Tail fetcher: extend every priceable security's NAV series from its last stored
+    date to the last completed trading day (never today). Keeps the valuation head
+    current cheaply — it never re-pulls from the first transaction for a head gap, and
+    many shallow tails collapse into one bulk call (AMFI range for MF, bhavcopy for
+    equities). Interior holes are the gap filler's job (see :func:`fill_gaps`)."""
+    secs = _priceable(securities)
+    mf = [s for s in secs if s.security_type == SecurityType.MF.value]
+    equity = [s for s in secs if s.security_type in _QUOTE_TYPES]
+    summary = _extend_tail_mf(mf)
+    return _merge_summary(summary, _extend_tail_equity(equity))
+
+
+def _earliest_gap(security: Security, cutoff: date_cls) -> date_cls | None:
+    """The first missing trading day between the span start and ``cutoff``, or ``None``
+    when the series is contiguous. Backfilling from here fills every hole after it."""
+    since = _span_start(security)
+    if since is None:
+        return None
+    stored = set(
+        NAVHistory.objects.filter(security=security, date__gte=since, date__lte=cutoff).values_list(
+            "date", flat=True
+        )
+    )
+    for day in trading_days(since, cutoff):
+        if day not in stored:
+            return day
+    return None
+
+
+def fill_gaps(securities: Iterable[Security] | None = None, *, force: bool = False) -> dict:
+    """Gap filler: fill every missing trading day from the earliest transaction to the
+    last completed session — interior holes included, not just the tail. Detects the
+    actual missing dates and only fetches when a hole exists, so it runs off the hot
+    path (daily + on demand). ``force`` re-pulls each security's full span regardless."""
+    secs = _priceable(securities)
+    cutoff = completed_trading_day(timezone.localdate())
+    summary = _empty_summary()
+    fetched = False
+    for security in secs:
+        start = _span_start(security) if force else _earliest_gap(security, cutoff)
+        if start is None:
+            summary["skipped"] += 1
+            continue
+        latest = NAVHistory.objects.filter(security=security).aggregate(d=Max("date"))["d"]
+        # Each fetcher opens its own pooled client (gaps are rare, so no batch warm-up).
+        one = (
+            backfill_nav_history
+            if security.security_type == SecurityType.MF.value
+            else backfill_equity_history
+        )
+        if fetched:
+            _SLEEP(_REQUEST_SPACING)
+        fetched = True
+        _run_backfill_one(security, start, latest, one, summary)
+    return summary

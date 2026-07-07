@@ -57,7 +57,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options) -> None:
         from folioman_app.models import Investor, Security
-        from folioman_app.tasks.refresh_navs import _QUOTE_TYPES, backfill_missing_equity_history
+        from folioman_app.tasks.refresh_navs import _QUOTE_TYPES, fill_gaps
         from folioman_app.tasks.valuation_jobs import _earliest_activity, queue_recompute
 
         dry_run = options["dry_run"]
@@ -137,7 +137,7 @@ class Command(BaseCommand):
             return
 
         if not options["no_backfill"]:
-            summary = backfill_missing_equity_history(securities=symboled, force=options["force"])
+            summary = fill_gaps(securities=symboled, force=options["force"])
             self.stdout.write(
                 self.style.SUCCESS(
                     f"History backfill: {summary['points']} points across "

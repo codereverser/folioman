@@ -61,6 +61,15 @@ def run_daily_extend_tick() -> int:
     return _run(enqueue_daily_extend)
 
 
+def run_nav_gap_fill_tick() -> int:
+    """Fill any missing NAV/price history (interior holes + tail) across all priceable
+    securities — the daily integrity sweep, off the 30s hot path. Returns securities
+    touched."""
+    from folioman_app.tasks.refresh_navs import fill_gaps
+
+    return _run(lambda: fill_gaps()["securities"])
+
+
 def run_catch_up_tick() -> int:
     """Launch-time catch-up: if any READY series is behind today (the daily extend
     was missed while no scheduler ran), kick it once so the next interval tick brings

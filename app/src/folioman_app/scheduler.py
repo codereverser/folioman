@@ -42,6 +42,7 @@ from folioman_app.tasks.valuation_ticks import (
     REVALUE_HOURS,
     run_catch_up_tick,
     run_daily_extend_tick,
+    run_nav_gap_fill_tick,
     run_pending_valuations_tick,
 )
 
@@ -110,6 +111,15 @@ _JOBS: tuple[_Job, ...] = (
         func=run_corporate_action_refresh_tick,
         trigger="cron",
         trigger_args={"hour": 3, "minute": 15},
+        misfire_grace_time=_DAILY_MISFIRE_GRACE_SECONDS,
+    ),
+    # Daily NAV/price integrity sweep — fills interior holes + tails the head refresh
+    # doesn't cover. Off the 30s hot path; offset from the other daily runs.
+    _Job(
+        id="fill_nav_gaps",
+        func=run_nav_gap_fill_tick,
+        trigger="cron",
+        trigger_args={"hour": 1, "minute": 45},
         misfire_grace_time=_DAILY_MISFIRE_GRACE_SECONDS,
     ),
 )

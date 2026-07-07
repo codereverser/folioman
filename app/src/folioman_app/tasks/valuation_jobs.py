@@ -59,8 +59,7 @@ from folioman_app.models import Investor, InvestorValue, NAVHistory, Security, V
 from folioman_app.services.valuation import _value_series
 from folioman_app.tasks.refresh_navs import (
     _QUOTE_TYPES,
-    backfill_missing_equity_history,
-    backfill_missing_history,
+    extend_tails,
     refresh_navs,
 )
 
@@ -259,19 +258,11 @@ def recompute_investor_valuation(
         sec_ids = _held_security_ids(inv)
         securities = Security.objects.filter(id__in=sec_ids)
         if prime_navs:
-            # Backfill BEFORE the latest-point refresh: it must see the true contiguous
-            # tail (the last stored date), not a fresh point refresh just wrote ahead of
-            # an interior gap — else the gap-fill is skipped as "already current".
-            mf_summary = backfill_missing_history(  # MF history (mfapi) — fills any gap to today
-                securities=securities.filter(security_type=SecurityType.MF.value)
-            )
-            logger.info("investor %s: MF backfill %s", investor_id, mf_summary)
-            eq_summary = (
-                backfill_missing_equity_history(  # equity/etf/bond history (NSE-first, Yahoo)
-                    securities=securities.filter(security_type__in=sorted(_QUOTE_TYPES))
-                )
-            )
-            logger.info("investor %s: equity backfill %s", investor_id, eq_summary)
+            # Extend each series' head to the last completed session (cheap tail fetch),
+            # then refresh the latest point. Interior holes are healed off the hot path
+            # by the daily gap filler (fill_gaps), not here.
+            tail_summary = extend_tails(securities=securities)
+            logger.info("investor %s: tail extend %s", investor_id, tail_summary)
             nav_summary = refresh_navs(
                 securities=securities
             )  # current point per security (equities too)
@@ -345,16 +336,9 @@ def process_pending_valuations() -> int:
         sec_ids.update(_held_security_ids(inv))
     if sec_ids:
         securities = Security.objects.filter(id__in=sec_ids)
-        # Backfill first (fills any gap to today), then the latest-point refresh —
-        # see recompute_investor_valuation for why the order matters.
-        mf_summary = backfill_missing_history(
-            securities=securities.filter(security_type=SecurityType.MF.value)
-        )
-        logger.info("batch MF backfill: %s", mf_summary)
-        eq_summary = backfill_missing_equity_history(
-            securities=securities.filter(security_type__in=sorted(_QUOTE_TYPES))
-        )
-        logger.info("batch equity backfill: %s", eq_summary)
+        # Extend heads to the last completed session, then refresh the latest point.
+        tail_summary = extend_tails(securities=securities)
+        logger.info("batch tail extend: %s", tail_summary)
         nav_summary = refresh_navs(securities=securities)
         logger.info("batch NAV refresh: %s", nav_summary)
     processed = 0

@@ -51,10 +51,7 @@ pytestmark = pytest.mark.django_db
 def _stub_feeds(monkeypatch):
     """Valuation tests seed NAVHistory directly — no live price feeds."""
     monkeypatch.setattr(valuation_jobs, "refresh_navs", lambda **kw: {"updated": 0})
-    monkeypatch.setattr(valuation_jobs, "backfill_missing_history", lambda **kw: {"points": 0})
-    monkeypatch.setattr(
-        valuation_jobs, "backfill_missing_equity_history", lambda **kw: {"points": 0}
-    )
+    monkeypatch.setattr(valuation_jobs, "extend_tails", lambda **kw: {"securities": 0})
 
 
 def _values(investor) -> dict[dt.date, Decimal]:

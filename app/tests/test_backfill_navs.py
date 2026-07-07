@@ -1,4 +1,6 @@
-"""Historical NAV backfill. mfapi history is mocked — no live HTTP."""
+"""NAV history: the per-security fetchers plus the two batch mechanisms —
+``extend_tails`` (head catch-up) and ``fill_gaps`` (interior + tail integrity sweep).
+Feeds are mocked; no live HTTP."""
 
 from __future__ import annotations
 
@@ -9,11 +11,9 @@ from types import SimpleNamespace
 import pytest
 from django.core.management import call_command
 from folioman_app.models import NAVHistory, Security
+from folioman_app.services.trading_calendar import completed_trading_day
 from folioman_app.tasks.import_csv import create_manual_transaction
-from folioman_app.tasks.refresh_navs import (
-    backfill_missing_history,
-    backfill_nav_history,
-)
+from folioman_app.tasks.refresh_navs import backfill_nav_history, extend_tails, fill_gaps
 from folioman_core.models import NAVPoint, SecurityType
 from folioman_core.price_feeds import mfapi
 
@@ -31,6 +31,44 @@ def _mf_security() -> Security:
     return Security.objects.create(
         security_type=SecurityType.MF.value, name="Fund", amfi_code="122639"
     )
+
+
+def _mf_with_txn(code: str, *, on: dt.date, make_investor) -> Security:
+    """An MF the batch mechanisms will consider — a transaction gives it a span start."""
+    create_manual_transaction(
+        make_investor(),
+        {
+            "security_type": "mf",
+            "name": f"Fund {code}",
+            "amfi_code": code,
+            "folio_number": f"MF{code}",
+            "date": on,
+            "transaction_type": "buy",
+            "units": Decimal("100"),
+            "price": Decimal("10"),
+        },
+    )
+    return Security.objects.get(amfi_code=code)
+
+
+class _DummyClient:
+    def close(self):
+        pass
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    """Stub the batch feed warm-ups + bulk snapshots so the batch never touches the
+    network. Bulk defaults to empty (→ per-scheme path); bulk tests override."""
+    from folioman_core.price_feeds import amfi_bulk, nse_bhavcopy, nse_history
+
+    monkeypatch.setattr(nse_history, "warmed_client", lambda: _DummyClient())
+    monkeypatch.setattr(nse_bhavcopy, "warmed_client", lambda: _DummyClient())
+    monkeypatch.setattr(nse_bhavcopy, "fetch_close_by_symbol", lambda *_a, **_k: {})
+    monkeypatch.setattr(amfi_bulk, "fetch_range", lambda *_a, **_k: {})
+
+
+# --- per-security fetchers (backfill_nav_history / backfill_equity_history) ---
 
 
 def test_backfill_writes_full_history(monkeypatch):
@@ -72,7 +110,11 @@ def test_backfill_skips_non_mf(monkeypatch):
     assert NAVHistory.objects.count() == 0
 
 
-def test_backfill_missing_bounds_since_earliest_transaction(monkeypatch, make_investor):
+# --- tail fetcher (extend_tails) ---
+
+
+def test_extend_tails_bounds_since_earliest_transaction(monkeypatch, make_investor):
+    """A fund with no stored NAV yet is filled from its first transaction."""
     captured = {}
 
     def _fake(code, *, since=None, **_):
@@ -80,93 +122,66 @@ def test_backfill_missing_bounds_since_earliest_transaction(monkeypatch, make_in
         return _history(("2024-03-01", "80"))
 
     monkeypatch.setattr(mfapi, "fetch_nav_history", _fake)
-    inv = make_investor()
-    create_manual_transaction(
-        inv,
-        {
-            "security_type": "mf",
-            "name": "Fund",
-            "amfi_code": "122639",
-            "folio_number": "MF0001",
-            "date": dt.date(2024, 3, 1),
-            "transaction_type": "buy",
-            "units": Decimal("100"),
-            "price": Decimal("75"),
-        },
-    )
-    summary = backfill_missing_history()
+    _mf_with_txn("122639", on=dt.date(2024, 3, 1), make_investor=make_investor)
+    summary = extend_tails()
     assert captured["since"] == dt.date(2024, 3, 1)  # earliest transaction date
     assert summary["points"] == 1
 
 
-def test_backfill_refills_short_tail_despite_fresh_head(monkeypatch, make_investor):
-    """A series current at the head but not reaching the first trade must re-pull —
-    the head-only freshness check used to skip it, leaving early history unpriced."""
-    from folioman_app.models import NAVHistory
-    from folioman_app.services.trading_calendar import last_trading_day
-
+def test_extend_tails_fetches_only_the_tail_not_full_history(monkeypatch, make_investor):
+    """A deep-history fund that's merely behind at the head fetches from the day AFTER
+    its last stored NAV — never re-pulling from the first transaction (the ALKEM case)."""
     captured = {}
 
     def _fake(code, *, since=None, **_):
         captured["since"] = since
-        return _history(("2018-02-26", "200"))
+        return _history()  # content irrelevant; we assert the fetch window
 
     monkeypatch.setattr(mfapi, "fetch_nav_history", _fake)
-    inv = make_investor()
-    create_manual_transaction(
-        inv,
-        {
-            "security_type": "mf",
-            "name": "Fund",
-            "amfi_code": "122639",
-            "folio_number": "MF0001",
-            "date": dt.date(2018, 2, 26),
-            "transaction_type": "buy",
-            "units": Decimal("100"),
-            "price": Decimal("200"),
-        },
-    )
-    sec = Security.objects.get(amfi_code="122639")
-    # Head is current (today's close) but the tail only reaches this year — a shallow
-    # series that the old head-only check wrongly treated as fully fresh.
+    latest = completed_trading_day(dt.date.today()) - dt.timedelta(days=5)
+    sec = _mf_with_txn("122639", on=dt.date(2019, 1, 1), make_investor=make_investor)
+    NAVHistory.objects.create(security=sec, date=dt.date(2019, 1, 1), nav=Decimal("10"))  # reaches
+    NAVHistory.objects.create(security=sec, date=latest, nav=Decimal("20"))  # head, 5 days behind
+
+    extend_tails()
+    assert captured["since"] == latest + dt.timedelta(days=1)  # the tail, not 2019
+
+
+def test_extend_tails_skips_a_head_current_fund(monkeypatch, make_investor):
+    calls = {"n": 0}
+
+    def _fake(code, *, since=None, **_):
+        calls["n"] += 1
+        return _history()
+
+    monkeypatch.setattr(mfapi, "fetch_nav_history", _fake)
+    sec = _mf_with_txn("122639", on=dt.date(2024, 1, 1), make_investor=make_investor)
     NAVHistory.objects.create(
-        security=sec, date=last_trading_day(dt.date.today()), nav=Decimal("250")
+        security=sec, date=completed_trading_day(dt.date.today()), nav=Decimal("30")
     )
-    backfill_missing_history()
-    assert captured["since"] == dt.date(2018, 2, 26)  # re-pulled from the first trade
+    summary = extend_tails()
+    assert calls["n"] == 0  # current to the last completed session → no fetch
+    assert summary["skipped"] == 1
 
 
-def test_backfill_records_feed_errors(monkeypatch):
+def test_extend_tails_records_feed_errors(monkeypatch, make_investor):
     def _boom(code, **_):
         raise mfapi.NAVFetchError("mfapi down")
 
     monkeypatch.setattr(mfapi, "fetch_nav_history", _boom)
-    _mf_security()
-    summary = backfill_missing_history()
+    _mf_with_txn("122639", on=dt.date(2024, 1, 1), make_investor=make_investor)
+    summary = extend_tails()
     assert summary["errors"] == 1
     assert NAVHistory.objects.count() == 0
 
 
-def test_backfill_navs_command(monkeypatch):
-    monkeypatch.setattr(
-        mfapi,
-        "fetch_nav_history",
-        lambda code, **_: _history(("2024-01-01", "70"), ("2024-01-02", "71")),
-    )
-    _mf_security()
-    call_command("backfill_navs")
-    assert NAVHistory.objects.count() == 2
-
-
-def test_backfill_mf_short_lag_uses_one_amfi_range_report(monkeypatch, make_investor):
+def test_extend_tails_mf_short_lag_uses_one_amfi_range_report(monkeypatch, make_investor):
     """Several funds lagging only a short head gap catch up via one AMFI range-report
     call — the per-scheme feeds are never touched."""
-    from folioman_app.services.trading_calendar import completed_trading_day
-    from folioman_app.tasks.refresh_navs import backfill_missing_history
-    from folioman_core.price_feeds import amfi_bulk, captnemo, mfapi
+    from folioman_core.price_feeds import amfi_bulk, captnemo
 
-    end = completed_trading_day(dt.date.today())  # bulk fills up to the last completed day
-    latest = end - dt.timedelta(days=3)  # each fund a few days behind (well within 14)
+    end = completed_trading_day(dt.date.today())
+    latest = end - dt.timedelta(days=3)  # a few days behind (well within 14)
     since = latest - dt.timedelta(days=30)
 
     def _forbidden(*_a, **_k):
@@ -183,40 +198,22 @@ def test_backfill_mf_short_lag_uses_one_amfi_range_report(monkeypatch, make_inve
         },
     )
 
-    inv = make_investor()
     for code in ("100001", "100002"):
-        create_manual_transaction(
-            inv,
-            {
-                "security_type": "mf",
-                "name": f"Fund {code}",
-                "amfi_code": code,
-                "folio_number": f"MF{code}",
-                "date": since,
-                "transaction_type": "buy",
-                "units": Decimal("100"),
-                "price": Decimal("10"),
-            },
-        )
-        sec = Security.objects.get(amfi_code=code)
-        NAVHistory.objects.create(security=sec, date=since, nav=Decimal("10"))  # earliest≈since
-        NAVHistory.objects.create(security=sec, date=latest, nav=Decimal("10"))  # short head lag
+        sec = _mf_with_txn(code, on=since, make_investor=make_investor)
+        NAVHistory.objects.create(security=sec, date=since, nav=Decimal("10"))
+        NAVHistory.objects.create(security=sec, date=latest, nav=Decimal("10"))
 
-    summary = backfill_missing_history()
-
+    summary = extend_tails()
     assert summary["securities"] == 2
     for code, nav in (("100001", "11"), ("100002", "22")):
-        sec = Security.objects.get(amfi_code=code)
-        row = NAVHistory.objects.get(security=sec, date=end)
+        row = NAVHistory.objects.get(security=Security.objects.get(amfi_code=code), date=end)
         assert row.nav == Decimal(nav)
         assert row.source == "amfi"
 
 
-def test_backfill_mf_single_fund_stays_per_scheme(monkeypatch, make_investor):
+def test_extend_tails_single_fund_stays_per_scheme(monkeypatch, make_investor):
     """One lagging fund isn't worth a range report (one call either way) → per-scheme."""
-    from folioman_app.services.trading_calendar import completed_trading_day
-    from folioman_app.tasks.refresh_navs import backfill_missing_history
-    from folioman_core.price_feeds import amfi_bulk, mfapi
+    from folioman_core.price_feeds import amfi_bulk
 
     end = completed_trading_day(dt.date.today())
     latest = end - dt.timedelta(days=3)
@@ -226,33 +223,89 @@ def test_backfill_mf_single_fund_stays_per_scheme(monkeypatch, make_investor):
         raise AssertionError("range report used for a single fund")
 
     monkeypatch.setattr(amfi_bulk, "fetch_range", _range_forbidden)
-    # Code-only fund → per-scheme backfill goes through mfapi (captnemo is ISIN-keyed).
     monkeypatch.setattr(mfapi, "fetch_nav_history", lambda *a, **k: _history((str(end), "11")))
 
-    inv = make_investor()
-    create_manual_transaction(
-        inv,
-        {
-            "security_type": "mf",
-            "name": "Solo Fund",
-            "amfi_code": "100009",
-            "folio_number": "MF100009",
-            "date": since,
-            "transaction_type": "buy",
-            "units": Decimal("100"),
-            "price": Decimal("10"),
-        },
-    )
-    sec = Security.objects.get(amfi_code="100009")
+    sec = _mf_with_txn("100009", on=since, make_investor=make_investor)
     NAVHistory.objects.create(security=sec, date=since, nav=Decimal("10"))
     NAVHistory.objects.create(security=sec, date=latest, nav=Decimal("10"))
 
-    summary = backfill_missing_history()
+    summary = extend_tails()
     assert summary["securities"] == 1
     assert NAVHistory.objects.filter(security=sec, date=end).exists()
 
 
-# --- equity / quote-type history backfill (NSE-primary, Yahoo-fallback; mocked) ---
+# --- gap filler (fill_gaps) ---
+
+
+def test_fill_gaps_fills_an_interior_hole(monkeypatch, make_investor):
+    """A hole between two stored points is detected and backfilled from the hole start
+    — even though the head is current, which the tail fetcher would skip."""
+    captured = {}
+
+    def _fake(code, *, since=None, **_):
+        captured["since"] = since
+        return _history(("2024-01-02", "71"))
+
+    monkeypatch.setattr(mfapi, "fetch_nav_history", _fake)
+    end = completed_trading_day(dt.date.today())
+    sec = _mf_with_txn("122639", on=dt.date(2024, 1, 1), make_investor=make_investor)
+    NAVHistory.objects.create(security=sec, date=dt.date(2024, 1, 1), nav=Decimal("70"))
+    NAVHistory.objects.create(security=sec, date=end, nav=Decimal("99"))  # head current
+
+    fill_gaps()
+    # 2024-01-02 (Tuesday) is the first missing trading day after the span start.
+    assert captured["since"] == dt.date(2024, 1, 2)
+    assert NAVHistory.objects.filter(security=sec, date=dt.date(2024, 1, 2)).exists()
+
+
+def test_fill_gaps_repairs_deep_tail_behind_a_fresh_head(monkeypatch, make_investor):
+    """Head current, but the series only reaches this year while the first trade is 2018
+    — the gap filler fills from the first missing day (the 2018 trade date)."""
+    captured = {}
+
+    def _fake(code, *, since=None, **_):
+        captured["since"] = since
+        return _history(("2018-02-26", "200"))
+
+    monkeypatch.setattr(mfapi, "fetch_nav_history", _fake)
+    sec = _mf_with_txn("122639", on=dt.date(2018, 2, 26), make_investor=make_investor)
+    NAVHistory.objects.create(
+        security=sec, date=completed_trading_day(dt.date.today()), nav=Decimal("250")
+    )
+    fill_gaps()
+    assert captured["since"] == dt.date(2018, 2, 26)  # from the first missing day
+
+
+def test_fill_gaps_noop_on_contiguous_series(monkeypatch, make_investor):
+    calls = {"n": 0}
+
+    def _fake(code, *, since=None, **_):
+        calls["n"] += 1
+        return _history()
+
+    monkeypatch.setattr(mfapi, "fetch_nav_history", _fake)
+    end = completed_trading_day(dt.date.today())
+    sec = _mf_with_txn("122639", on=end, make_investor=make_investor)
+    # A single-day span with that day stored is contiguous → nothing to fill.
+    NAVHistory.objects.create(security=sec, date=end, nav=Decimal("50"))
+    summary = fill_gaps()
+    assert calls["n"] == 0
+    assert summary["skipped"] >= 1
+
+
+def test_backfill_navs_command_runs_the_gap_filler(monkeypatch, make_investor):
+    monkeypatch.setattr(
+        mfapi,
+        "fetch_nav_history",
+        lambda code, **_: _history(("2024-01-01", "70"), ("2024-01-02", "71")),
+    )
+    _mf_with_txn("122639", on=dt.date(2024, 1, 1), make_investor=make_investor)
+    call_command("backfill_navs")
+    sec = Security.objects.get(amfi_code="122639")
+    assert NAVHistory.objects.filter(security=sec).count() == 2
+
+
+# --- equity / quote-type per-security fetcher (NSE-primary, Yahoo-fallback) ---
 
 
 def _equity_security(symbol="RELIANCE", exchange="NSE") -> Security:
@@ -265,34 +318,12 @@ def _equity_security(symbol="RELIANCE", exchange="NSE") -> Security:
     )
 
 
-class _DummyClient:
-    def close(self):
-        pass
-
-
-@pytest.fixture(autouse=True)
-def _no_nse_warmup(monkeypatch):
-    """The equity batch warms a real NSE session (cookie wall) and, when the bulk
-    switch fires, downloads bhavcopies — stub both so the batch never touches the
-    network. Bhavcopy defaults to empty (bulk covers nothing → per-symbol path);
-    bulk-path tests override ``fetch_close_by_symbol`` with data."""
-    from folioman_core.price_feeds import amfi_bulk, nse_bhavcopy, nse_history
-
-    monkeypatch.setattr(nse_history, "warmed_client", lambda: _DummyClient())
-    monkeypatch.setattr(nse_bhavcopy, "warmed_client", lambda: _DummyClient())
-    monkeypatch.setattr(nse_bhavcopy, "fetch_close_by_symbol", lambda *_a, **_k: {})
-    # MF bulk range report defaults to empty (bulk covers nothing → per-scheme path);
-    # the MF-bulk test overrides this with data.
-    monkeypatch.setattr(amfi_bulk, "fetch_range", lambda *_a, **_k: {})
-
-
 def test_backfill_equity_uses_nse_first(monkeypatch):
     from folioman_app.tasks.refresh_navs import backfill_equity_history
     from folioman_core.price_feeds import nse_history, yfinance_feed
 
     captured = {}
 
-    # Signature mirrors the real nse_history.fetch_history (start=, not since=).
     def _nse(symbol, *, start=None, end=None, client=None):
         captured["symbol"] = symbol
         return _history(("2024-01-01", "1400"), ("2024-01-02", "1410"))
@@ -362,27 +393,10 @@ def test_backfill_equity_skips_symbolless(monkeypatch):
     assert NAVHistory.objects.count() == 0
 
 
-def test_backfill_equity_idempotent(monkeypatch):
-    from folioman_app.tasks.refresh_navs import backfill_equity_history
-    from folioman_core.price_feeds import nse_history
-
-    monkeypatch.setattr(
-        nse_history,
-        "fetch_history",
-        lambda *a, **k: _history(("2024-01-01", "1400"), ("2024-01-02", "1410")),
-    )
-    sec = _equity_security()
-    assert backfill_equity_history(sec) == 2
-    assert backfill_equity_history(sec) == 0
-    assert NAVHistory.objects.filter(security=sec).count() == 2
-
-
-def test_backfill_missing_equity_bounds_since_snapshot_when_no_transaction(
+def test_extend_tails_equity_bounds_since_snapshot_when_no_transaction(
     monkeypatch, make_investor, make_holding
 ):
-    """A snapshot-only equity (eCAS, no transactions) must backfill back to its
-    snapshot as_of_date — else the value series is unpriced before it."""
-    from folioman_app.tasks.refresh_navs import backfill_missing_equity_history
+    """A snapshot-only equity (eCAS, no transactions) fills from its snapshot as_of_date."""
     from folioman_core.price_feeds import nse_history
 
     captured = {}
@@ -397,11 +411,11 @@ def test_backfill_missing_equity_bounds_since_snapshot_when_no_transaction(
     make_holding(
         investor=inv, security=sec, units=Decimal("9600"), as_of_date=dt.date(2020, 12, 31)
     )
-    backfill_missing_equity_history()
+    extend_tails()
     assert captured["start"] == dt.date(2020, 12, 31)
 
 
-# --- bhavcopy bulk backfill + the per-symbol-vs-bulk cost switch ---
+# --- the per-symbol-vs-bulk cost switch (bhavcopy) ---
 
 
 def test_prefer_bulk_true_when_span_shallow_and_many_symbols():
@@ -431,13 +445,12 @@ def _nse_equity(*, name, isin, symbol) -> Security:
     )
 
 
-def test_backfill_equity_bulk_scatters_one_bhavcopy_across_symbols(
+def test_extend_tails_equity_bulk_scatters_one_bhavcopy_across_symbols(
     monkeypatch, make_investor, make_holding
 ):
-    """When bulk is cheaper, each day's bhavcopy is fetched once and its closes
-    scattered to every symbol that needs it — no per-symbol history calls."""
+    """When bulk is cheaper, each day's bhavcopy is fetched once and scattered to every
+    symbol that needs it — no per-symbol history calls."""
     import folioman_app.tasks.refresh_navs as rn
-    from folioman_app.tasks.refresh_navs import backfill_missing_equity_history
     from folioman_core.price_feeds import nse_bhavcopy, nse_history
 
     monkeypatch.setattr(rn, "_prefer_bulk", lambda *_a, **_k: True)
@@ -465,7 +478,7 @@ def test_backfill_equity_bulk_scatters_one_bhavcopy_across_symbols(
     make_holding(investor=inv, security=rel, units=Decimal("10"), as_of_date=recent)
     make_holding(investor=inv, security=infy, units=Decimal("20"), as_of_date=recent)
 
-    summary = backfill_missing_equity_history()
+    summary = extend_tails()
 
     assert calls["n"] >= 1
     assert summary["securities"] == 2
@@ -473,13 +486,12 @@ def test_backfill_equity_bulk_scatters_one_bhavcopy_across_symbols(
     assert NAVHistory.objects.filter(security=infy, source="nse-bhavcopy").exists()
 
 
-def test_backfill_equity_bulk_leaves_uncovered_symbol_to_per_symbol(
+def test_extend_tails_equity_bulk_leaves_uncovered_symbol_to_per_symbol(
     monkeypatch, make_investor, make_holding
 ):
-    """A symbol absent from the bhavcopy (bond / suspended / not-yet-listed) isn't
-    marked handled, so it still backfills via the per-symbol feed."""
+    """A symbol absent from the bhavcopy (bond / suspended) isn't marked handled, so it
+    still backfills via the per-symbol feed."""
     import folioman_app.tasks.refresh_navs as rn
-    from folioman_app.tasks.refresh_navs import backfill_missing_equity_history
     from folioman_core.price_feeds import nse_bhavcopy, nse_history
 
     monkeypatch.setattr(rn, "_prefer_bulk", lambda *_a, **_k: True)
@@ -504,7 +516,7 @@ def test_backfill_equity_bulk_leaves_uncovered_symbol_to_per_symbol(
     make_holding(investor=inv, security=rel, units=Decimal("10"), as_of_date=recent)
     make_holding(investor=inv, security=infy, units=Decimal("20"), as_of_date=recent)
 
-    backfill_missing_equity_history()
+    extend_tails()
 
     assert NAVHistory.objects.filter(security=rel, source="nse-bhavcopy").exists()  # bulk
     assert seen["symbol"] == "INFY"  # the uncovered symbol fell through to per-symbol
