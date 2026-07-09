@@ -482,7 +482,7 @@ requires-dist = [
     { name = "django", specifier = ">=5.2,<5.3" },
     { name = "django-ninja", specifier = ">=1.3" },
     { name = "django-ninja-jwt", marker = "extra == 'server'", specifier = ">=5.4" },
-    { name = "environs", extras = ["django"], specifier = ">=11" },
+    { name = "environs", extras = ["django"], specifier = ">=15.0.1" },
     { name = "folioman-core", editable = "core" },
     { name = "gunicorn", marker = "extra == 'server'", specifier = ">=23.0" },
     { name = "platformdirs", specifier = ">=4.0" },
