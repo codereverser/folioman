@@ -337,10 +337,6 @@ h2 {
 :deep(.exp-col) {
   width: 3rem;
 }
-:deep(.num) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
 :deep(.foot-label) {
   text-align: right;
   color: var(--fm-text-muted);

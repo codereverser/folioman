@@ -344,10 +344,6 @@ function openInvestor(investorId: number): void {
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-:deep(.holdings .num) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
 /* On a narrow screen the table scrolls within its card rather than widening
    the page. */
 :deep(.holdings .p-datatable-table-container) {

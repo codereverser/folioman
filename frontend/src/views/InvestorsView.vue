@@ -546,13 +546,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
           </template>
         </Column>
 
-        <Column
-          field="valueNum"
-          header="Value"
-          :sortable="!grouped"
-          class="col-num"
-          header-class="col-num"
-        >
+        <Column field="valueNum" header="Value" :sortable="!grouped" class="num" header-class="num">
           <template #body="{ data }">
             <span class="value" :class="{ pending: isPending((data as Row).summary) }">
               {{ valueText((data as Row).summary) }}
@@ -566,7 +560,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
           </template>
         </Column>
 
-        <Column header="Verified" class="col-num" header-class="col-num">
+        <Column header="Verified" class="num" header-class="num">
           <template #body="{ data }">
             <span class="tax-ready" :title="integrityTitle((data as Row).summary)">
               <template v-if="(data as Row).summary">
@@ -580,7 +574,7 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
           </template>
         </Column>
 
-        <Column header="Imported" class="col-num" header-class="col-num">
+        <Column header="Imported" class="num" header-class="num">
           <template #body="{ data }">
             <span class="muted">{{ formatDate((data as Row).summary?.lastImportAt) }}</span>
           </template>
@@ -917,14 +911,6 @@ function confirmDeleteInvestor(inv: RosterInvestor): void {
   gap: 0.35rem;
   color: var(--fm-text-muted);
   font-size: 0.8125rem;
-}
-:deep(.col-num) {
-  text-align: right;
-}
-/* PrimeVue wraps the header label in a flex row, so text-align can't move it —
-   right-align the header content to sit over the right-aligned cell data. */
-:deep(th.col-num .p-datatable-column-header-content) {
-  justify-content: flex-end;
 }
 :deep(.col-actions) {
   width: 3rem;

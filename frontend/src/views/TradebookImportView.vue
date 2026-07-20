@@ -549,8 +549,8 @@ watch(investorId, () => {
           <Column field="date" header="Date" />
           <Column field="transaction_type" header="Type" />
           <Column field="name" header="Security" />
-          <Column field="units" header="Units" />
-          <Column field="price" header="Price" />
+          <Column field="units" header="Units" class="num" header-class="num" />
+          <Column field="price" header="Price" class="num" header-class="num" />
         </DataTable>
         <p v-if="rowCount > previewRows.length" class="muted small">
           Showing first {{ previewRows.length }} of {{ rowCount }}.

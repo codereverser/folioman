@@ -64,3 +64,23 @@ body {
     animation: none;
   }
 }
+
+/* Numeric DataTable columns: right-align the cells AND the header. PrimeVue wraps
+   the header label in a flex container, so text-align alone can't move it — the
+   header must be justified to sit over the right-aligned figures. One rule for
+   every table via the shared `.num` column class. */
+.p-datatable td.num,
+.p-datatable th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.p-datatable th.num .p-datatable-column-header-content,
+.p-datatable th.num .p-column-header-content {
+  justify-content: flex-end;
+}
+
+/* The default body-cell separator resolves to the cell background, so rows blur
+   together. Repaint it as a visible hairline for every table. */
+.p-datatable-tbody > tr > td {
+  border-bottom-color: var(--fm-border);
+}

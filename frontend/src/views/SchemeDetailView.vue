@@ -661,11 +661,6 @@ function back(): void {
   text-align: center;
 }
 
-:deep(.ledger .num) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
 .folio-table {
   width: 100%;
   border-collapse: collapse;

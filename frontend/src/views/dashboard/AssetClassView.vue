@@ -414,16 +414,6 @@ function qty(units: number): string {
     opacity: 0.55;
   }
 }
-:deep(.securities .num) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-/* PrimeVue wraps the header label in a flex container, so text-align alone won't
-   right-align it — push the header content to match the right-aligned cells. */
-:deep(.securities th.num .p-datatable-column-header-content),
-:deep(.securities th.num .p-column-header-content) {
-  justify-content: flex-end;
-}
 :deep(.securities .p-datatable-table-container) {
   overflow-x: auto;
 }
