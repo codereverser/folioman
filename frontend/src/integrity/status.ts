@@ -6,12 +6,7 @@
  * the brand colour to the core differentiator (green/red stay reserved for P&L).
  */
 export type IntegrityStatus =
-  | 'full_history'
-  | 'reconciled'
-  | 'snapshot_only'
-  | 'mismatch'
-  | 'user_acknowledged'
-  | 'unknown'
+  'full_history' | 'reconciled' | 'snapshot_only' | 'mismatch' | 'user_acknowledged' | 'unknown'
 
 export type IntegritySeverity = 'verified' | 'warn' | 'critical' | 'neutral'
 
