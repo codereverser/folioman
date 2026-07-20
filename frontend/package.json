@@ -45,7 +45,7 @@
     "@vue/test-utils": "^2.4.11",
     "jsdom": "^29",
     "openapi-typescript": "^7.4.4",
-    "prettier": "^3.8.5",
+    "prettier": "^3.9.5",
     "typescript": "~6.0.3",
     "vite": "^8",
     "vite-plugin-compression2": "^2.5.3",
