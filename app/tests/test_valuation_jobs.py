@@ -10,7 +10,10 @@ from decimal import Decimal
 import pytest
 from django.utils import timezone
 from folioman_app.models import InvestorValue, NAVHistory, ValuationStatus
-from folioman_app.services.valuation import build_investor_summary
+from folioman_app.services.valuation import (
+    build_investor_summary,
+    compute_portfolio_period_returns,
+)
 from folioman_app.tasks import valuation_jobs
 from folioman_core.models import SecurityType, TransactionType
 from folioman_core.models.investor import FolioType
@@ -550,6 +553,43 @@ def test_ledger_equity_wins_over_ecas_snapshot_no_double_count(
     assert _values(inv)[dt.date(2025, 1, 1)] == Decimal("10000")  # 10 ledger, not 25
     summary = build_investor_summary(inv, dt.date(2025, 1, 1))
     assert summary["total_inr"] == Decimal("10000")
+
+
+def test_period_returns_windowed_xirr(make_investor, make_security, make_folio, make_transaction):
+    """Trailing returns: each window is a money-weighted XIRR over its own span.
+
+    One MF bought at NAV 10 that doubles to 20 over a year (via a 15 midpoint):
+    the lifetime window ≈ 100% p.a., the 6-month window's opening value is the
+    midpoint (1500 → 2000 = +33% absolute), and windows predating the first
+    transaction (3Y/5Y) are dropped rather than fabricated.
+    """
+    inv = make_investor()
+    folio = make_folio(investor=inv, number="99999999")
+    mf = make_security(security_type=SecurityType.MF.value, name="Bluechip", isin="INF000A00001")
+    make_transaction(
+        investor=inv,
+        security=mf,
+        folio=folio,
+        date=dt.date(2024, 1, 1),
+        units=Decimal("100"),
+        nav_or_price=Decimal("10"),
+    )
+    for on, nav in [
+        (dt.date(2024, 1, 1), 10),
+        (dt.date(2024, 7, 1), 15),
+        (dt.date(2025, 1, 1), 20),
+    ]:
+        NAVHistory.objects.create(security=mf, date=on, nav=Decimal(nav))
+
+    by_period = {
+        r["period"]: r for r in compute_portfolio_period_returns([inv], dt.date(2025, 1, 1))
+    }
+
+    assert "3Y" not in by_period and "5Y" not in by_period  # younger than these windows
+    assert by_period["All"]["annualized"] == pytest.approx(1.0, abs=0.03)  # value doubled in a year
+    six_month = by_period["6M"]
+    assert six_month["days"] == 184
+    assert six_month["absolute"] == pytest.approx(0.3333, abs=0.01)  # 1500 → 2000
 
 
 def test_partial_equity_excluded_from_series_but_snapshot_counts_headline(

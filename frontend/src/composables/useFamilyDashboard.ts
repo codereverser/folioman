@@ -2,6 +2,7 @@ import { computed, getCurrentScope, onScopeDispose, ref, watch, type Ref } from 
 import { api, type Schemas } from '@/api/client'
 import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import type { ValuePoint } from '@/components/charts/PortfolioValueChart.vue'
+import type { PeriodReturn } from '@/composables/useDashboard'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 
@@ -34,6 +35,7 @@ export interface FamilySummary {
   dayChangeAmount: number | null
   dayChangePercent: number | null
   xirr: number | null
+  periodReturns: PeriodReturn[]
   asOf: string
   allocation: AllocationSlice[]
   valueSeries: ValuePoint[]
@@ -47,6 +49,7 @@ const EMPTY: FamilySummary = {
   dayChangeAmount: null,
   dayChangePercent: null,
   xirr: null,
+  periodReturns: [],
   asOf: '—',
   allocation: [],
   valueSeries: [],
@@ -180,6 +183,12 @@ export function useFamilyDashboard(familyId: Ref<number>) {
       dayChangeAmount,
       dayChangePercent,
       xirr: a.xirr == null ? null : a.xirr * 100,
+      periodReturns: (a.period_returns ?? []).map<PeriodReturn>((r) => ({
+        period: r.period,
+        annualized: r.annualized * 100,
+        absolute: r.absolute == null ? null : r.absolute * 100,
+        days: r.days,
+      })),
       asOf: `as of ${formatDate(a.as_of)}`,
       allocation: (a.asset_mix ?? []).map<AllocationSlice>((row) => ({
         name: assetLabel(row.security_type),

@@ -6,6 +6,7 @@ import DataTable from 'primevue/datatable'
 import Message from 'primevue/message'
 import MetricCard from '@/components/MetricCard.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
+import ReturnsStrip from '@/components/ReturnsStrip.vue'
 import { useFamilyDashboard, type RangeKey } from '@/composables/useFamilyDashboard'
 import { RANGES } from '@/utils/portfolio'
 import { useRosterStore } from '@/stores/roster'
@@ -107,6 +108,8 @@ function openInvestor(investorId: number): void {
       />
       <MetricCard class="span-2" label="Investors" :value="summary.investorCount" format="raw" />
       <MetricCard class="span-2" label="Folios" :value="summary.folioCount" format="raw" />
+
+      <ReturnsStrip class="span-12" :returns="summary.periodReturns" />
 
       <article ref="chartRegion" class="span-4 card chart-card">
         <h2>Allocation</h2>
@@ -255,6 +258,9 @@ function openInvestor(investorId: number): void {
 .span-8 {
   grid-column: span 8;
 }
+.span-12 {
+  grid-column: 1 / -1;
+}
 
 /* Every grid item must also opt out of the auto min-width floor. */
 .bento > * {
@@ -365,9 +371,10 @@ function openInvestor(investorId: number): void {
   gap: var(--fm-space-3);
   padding: var(--fm-space-3);
   background: var(--fm-surface-raised);
-  border: 1px solid var(--fm-border-subtle);
+  border: 1px solid var(--fm-border);
   border-radius: var(--fm-radius-md);
   font: inherit;
+  color: inherit;
   cursor: pointer;
   text-align: left;
   transition: border-color var(--fm-dur-fast) var(--fm-ease);

@@ -1282,6 +1282,8 @@ export interface components {
              * @default 0
              */
             needs_attention_count: number;
+            /** Period Returns */
+            period_returns?: components["schemas"]["PeriodReturnOut"][];
             /** Stale Count */
             stale_count: number;
             /**
@@ -1794,6 +1796,8 @@ export interface components {
             navs_stale: boolean;
             /** Needs Attention Count */
             needs_attention_count: number;
+            /** Period Returns */
+            period_returns?: components["schemas"]["PeriodReturnOut"][];
             /** Snapshot Count */
             snapshot_count: number;
             /** Stale Count */
@@ -1947,6 +1951,22 @@ export interface components {
             price?: number | string | null;
             /** Units */
             units: number | string;
+        };
+        /**
+         * PeriodReturnOut
+         * @description One trailing-window money-weighted return. ``annualized`` is XIRR (p.a.);
+         *     ``absolute`` is that rate de-annualized to the window, so the UI can show the
+         *     absolute figure for sub-year windows and ``% p.a.`` for the rest.
+         */
+        PeriodReturnOut: {
+            /** Absolute */
+            absolute?: number | null;
+            /** Annualized */
+            annualized: number;
+            /** Days */
+            days: number;
+            /** Period */
+            period: string;
         };
         /**
          * RecordOpeningLotIn

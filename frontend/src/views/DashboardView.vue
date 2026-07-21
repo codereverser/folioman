@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, toRef,
 import { useRoute } from 'vue-router'
 import IntegrityHealthCard from '@/components/IntegrityHealthCard.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
+import ReturnsStrip from '@/components/ReturnsStrip.vue'
 import AssetClassSummary from '@/views/dashboard/AssetClassSummary.vue'
 import { useDashboard, type RangeKey } from '@/composables/useDashboard'
 import { RANGES } from '@/utils/portfolio'
@@ -255,6 +256,9 @@ const allocationData = computed(() =>
         <span class="kpi-val">{{ summary.holdingsCount }}</span>
       </div>
     </section>
+
+    <!-- Trailing returns: money-weighted (XIRR) over standard windows. -->
+    <ReturnsStrip :returns="summary.periodReturns" />
 
     <!-- Allocation + data integrity. -->
     <div class="bento">

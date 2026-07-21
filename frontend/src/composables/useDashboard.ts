@@ -59,6 +59,13 @@ export interface FundRow extends HoldingRow {
   dayChangePercent: number | null // 1-day % NAV move
 }
 
+export interface PeriodReturn {
+  period: string // 1M / 3M / 6M / 1Y / 3Y / 5Y / All
+  annualized: number // percent, p.a.
+  absolute: number | null // percent, holding-period return over the window
+  days: number
+}
+
 export interface DashboardSummary {
   netWorth: number
   invested: number
@@ -67,6 +74,9 @@ export interface DashboardSummary {
   dayChangeAmount: number | null // intraday INR change; null without 2 NAV points
   dayChangePercent: number | null
   xirr: number | null
+  // Trailing money-weighted returns (1M…5Y + All), as percents. `absolute` is the
+  // holding-period return; `annualized` is p.a. — the UI shows absolute for < 1Y.
+  periodReturns: PeriodReturn[]
   asOf: string
   // total_inr is a last-known value (statement close / last computed day), not a
   // live valuation at as_of — e.g. NAVs not fetched yet. as_of is that value's date.
@@ -102,6 +112,7 @@ const EMPTY: DashboardSummary = {
   dayChangeAmount: null,
   dayChangePercent: null,
   xirr: null,
+  periodReturns: [],
   asOf: '—',
   isProvisional: false,
   navsStale: false,
@@ -308,6 +319,12 @@ export function useDashboard(investorId: Ref<number>) {
       dayChangeAmount,
       dayChangePercent,
       xirr: s.xirr == null ? null : s.xirr * 100, // fraction → percent for the card
+      periodReturns: (s.period_returns ?? []).map<PeriodReturn>((r) => ({
+        period: r.period,
+        annualized: r.annualized * 100,
+        absolute: r.absolute == null ? null : r.absolute * 100,
+        days: r.days,
+      })),
       asOf: `as of ${formatDate(s.as_of)}${s.is_provisional ? ' · provisional' : ''}`,
       isProvisional: s.is_provisional,
       navsStale: s.navs_stale ?? false,

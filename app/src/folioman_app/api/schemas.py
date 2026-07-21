@@ -146,6 +146,17 @@ class RosterAggregateOut(Schema):
     rows: list[InvestorRowOut] = Field(default_factory=list)
 
 
+class PeriodReturnOut(Schema):
+    """One trailing-window money-weighted return. ``annualized`` is XIRR (p.a.);
+    ``absolute`` is that rate de-annualized to the window, so the UI can show the
+    absolute figure for sub-year windows and ``% p.a.`` for the rest."""
+
+    period: str  # 1M / 3M / 6M / 1Y / 3Y / 5Y / All
+    annualized: float  # money-weighted rate as a fraction (0.1219 = 12.19% p.a.)
+    absolute: float | None = None  # holding-period return over the window, or null
+    days: int  # span of the window, so the UI picks absolute (< 365) vs p.a.
+
+
 class FamilyAggregateOut(Schema):
     family_id: int
     as_of: date
@@ -164,6 +175,8 @@ class FamilyAggregateOut(Schema):
     # portfolio lifetime money-weighted return as a fraction (0.1849 = 18.49%),
     # over all cashflows incl. sold-out positions. Per-fund XIRR is on each holding.
     xirr: float | None = None
+    # Trailing money-weighted returns (1M…5Y + All) across the family's ledgers.
+    period_returns: list[PeriodReturnOut] = Field(default_factory=list)
 
 
 class InvestorSummaryOut(Schema):
@@ -196,6 +209,9 @@ class InvestorSummaryOut(Schema):
     # portfolio lifetime money-weighted return as a fraction (0.1849 = 18.49%),
     # over all cashflows incl. sold-out positions. Per-fund XIRR is on each holding.
     xirr: float | None = None
+    # Trailing money-weighted returns (1M…5Y + All). Windows shorter than the
+    # portfolio's history are omitted; empty when there's no ledger to price.
+    period_returns: list[PeriodReturnOut] = Field(default_factory=list)
     asset_mix: list[AssetMixRow] = Field(default_factory=list)  # INR by security type
     # Sub-breakdowns of the priced value so the allocation donut is informative
     # while everything is still mutual funds (value-desc, unpriced rows excluded).

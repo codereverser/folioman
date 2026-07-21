@@ -411,6 +411,7 @@ def build_family_aggregate(family: Family, as_of: date) -> dict:
         "navs_stale": _navs_stale(navs_as_of, as_of),
         "day_change_inr": _day_change_total(extras),
         "xirr": compute_portfolio_xirr(investors, as_of),
+        "period_returns": compute_portfolio_period_returns(investors, as_of),
     }
 
 
@@ -678,6 +679,7 @@ def build_investor_summary(investor: Investor, as_of: date) -> dict:
         "last_import_at": last_import_at,
         "day_change_inr": _day_change_total(extras),
         "xirr": compute_portfolio_xirr([investor], as_of),
+        "period_returns": compute_portfolio_period_returns([investor], as_of),
         "asset_mix": rollup["asset_mix"],
         "amc_mix": rollup["amc_mix"],
         "category_mix": rollup["category_mix"],
@@ -1462,3 +1464,95 @@ def compute_portfolio_xirr(investors: list[Investor], as_of: date) -> float | No
 
     cashflows = cashflows_from_transactions(flows, present_date=as_of, present_value=terminal)
     return compute_xirr(cashflows)
+
+
+# Trailing-return windows: label → months back from ``as_of``. "All" (lifetime) is
+# appended separately. Windows longer than the portfolio's own history are dropped
+# so a 2-year-old portfolio never shows a fabricated 5Y number.
+_RETURN_WINDOWS: tuple[tuple[str, int], ...] = (
+    ("1M", 1),
+    ("3M", 3),
+    ("6M", 6),
+    ("1Y", 12),
+    ("3Y", 36),
+    ("5Y", 60),
+)
+
+
+def _value_at(txn_keys: dict, nav_idx: dict, when: date) -> Decimal:
+    """Priced value of the ledger-backed positions as-of ``when`` (snapshots excluded,
+    matching the lifetime XIRR terminal). Unpriced held units contribute nothing."""
+    total = _ZERO
+    for sec_id, (_sec, units, _inv) in _positions_asof(txn_keys, {}, when).items():
+        if units <= _ZERO:
+            continue
+        price = _price_at(nav_idx, sec_id, when)
+        if price is not None:
+            total += units * price
+    return total
+
+
+def _windowed_xirr(
+    txn_keys: dict, nav_idx: dict, start: date, as_of: date, terminal: Decimal
+) -> float | None:
+    """Money-weighted XIRR over ``(start, as_of]``: the portfolio value at ``start`` is
+    the opening capital, the window's cashflows follow, and ``terminal`` (value now)
+    is the closing inflow. Same-``start`` positions are folded into the opening value,
+    so a trade dated exactly ``start`` isn't double-counted."""
+    flows: list[tuple[date, Decimal]] = []
+    opening = _value_at(txn_keys, nav_idx, start)
+    if opening > _ZERO:
+        flows.append((start, opening))  # opening value = capital "invested" at window start
+    for rec in txn_keys.values():
+        for txn_date, ttype, cash in rec["cash"]:
+            if not (start < txn_date <= as_of):
+                continue
+            if ttype in _BUY_TYPES:
+                flows.append((txn_date, cash))  # capital invested (positive in)
+            elif ttype in _SELL_TYPES:
+                flows.append((txn_date, -cash))  # capital returned
+            elif ttype == TransactionType.DIVIDEND.value and cash:
+                flows.append((txn_date, -cash))  # cash dividend paid out
+    if not flows:
+        return None
+    cashflows = cashflows_from_transactions(flows, present_date=as_of, present_value=terminal)
+    return compute_xirr(cashflows)
+
+
+def _period_return(label: str, start: date, as_of: date, rate: float) -> dict:
+    """Package a window's annualized XIRR alongside its de-annualized holding-period
+    return, so the caller can show ``% p.a.`` for long windows and an absolute figure
+    for sub-year ones (annualizing a 3-month move is noise)."""
+    days = (as_of - start).days
+    base = 1.0 + rate
+    absolute = base ** (days / 365.0) - 1.0 if base > 0.0 else None
+    return {"period": label, "annualized": rate, "absolute": absolute, "days": days}
+
+
+def compute_portfolio_period_returns(investors: list[Investor], as_of: date) -> list[dict]:
+    """Trailing money-weighted returns over the standard windows plus lifetime.
+
+    Each window is an independent windowed XIRR (see :func:`_windowed_xirr`). Windows
+    that predate the portfolio's first transaction are omitted; "All" always uses the
+    full ledger (its opening value is zero, so it equals the lifetime XIRR)."""
+    txn_keys, _hold_keys = _ledger_index(investors)
+    if not txn_keys:
+        return []
+    inception = min(txn_date for rec in txn_keys.values() for (txn_date, _t, _c) in rec["cash"])
+    sec_ids = {k[0] for k in txn_keys}
+    nav_idx = _nav_index(sec_ids, as_of)
+    terminal = _value_at(txn_keys, nav_idx, as_of)
+
+    out: list[dict] = []
+    for label, months in _RETURN_WINDOWS:
+        start = _add_months(as_of, -months)
+        if start < inception:
+            continue  # portfolio younger than the window — don't invent it
+        rate = _windowed_xirr(txn_keys, nav_idx, start, as_of, terminal)
+        if rate is not None:
+            out.append(_period_return(label, start, as_of, rate))
+    # Lifetime: a day before inception so the first day's trades fall inside the window.
+    all_rate = _windowed_xirr(txn_keys, nav_idx, inception - timedelta(days=1), as_of, terminal)
+    if all_rate is not None:
+        out.append(_period_return("All", inception, as_of, all_rate))
+    return out

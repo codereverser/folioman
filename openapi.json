@@ -542,6 +542,13 @@
             "title": "Needs Attention Count",
             "type": "integer"
           },
+          "period_returns": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodReturnOut"
+            },
+            "title": "Period Returns",
+            "type": "array"
+          },
           "stale_count": {
             "title": "Stale Count",
             "type": "integer"
@@ -1801,6 +1808,13 @@
             "title": "Needs Attention Count",
             "type": "integer"
           },
+          "period_returns": {
+            "items": {
+              "$ref": "#/components/schemas/PeriodReturnOut"
+            },
+            "title": "Period Returns",
+            "type": "array"
+          },
           "snapshot_count": {
             "title": "Snapshot Count",
             "type": "integer"
@@ -2208,6 +2222,41 @@
           "units"
         ],
         "title": "OpeningLotRow",
+        "type": "object"
+      },
+      "PeriodReturnOut": {
+        "description": "One trailing-window money-weighted return. ``annualized`` is XIRR (p.a.);\n``absolute`` is that rate de-annualized to the window, so the UI can show the\nabsolute figure for sub-year windows and ``% p.a.`` for the rest.",
+        "properties": {
+          "absolute": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Absolute"
+          },
+          "annualized": {
+            "title": "Annualized",
+            "type": "number"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period",
+          "annualized",
+          "days"
+        ],
+        "title": "PeriodReturnOut",
         "type": "object"
       },
       "RecordOpeningLotIn": {
