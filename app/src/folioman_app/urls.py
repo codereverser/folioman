@@ -22,7 +22,11 @@ def spa_fallback(request, *args, **kwargs):
     dist = settings.FRONTEND_DIST
     index = Path(dist) / "index.html" if dist else None
     if index and index.is_file():
-        return FileResponse(index.open("rb"), content_type="text/html")
+        response = FileResponse(index.open("rb"), content_type="text/html")
+        # Always revalidate the shell so a redeploy is picked up (matches the
+        # WhiteNoise header for the file it serves at / — see settings.base).
+        response["Cache-Control"] = "no-cache"
+        return response
     return HttpResponse(
         "Frontend not built. Run `make frontend-build`.",
         status=503,

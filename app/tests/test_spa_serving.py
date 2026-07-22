@@ -23,6 +23,15 @@ def test_spa_fallback_serves_index_for_a_deep_link(client, tmp_path):
     assert b'<div id="app">' in body
 
 
+def test_spa_fallback_shell_is_revalidated(client, tmp_path):
+    # The shell must not be cached, or a redeploy is masked by a stale copy (and
+    # the PWA update prompt never fires). See settings.base for the WhiteNoise-
+    # served files (/, /sw.js).
+    with override_settings(FRONTEND_DIST=_write_dist(tmp_path)):
+        resp = client.get("/investors/5/dashboard")
+    assert "no-cache" in resp["Cache-Control"]
+
+
 def test_spa_fallback_503_when_not_built(client, tmp_path):
     # tmp_path has no index.html → the frontend isn't built.
     with override_settings(FRONTEND_DIST=str(tmp_path)):

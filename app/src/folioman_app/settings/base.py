@@ -141,10 +141,21 @@ FRONTEND_DIST = env.str("FOLIOMAN_FRONTEND_DIST", "") or str(_REPO_ROOT / "front
 
 if Path(FRONTEND_DIST).is_dir():
     # Serve dist/ contents at the site root: /assets/*, /sw.js, /manifest, and
-    # index.html at /. Hashed asset filenames get long-lived immutable caching;
-    # WhiteNoise keeps index.html uncached so new builds are picked up.
+    # index.html at /. Hashed asset filenames get long-lived immutable caching.
     WHITENOISE_ROOT = FRONTEND_DIST
     WHITENOISE_INDEX_FILE = True
+
+    def _spa_shell_headers(headers, path, url):
+        # The service worker and app shell must always be revalidated. A CDN or
+        # browser that caches sw.js keeps serving a stale worker after a redeploy,
+        # so the PWA's update check never sees the new build and the "new version"
+        # prompt never fires. no-cache (revalidate via ETag) keeps them current
+        # while the hashed /assets/* stay immutable. The SPA-fallback view in
+        # urls.py sets the same header for deep-link index.html responses.
+        if Path(path).name in ("sw.js", "index.html"):
+            headers["Cache-Control"] = "no-cache"
+
+    WHITENOISE_ADD_HEADERS_FUNCTION = _spa_shell_headers
 
 # --- PAN-at-rest encryption key (security/keys.py) -------------------------
 # Resolution order: FOLIOMAN_FERNET_KEY env -> FERNET_KEY_PATH file (autogen on
