@@ -7,6 +7,6 @@ allowBuilds:
 
 # Force the patched js-yaml past a transitive DoS (GHSA merge-key quadratic blowup).
 # openapi-typescript's @redocly/openapi-core pins js-yaml at 4.1.1 exactly, so the only
-# way up is an override; 4.2.0 is API-compatible. Drop this once redocly bumps it.
+# way up is an override; 4.3.0 is API-compatible. Drop this once redocly bumps it.
 overrides:
-  js-yaml: 4.2.0
+  js-yaml: 4.3.0
