@@ -84,17 +84,20 @@ format:
 frontend-install:
 	$(PNPM) install
 
-frontend-dev:
+# The pnpm-run targets install first. On a corepack-only host (no standalone
+# `pnpm` on PATH) pnpm can't auto-install missing deps before a script — it
+# spawns a bare `pnpm` and fails with ENOENT — so make deps present up front.
+frontend-dev: frontend-install
 	$(PNPM) dev
 
-frontend-test:
+frontend-test: frontend-install
 	$(PNPM) test
 
 # Regenerate src/api/schema.d.ts from the committed OpenAPI contract.
-frontend-api:
+frontend-api: frontend-install
 	$(PNPM) gen:api
 
-frontend-build:
+frontend-build: frontend-install
 	$(PNPM) build
 
 # Build the standalone desktop binary: SPA first, then Nuitka (excludes + data
