@@ -10,7 +10,11 @@ DEV_FERNET_KEY := lxS4L-1mmiEwlCCHsqgXzByglZ7TWlgcV3XeG7mTmY0=
 
 # Frontend (Vue 3 SPA) — driven by pnpm in the frontend/ workspace. pnpm ships
 # via corepack (bundled with Node); there is no standalone `pnpm` on PATH.
-PNPM := corepack pnpm --dir frontend
+# Run corepack from inside frontend/ (not `--dir frontend`): corepack reads the
+# `packageManager` pin from its own CWD, so from the repo root — which has no
+# package.json — it would fall back to whatever pnpm is globally activated and
+# fail the version check. `cd frontend` lets it pick up the pin and fetch it.
+PNPM := cd frontend && corepack pnpm
 
 help:
 	@echo "Folioman v2.0 — available targets:"
