@@ -4,6 +4,7 @@ import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import type { ValuePoint } from '@/components/charts/PortfolioValueChart.vue'
 import { toIntegrityStatus, type IntegrityStatus } from '@/integrity/status'
 import { useIntegrityStore } from '@/stores/integrity'
+import { useRangeWindow } from '@/composables/useRangeWindow'
 import { useUiStore } from '@/stores/ui'
 import { formatDate } from '@/utils/format'
 
@@ -34,6 +35,7 @@ export interface HoldingRow {
   invested: number | null // cost basis in ₹; null when unknown (eCAS snapshot)
   gain: number | null // value − invested, in ₹; null when cost basis is unknown
   returnPct: number | null // percent; null when cost basis is unknown
+  dayChangeAmount: number | null // 1-day INR move; null without 2 NAV points
   integrity: IntegrityStatus
 }
 
@@ -43,7 +45,6 @@ export interface StockRow extends HoldingRow {
   symbol: string // exchange ticker (e.g. RELIANCE); falls back to name when empty
   price: number | null // current price the shares are valued at (latest close)
   avgCost: number | null // average cost per share = invested / units
-  dayChangeAmount: number | null // 1-day INR change for this holding
   dayChangePercent: number | null // 1-day % move
 }
 
@@ -55,7 +56,6 @@ export interface FundRow extends HoldingRow {
   // Per-scheme secondary-line details (NAV / Avg cost-per-unit / 1-day move).
   nav: number | null // current NAV the units are valued at
   avgNav: number | null // average cost per unit = invested / units
-  dayChangeAmount: number | null // 1-day INR change for this holding
   dayChangePercent: number | null // 1-day % NAV move
 }
 
@@ -164,7 +164,9 @@ function toSlices(
 export function useDashboard(investorId: Ref<number>) {
   const summaryData = ref<Schemas['InvestorSummaryOut'] | null>(null)
   const series = ref<Schemas['ValueSeriesPoint'][]>([])
-  const range = ref<RangeKey>('1Y')
+  // Range is a client-side zoom window over the already-fetched full series —
+  // no refetch. `valueWindow` is the chart's zoom bounds.
+  const { range, setRange, valueWindow, granularity } = useRangeWindow('1Y')
   const loading = ref(false)
   // Day-wise valuation readiness — gates the net-worth chart (the headline numbers
   // stay ungated, backed by the provisional value until the worker finishes).
@@ -252,20 +254,6 @@ export function useDashboard(investorId: Ref<number>) {
     if (!valuationReady.value) startPolling()
   }
 
-  // Range is now a client-side zoom window over the already-fetched full series —
-  // no refetch. `valueWindow` (below) turns it into the chart's zoom bounds.
-  function setRange(next: RangeKey): void {
-    range.value = next
-  }
-
-  // The [from, to] the chart should zoom to for the active preset; null = full
-  // range (All), i.e. show everything with no window.
-  const valueWindow = computed(() =>
-    range.value === 'All'
-      ? null
-      : { from: RANGES[range.value].from(), to: new Date().toISOString().slice(0, 10) },
-  )
-
   watch(investorId, () => void loadAll(), { immediate: true })
   if (getCurrentScope()) onScopeDispose(stopPolling)
 
@@ -352,6 +340,7 @@ export function useDashboard(investorId: Ref<number>) {
         invested: h.invested_inr == null ? null : num(h.invested_inr),
         gain: h.invested_inr == null ? null : num(h.value_inr) - num(h.invested_inr),
         returnPct: h.return_pct == null ? null : h.return_pct * 100,
+        dayChangeAmount: h.day_change_inr == null ? null : num(h.day_change_inr),
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
       topHoldings: (s.top_holdings ?? []).map<HoldingRow>((h) => ({
@@ -365,6 +354,7 @@ export function useDashboard(investorId: Ref<number>) {
         invested: null,
         gain: null,
         returnPct: h.return_pct == null ? null : h.return_pct * 100,
+        dayChangeAmount: null,
         integrity: integrityBySecurity.value.get(h.security_id) ?? toIntegrityStatus(''),
       })),
       funds: mfHoldings.map<FundRow>((h) => ({
@@ -436,6 +426,7 @@ export function useDashboard(investorId: Ref<number>) {
     range,
     setRange,
     valueWindow,
+    granularity,
     reload: loadAll,
     valuationReady,
     valuationStatus,

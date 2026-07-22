@@ -95,3 +95,37 @@ export const RANGES: Record<
   '5Y': { from: () => monthsAgo(60), granularity: 'monthly' },
   All: { from: () => '2000-01-01', granularity: 'monthly' },
 }
+
+/** The range toggle's options, in display order — same on every dashboard. */
+export const RANGE_OPTIONS: { label: RangeKey; value: RangeKey }[] = (
+  Object.keys(RANGES) as RangeKey[]
+).map((k) => ({ label: k, value: k }))
+
+/** Human phrasing of a range for "value gained/lost over …" captions. */
+export const RANGE_LABEL: Record<RangeKey, string> = {
+  '1M': 'past month',
+  '3M': 'past 3 months',
+  '6M': 'past 6 months',
+  '1Y': 'past year',
+  '3Y': 'past 3 years',
+  '5Y': 'past 5 years',
+  All: 'all time',
+}
+
+/**
+ * Value change from a window's start to the series' end (price move, not cash
+ * flow) — the delta shown under a hero number for the selected chart range.
+ * Skips leading zero-value days (pre-holding stretch); null when undeterminable.
+ */
+export function windowChange(
+  points: { date: string; current: number }[],
+  from?: string | null,
+): { amount: number; pct: number } | null {
+  if (points.length < 2) return null
+  const inWindow = from ? points.filter((p) => p.date >= from) : points
+  const startPt = inWindow.find((p) => p.current > 0) ?? inWindow[0]
+  const start = startPt?.current ?? 0
+  const end = points[points.length - 1].current
+  if (!start) return null
+  return { amount: end - start, pct: ((end - start) / start) * 100 }
+}

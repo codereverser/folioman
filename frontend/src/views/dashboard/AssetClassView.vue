@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref } from 'vue'
+import { computed, defineAsyncComponent, ref, toRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Column from 'primevue/column'
 import DataTable from 'primevue/datatable'
@@ -7,11 +7,13 @@ import Popover from 'primevue/popover'
 import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import DeltaChip from '@/components/DeltaChip.vue'
 import IntegrityBadge from '@/components/IntegrityBadge.vue'
-import { useDashboard } from '@/composables/useDashboard'
+import { useDashboard, type RangeKey } from '@/composables/useDashboard'
 import { useAssetClassSeries } from '@/composables/useAssetClassSeries'
+import { useCountUp } from '@/composables/useCountUp'
+import { useRangeWindow } from '@/composables/useRangeWindow'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
-import { assetLabel, rampColor } from '@/utils/portfolio'
+import { RANGE_LABEL, RANGE_OPTIONS, assetLabel, rampColor, windowChange } from '@/utils/portfolio'
 import { formatInr, formatInrCompact, formatUnits } from '@/utils/format'
 
 const AllocationDonut = defineAsyncComponent(
@@ -20,6 +22,7 @@ const AllocationDonut = defineAsyncComponent(
 const PortfolioValueChart = defineAsyncComponent(
   () => import('@/components/charts/PortfolioValueChart.vue'),
 )
+const SelectButton = defineAsyncComponent(() => import('primevue/selectbutton'))
 
 const route = useRoute()
 const router = useRouter()
@@ -59,6 +62,15 @@ const totals = computed(() => {
   }
 })
 
+// Class 1-day move: summed over the holdings that have one.
+const dayChange = computed(() => {
+  const known = holdings.value.filter((h) => h.dayChangeAmount != null)
+  if (!known.length) return null
+  const amount = known.reduce((s, h) => s + (h.dayChangeAmount ?? 0), 0)
+  const prior = totals.value.value - amount
+  return { amount, pct: prior ? (amount / prior) * 100 : undefined }
+})
+
 // Within-class composition: one slice per security.
 const slices = computed<AllocationSlice[]>(() =>
   holdings.value.map((h, i) => ({ name: h.name, value: h.value, color: rampColor(i) })),
@@ -77,7 +89,15 @@ const topLegend = computed(() => legend.value.slice(0, LEGEND_CAP))
 const restLegend = computed(() => legend.value.slice(LEGEND_CAP))
 const moreOp = ref<InstanceType<typeof Popover>>()
 
+// The class trend is summed client-side over full history, so the range toggle
+// windows it exactly like the portfolio chart — no refetch.
 const { series } = useAssetClassSeries(investorId, securityIds)
+const { range, setRange, valueWindow, granularity } = useRangeWindow('1Y')
+
+// Hero class value counts up; the delta under it tracks the selected range.
+const heroValue = useCountUp(toRef(() => totals.value.value))
+const rangeLabel = computed(() => RANGE_LABEL[range.value])
+const periodReturn = computed(() => windowChange(series.value, valueWindow.value?.from))
 
 function openScheme(securityId: number): void {
   void router.push({ name: 'scheme-detail', params: { investorId: investorId.value, securityId } })
@@ -91,8 +111,8 @@ function qty(units: number): string {
 </script>
 
 <template>
-  <section class="asset-page" :class="{ 'is-loading': loading }">
-    <header class="page-head">
+  <section class="fm-page">
+    <header class="fm-page-head">
       <RouterLink class="back" :to="{ name: 'dashboard', params: { investorId } }">
         <i class="pi pi-arrow-left" aria-hidden="true" /> Dashboard
       </RouterLink>
@@ -101,42 +121,87 @@ function qty(units: number): string {
     </header>
 
     <!-- Hero: class value + the class's value-over-time as the main card. -->
-    <article class="card hero">
-      <div class="hero-head">
-        <div class="hero-net">
-          <p class="eyebrow">{{ classLabel }} value</p>
-          <p class="hero-value">{{ formatInrCompact(totals.value) }}</p>
-          <p class="hero-exact">{{ formatInr(totals.value) }}</p>
-          <p class="hero-invested">
-            Invested {{ formatInrCompact(totals.invested) }}
+    <article class="fm-card">
+      <div class="fm-hero-head">
+        <div class="fm-hero-net" :class="{ 'fm-blur-loading': loading }">
+          <p class="fm-eyebrow">{{ classLabel }} value</p>
+          <p class="fm-hero-value">{{ formatInrCompact(heroValue) }}</p>
+          <p class="fm-hero-exact">{{ formatInr(totals.value) }}</p>
+          <p v-if="periodReturn" class="fm-hero-period">
             <DeltaChip
-              v-if="totals.returnPct !== null"
-              class="hero-delta"
-              :amount="totals.gain ?? undefined"
-              :percent="totals.returnPct"
-              :value="totals.gain ?? undefined"
+              :amount="periodReturn.amount"
+              :percent="periodReturn.pct"
+              :value="periodReturn.amount"
               size="sm"
               compact
             />
+            <span class="fm-period-label">{{ rangeLabel }}</span>
           </p>
+          <p class="fm-hero-invested">Invested {{ formatInrCompact(totals.invested) }}</p>
         </div>
+        <SelectButton
+          v-if="series.length"
+          class="fm-hero-range"
+          :model-value="range"
+          :options="RANGE_OPTIONS"
+          option-label="label"
+          option-value="value"
+          :allow-empty="false"
+          size="small"
+          @update:model-value="(v: RangeKey | null) => v && setRange(v)"
+        />
       </div>
 
       <PortfolioValueChart
         v-if="series.length"
         :data="series"
-        granularity="monthly"
-        :window="null"
+        :granularity="granularity"
+        :window="valueWindow"
       />
-      <p v-else class="chart-progress">
+      <p v-else class="fm-chart-progress">
         No day-wise history for this class yet — snapshot holdings count toward value but not the
         trend.
       </p>
     </article>
 
+    <!-- Headline metrics strip. -->
+    <section class="fm-card fm-stat-strip" :class="{ 'fm-blur-loading': loading }">
+      <div class="fm-stat">
+        <span class="fm-eyebrow">All-time return</span>
+        <DeltaChip
+          v-if="totals.returnPct !== null"
+          :amount="totals.gain ?? undefined"
+          :percent="totals.returnPct"
+          :value="totals.gain ?? undefined"
+          size="md"
+          compact
+        />
+        <span v-else class="fm-kpi-na">Needs cost basis</span>
+      </div>
+      <div class="fm-stat">
+        <span class="fm-eyebrow">1D return</span>
+        <DeltaChip
+          v-if="dayChange !== null"
+          :amount="dayChange.amount"
+          :percent="dayChange.pct"
+          size="sm"
+          compact
+        />
+        <span v-else class="muted">—</span>
+      </div>
+      <div class="fm-stat">
+        <span class="fm-eyebrow">Invested</span>
+        <span class="fm-kpi-val">{{ formatInrCompact(totals.invested) }}</span>
+      </div>
+      <div class="fm-stat">
+        <span class="fm-eyebrow">Holdings</span>
+        <span class="fm-kpi-val">{{ holdings.length }}</span>
+      </div>
+    </section>
+
     <!-- Composition: donut + breakdown as two cards in one row. -->
-    <div class="bento">
-      <article class="span-5 card">
+    <div class="fm-bento">
+      <article class="fm-span-5 fm-card">
         <h2>Composition</h2>
         <AllocationDonut
           v-if="slices.length"
@@ -147,9 +212,9 @@ function qty(units: number): string {
         <p v-else class="muted">No holdings.</p>
       </article>
 
-      <article class="span-7 card">
+      <article class="fm-span-7 fm-card">
         <h2>Breakdown</h2>
-        <ul v-if="legend.length" class="comp-legend">
+        <ul v-if="legend.length" class="comp-legend" :class="{ 'fm-blur-loading': loading }">
           <li v-for="s in topLegend" :key="s.name">
             <span class="sw" :style="{ background: s.color }" aria-hidden="true" />
             <span class="nm">{{ s.name }}</span>
@@ -179,13 +244,14 @@ function qty(units: number): string {
     </div>
 
     <!-- Securities: full width below. -->
-    <article class="card">
+    <article class="fm-card">
       <h2>Securities</h2>
       <DataTable
         :value="holdings"
         data-key="securityId"
         size="small"
         class="securities clickable-rows"
+        :class="{ 'fm-blur-loading': loading }"
         @row-click="(e) => openScheme(e.data.securityId)"
       >
         <Column field="name" header="Holding">
@@ -221,24 +287,6 @@ function qty(units: number): string {
 </template>
 
 <style scoped>
-.asset-page {
-  padding: var(--fm-space-6);
-  max-width: var(--fm-content-max);
-  margin: 0 auto;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--fm-space-5);
-}
-.page-head h1 {
-  margin: 0.4rem 0 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-.page-head .sub {
-  margin: 0.15rem 0 0;
-  color: var(--fm-text-muted);
-}
 .back {
   display: inline-flex;
   align-items: center;
@@ -253,21 +301,8 @@ function qty(units: number): string {
 .back .pi {
   font-size: 0.75rem;
 }
-
-/* Composition (donut) + Breakdown (legend) as two cards in a row. */
-.bento {
-  display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: var(--fm-space-5);
-}
-.span-5 {
-  grid-column: span 5;
-}
-.span-7 {
-  grid-column: span 7;
-}
-.bento > * {
-  min-width: 0;
+.fm-page-head h1 {
+  margin-top: 0.4rem;
 }
 
 .comp-legend {
@@ -329,58 +364,6 @@ function qty(units: number): string {
   text-decoration: underline;
 }
 
-.card {
-  padding: var(--fm-space-5);
-  background: var(--fm-surface);
-  border: 1px solid var(--fm-border-subtle);
-  border-radius: var(--fm-radius-xl);
-  box-shadow: var(--fm-shadow-sm);
-}
-.card h2 {
-  margin: 0 0 var(--fm-space-3);
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.eyebrow {
-  margin: 0;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fm-text-muted);
-}
-.hero-head {
-  margin-bottom: var(--fm-space-3);
-}
-.hero-value {
-  margin: 0.25rem 0 0;
-  font-size: 2.6rem;
-  line-height: 1.04;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-}
-.hero-exact {
-  margin: 0.25rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--fm-text-subtle);
-  font-variant-numeric: tabular-nums;
-}
-.hero-invested {
-  margin: 0.35rem 0 0;
-  font-size: 0.8125rem;
-  color: var(--fm-text-muted);
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.chart-progress {
-  margin: var(--fm-space-2) 0 0;
-  font-size: 0.8125rem;
-  color: var(--fm-text-muted);
-}
 .h-name {
   font-weight: 500;
 }
@@ -388,52 +371,10 @@ function qty(units: number): string {
   color: var(--fm-text-muted);
 }
 
-/* Blur figures while the class data loads, so momentary zeros read as loading. */
-.asset-page.is-loading .hero-net,
-.asset-page.is-loading .comp-legend,
-.asset-page.is-loading .securities {
-  filter: blur(7px);
-  pointer-events: none;
-  user-select: none;
-  animation: data-pulse 1.1s ease-in-out infinite;
-}
-@keyframes data-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-  }
-  50% {
-    opacity: 0.72;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .asset-page.is-loading .hero-net,
-  .asset-page.is-loading .comp-legend,
-  .asset-page.is-loading .securities {
-    animation: none;
-    opacity: 0.55;
-  }
-}
 :deep(.securities .p-datatable-table-container) {
   overflow-x: auto;
 }
 :deep(.clickable-rows .p-datatable-tbody > tr) {
   cursor: pointer;
-}
-
-@media (max-width: 1024px) {
-  .span-5,
-  .span-7 {
-    grid-column: span 12;
-  }
-}
-@media (max-width: 640px) {
-  .asset-page {
-    padding: var(--fm-space-4);
-    gap: var(--fm-space-4);
-  }
-  .card {
-    padding: var(--fm-space-4);
-  }
 }
 </style>

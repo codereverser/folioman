@@ -3,6 +3,7 @@ import { api, type Schemas } from '@/api/client'
 import type { AllocationSlice } from '@/components/charts/AllocationDonut.vue'
 import type { ValuePoint } from '@/components/charts/PortfolioValueChart.vue'
 import type { PeriodReturn } from '@/composables/useDashboard'
+import { useRangeWindow } from '@/composables/useRangeWindow'
 import { useRosterStore } from '@/stores/roster'
 import { useUiStore } from '@/stores/ui'
 
@@ -30,6 +31,9 @@ export interface FamilyMember {
 
 export interface FamilySummary {
   total: number
+  invested: number // combined FIFO cost basis, from the latest series point
+  totalReturnAmount: number
+  totalReturnPercent: number
   investorCount: number
   folioCount: number
   dayChangeAmount: number | null
@@ -44,6 +48,9 @@ export interface FamilySummary {
 
 const EMPTY: FamilySummary = {
   total: 0,
+  invested: 0,
+  totalReturnAmount: 0,
+  totalReturnPercent: 0,
   investorCount: 0,
   folioCount: 0,
   dayChangeAmount: null,
@@ -66,7 +73,8 @@ export function useFamilyDashboard(familyId: Ref<number>) {
   const aggregate = ref<Schemas['FamilyAggregateOut'] | null>(null)
   const series = ref<Schemas['ValueSeriesPoint'][]>([])
   const members = ref<FamilyMember[]>([])
-  const range = ref<RangeKey>('1Y')
+  // Range is a client-side zoom window over the already-fetched full series.
+  const { range, setRange, valueWindow, granularity } = useRangeWindow('1Y')
   const loading = ref(false)
   const valuationStatus = ref<string>('ready')
   const valuationReady = computed(() => valuationStatus.value === 'ready')
@@ -81,12 +89,13 @@ export function useFamilyDashboard(familyId: Ref<number>) {
     aggregate.value = data ?? null
   }
 
+  // One fetch of the WHOLE trend at daily granularity; the range buttons and the
+  // chart's zoom slider window it client-side, so switching ranges needs no network.
   async function loadSeries(): Promise<void> {
-    const cfg = RANGES[range.value]
     const { data } = await api.GET('/api/families/{family_id}/value-series', {
       params: {
         path: { family_id: familyId.value },
-        query: { from: cfg.from(), granularity: cfg.granularity },
+        query: { from: RANGES.All.from(), granularity: 'daily' },
       },
     })
     series.value = data?.points ?? []
@@ -147,12 +156,6 @@ export function useFamilyDashboard(familyId: Ref<number>) {
     if (!valuationReady.value) startPolling()
   }
 
-  function setRange(next: RangeKey): void {
-    if (next === range.value) return
-    range.value = next
-    void loadSeries()
-  }
-
   watch(familyId, () => void loadAll(), { immediate: true })
   if (getCurrentScope()) onScopeDispose(stopPolling)
 
@@ -171,6 +174,8 @@ export function useFamilyDashboard(familyId: Ref<number>) {
     if (!a) return { ...EMPTY, valueSeries: valueSeries.value }
 
     const total = num(a.total_inr)
+    const invested = valueSeries.value.at(-1)?.invested ?? 0
+    const totalReturnAmount = total - invested
     const dayChangeAmount = a.day_change_inr == null ? null : num(a.day_change_inr)
     const priorValue = dayChangeAmount == null ? null : total - dayChangeAmount
     const dayChangePercent =
@@ -178,6 +183,9 @@ export function useFamilyDashboard(familyId: Ref<number>) {
 
     return {
       total,
+      invested,
+      totalReturnAmount,
+      totalReturnPercent: invested > 0 ? (totalReturnAmount / invested) * 100 : 0,
       investorCount: a.investor_count,
       folioCount: a.folio_count ?? 0,
       dayChangeAmount,
@@ -213,6 +221,8 @@ export function useFamilyDashboard(familyId: Ref<number>) {
     loading,
     range,
     setRange,
+    valueWindow,
+    granularity,
     reload: loadAll,
     valuationReady,
     valuationStatus,

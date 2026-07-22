@@ -69,7 +69,7 @@ const rows = computed<ClassRow[]>(() => {
     <h2 class="title">Holdings</h2>
     <p class="caption">By asset class — open one to see its securities.</p>
 
-    <div class="rows card">
+    <div class="rows fm-card">
       <RouterLink
         v-for="r in rows"
         :key="r.type"
@@ -135,9 +135,6 @@ const rows = computed<ClassRow[]>(() => {
 }
 .rows {
   padding: 0;
-  background: var(--fm-surface);
-  border: 1px solid var(--fm-border-subtle);
-  border-radius: var(--fm-radius-xl);
   overflow: hidden;
 }
 .row {

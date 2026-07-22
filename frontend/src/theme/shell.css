@@ -1,0 +1,272 @@
+/* Dashboard shell primitives — the shared page anatomy of the investor, family
+   and asset-class dashboards: page container + head, cards, the 12-column bento
+   grid, the hero (headline value + chart) card, the KPI stat strip, chart
+   loading placeholders, and the data-loading blur. Views keep only their
+   view-specific styles on top of these. */
+
+/* ---- page ---- */
+.fm-page {
+  padding: var(--fm-space-6);
+  max-width: var(--fm-content-max);
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--fm-space-5);
+}
+.fm-page-head h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+.fm-page-head .sub {
+  margin: 0.15rem 0 0;
+  color: var(--fm-text-muted);
+}
+
+/* ---- cards + bento grid ---- */
+.fm-card {
+  padding: var(--fm-space-5);
+  background: var(--fm-surface);
+  border: 1px solid var(--fm-border-subtle);
+  border-radius: var(--fm-radius-xl);
+  box-shadow: var(--fm-shadow-sm);
+}
+.fm-card h2 {
+  margin: 0 0 var(--fm-space-3);
+  font-size: 1rem;
+  font-weight: 600;
+}
+.fm-bento {
+  display: grid;
+  /* minmax(0, …) so a track can shrink past its content's intrinsic width;
+     the default `1fr` is `minmax(auto, 1fr)` and would force sideways scroll. */
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--fm-space-5);
+}
+/* Every grid item must also opt out of the auto min-width floor. */
+.fm-bento > * {
+  min-width: 0;
+}
+.fm-span-4 {
+  grid-column: span 4;
+}
+.fm-span-5 {
+  grid-column: span 5;
+}
+.fm-span-7 {
+  grid-column: span 7;
+}
+.fm-span-8 {
+  grid-column: span 8;
+}
+
+.fm-eyebrow {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fm-text-muted);
+}
+
+/* ---- hero: headline value + its value-over-time chart in one card ---- */
+.fm-hero-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fm-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--fm-space-3);
+}
+.fm-hero-net {
+  min-width: 0;
+}
+.fm-hero-value {
+  margin: 0.25rem 0 0;
+  font-size: 2.6rem;
+  line-height: 1.04;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.fm-hero-exact {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--fm-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.fm-hero-period {
+  margin: 0.5rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.fm-period-label {
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.fm-hero-invested {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.fm-hero-range {
+  flex-shrink: 0;
+}
+.fm-hero-range .p-togglebutton-label {
+  white-space: nowrap;
+}
+
+/* ---- KPI stat strip: equal columns for however many stats a view has ---- */
+.fm-stat-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: var(--fm-space-4);
+  padding: var(--fm-space-4) var(--fm-space-5);
+}
+.fm-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-start;
+  padding-left: var(--fm-space-4);
+  border-left: 1px solid var(--fm-border-subtle);
+}
+.fm-stat:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+.fm-kpi-val {
+  font-size: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.fm-kpi-na {
+  font-size: 0.6875rem;
+  color: var(--fm-text-subtle);
+}
+
+/* ---- chart cards: title + range/group toggle on one line ---- */
+.fm-chart-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--fm-space-2) var(--fm-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--fm-space-2);
+}
+.fm-chart-head h2 {
+  margin: 0;
+}
+.fm-chart-head .p-selectbutton {
+  flex-shrink: 0;
+}
+.fm-chart-head .p-togglebutton-label {
+  white-space: nowrap;
+}
+
+/* ---- loading placeholders ---- */
+.fm-range-placeholder {
+  display: block;
+  width: 8.5rem;
+  height: 2rem;
+  border-radius: var(--fm-radius-sm);
+  background: var(--fm-surface-raised);
+}
+.fm-chart-placeholder {
+  width: 100%;
+  border-radius: var(--fm-radius-sm);
+  background:
+    linear-gradient(
+      90deg,
+      transparent 0,
+      color-mix(in srgb, var(--fm-border-subtle) 32%, transparent) 50%,
+      transparent 100%
+    ),
+    var(--fm-surface-raised);
+}
+.fm-donut-placeholder {
+  height: 260px;
+}
+.fm-value-placeholder {
+  height: 320px;
+}
+.fm-chart-progress {
+  margin: var(--fm-space-2) 0 0;
+  font-size: 0.8125rem;
+  color: var(--fm-text-muted);
+}
+.fm-chart-progress a {
+  color: var(--p-primary-color);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.fm-chart-progress a:hover {
+  text-decoration: underline;
+}
+
+/* While data loads (initial / investor switch), blur the figures so the
+   momentary zeros read as "loading", not as real values. */
+.fm-blur-loading {
+  filter: blur(7px);
+  pointer-events: none;
+  user-select: none;
+  animation: fm-data-pulse 1.1s ease-in-out infinite;
+}
+@keyframes fm-data-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fm-blur-loading {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
+/* ---- responsive ---- */
+/* Tablet: bento cards go full width. */
+@media (max-width: 1024px) {
+  .fm-span-4,
+  .fm-span-5,
+  .fm-span-7,
+  .fm-span-8 {
+    grid-column: span 12;
+  }
+}
+/* Phone: trim the chrome so content keeps the width; stats wrap two-up. */
+@media (max-width: 640px) {
+  .fm-page {
+    padding: var(--fm-space-4);
+    gap: var(--fm-space-4);
+  }
+  .fm-card {
+    padding: var(--fm-space-4);
+  }
+  .fm-bento {
+    gap: var(--fm-space-4);
+  }
+  .fm-stat-strip {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--fm-space-4) var(--fm-space-3);
+  }
+  .fm-stat:nth-child(odd) {
+    padding-left: 0;
+    border-left: none;
+  }
+  .fm-hero-value {
+    font-size: 2.2rem;
+  }
+}

@@ -19,7 +19,7 @@ function formatPct(v: number): string {
 </script>
 
 <template>
-  <section v-if="cells.length" class="card returns-strip">
+  <section v-if="cells.length" class="fm-card returns-strip">
     <div class="returns-head">
       <span class="eyebrow">Returns</span>
       <span class="returns-note">money-weighted · <span class="pa-note">p.a.</span> for ≥ 1Y</span>
@@ -41,12 +41,8 @@ function formatPct(v: number): string {
 </template>
 
 <style scoped>
-.card {
+.returns-strip {
   padding: var(--fm-space-4) var(--fm-space-5);
-  background: var(--fm-surface);
-  border: 1px solid var(--fm-border-subtle);
-  border-radius: var(--fm-radius-xl);
-  box-shadow: var(--fm-shadow-sm);
 }
 .returns-head {
   display: flex;

@@ -1,6 +1,7 @@
 @layer theme, base, primevue;
 
 @import './theme/tokens.css';
+@import './theme/shell.css';
 
 :root {
   font-family: var(--fm-font-sans);
