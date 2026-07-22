@@ -1,12 +1,13 @@
-# Folioman v2.0 — top-level build automation.
-# Python toolchain is live; frontend/desktop/server targets are
-# stubs until their phases land.
+# Folioman v1.x — top-level build automation.
 
-.PHONY: help install test test-core test-app test-app-server test-app-pg openapi pg-up pg-down lint format frontend-install frontend-dev frontend-test frontend-build frontend-api desktop server-image clean
+.PHONY: help install test test-core test-app test-app-server test-app-pg openapi pg-up pg-down lint format frontend-install frontend-dev frontend-test frontend-build frontend-api desktop server-up server-down server-logs server-image clean
 
 # Dev Postgres (server-mode work / migration parity). Throwaway dev creds.
 PG_COMPOSE := deploy/dev-postgres.yml
 DEV_FERNET_KEY := lxS4L-1mmiEwlCCHsqgXzByglZ7TWlgcV3XeG7mTmY0=
+
+# Self-hosted server stack (app + scheduler + Postgres). Reads server/.env.
+SERVER_COMPOSE := server/docker-compose.yml
 
 # Frontend (Vue 3 SPA) — driven by pnpm in the frontend/ workspace. pnpm ships
 # via corepack (bundled with Node); there is no standalone `pnpm` on PATH.
@@ -17,7 +18,7 @@ DEV_FERNET_KEY := lxS4L-1mmiEwlCCHsqgXzByglZ7TWlgcV3XeG7mTmY0=
 PNPM := cd frontend && corepack pnpm
 
 help:
-	@echo "Folioman v2.0 — available targets:"
+	@echo "Folioman v1.x — available targets:"
 	@echo "  install         uv sync + install pre-commit git hook"
 	@echo "  test            Run core/ and app/ pytest suites (SQLite)"
 	@echo "  test-core       Run core/ tests with coverage report"
@@ -35,6 +36,9 @@ help:
 	@echo "  frontend-api    Regenerate the typed API client from openapi.json"
 	@echo "  frontend-build  Build the Vue 3 SPA into frontend/dist/"
 	@echo "  desktop         Build standalone desktop binary via Nuitka (SPA + compile)"
+	@echo "  server-up       (Re)build + start the self-hosted stack, wait until healthy"
+	@echo "  server-down     Stop the self-hosted stack (keeps the pgdata volume)"
+	@echo "  server-logs     Tail logs from the self-hosted stack"
 	@echo "  server-image    [planned] Build multi-arch Docker image"
 	@echo "  clean           Remove build artefacts"
 
@@ -105,6 +109,25 @@ frontend-build: frontend-install
 # dist/folioman[.exe] (Linux/Windows). Needs a C toolchain — see BUILD.md.
 desktop: frontend-build
 	uv run --extra build python desktop/build.py
+
+# Build (only when the image is stale) and start the self-hosted stack detached.
+# --wait blocks until every service is healthy and returns non-zero if any exits
+# or stays unhealthy, so `make server-up` succeeds ONLY when the stack is up; on
+# failure it dumps recent logs and exits non-zero.
+server-up:
+	@docker compose -f $(SERVER_COMPOSE) up -d --build --wait || { \
+		echo ""; \
+		echo "server-up failed — recent logs:"; \
+		docker compose -f $(SERVER_COMPOSE) logs --tail=50; \
+		exit 1; \
+	}
+	@echo "Stack is up. App: http://localhost:$${FOLIOMAN_PORT:-8000}"
+
+server-down:
+	docker compose -f $(SERVER_COMPOSE) down
+
+server-logs:
+	docker compose -f $(SERVER_COMPOSE) logs -f --tail=100
 
 server-image:
 	@echo "[planned] server image not implemented yet"
