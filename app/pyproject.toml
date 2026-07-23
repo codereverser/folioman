@@ -16,7 +16,7 @@ dependencies = [
     # Python (thread-based BackgroundScheduler), so it bundles fine under Nuitka.
     "apscheduler>=3.11.3,<4",
     # Per-OS user-data dir resolution (desktop settings). Pure Python, Nuitka-safe.
-    "platformdirs>=4.0",
+    "platformdirs>=4.10.1",
     # Structured logging: pretty, coloured console output in dev (rich renders
     # the tracebacks) and plain grep-able lines in the rotating files. Existing
     # stdlib logging.getLogger() call sites flow through unchanged via
