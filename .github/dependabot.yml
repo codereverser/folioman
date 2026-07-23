@@ -30,6 +30,13 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+    # Batch every non-major update into ONE PR per run instead of one-per-package
+    # — the bulk of the noise. Majors stay ungrouped (their own PR each) so a risky
+    # bump is reviewed and merged on its own without blocking the batch.
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "uv"
     directory: "/"
@@ -50,6 +57,10 @@ updates:
         update-types:
           - "version-update:semver-major"
           - "version-update:semver-minor"
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -57,3 +68,7 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
