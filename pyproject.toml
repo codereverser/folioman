@@ -13,7 +13,7 @@ dev = [
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "pytest-django>=4.9",
-    "pre-commit>=4.0",
+    "pre-commit>=4.6.1",
 ]
 
 [tool.ruff]
