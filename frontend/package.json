@@ -22,8 +22,8 @@
     "gen:api": "openapi-typescript ../openapi.json --output src/api/schema.d.ts"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-mono": "^5.2.7",
-    "@fontsource/ibm-plex-sans": "^5.2.8",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "@primeuix/themes": "^2.0.3",
     "echarts": "^6.1.0",
     "openapi-fetch": "^0.17.0",
@@ -45,7 +45,7 @@
     "@vue/test-utils": "^2.4.11",
     "jsdom": "^29",
     "openapi-typescript": "^7.4.4",
-    "prettier": "^3.9.5",
+    "prettier": "^3.9.6",
     "typescript": "~6.0.3",
     "vite": "^8",
     "vite-plugin-compression2": "^2.5.3",
