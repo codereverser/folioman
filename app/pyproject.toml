@@ -35,7 +35,7 @@ dependencies = [
 [project.optional-dependencies]
 server = [
     "psycopg[binary]>=3.3.4",
-    "django-ninja-jwt>=5.4",
+    "django-ninja-jwt>=5.4.5",
     # WSGI server for the self-hosted deployment (gthread workers behind a
     # reverse proxy). Pure Python.
     "gunicorn>=23.0",
