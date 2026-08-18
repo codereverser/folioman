@@ -16,4 +16,8 @@ from environs import Env
 
 env = Env()
 # Load a .env from the CWD/ancestors if present (local dev); silent when absent.
-env.read_env()
+# Pass an explicit relative name: environs' no-arg read_env() derives the caller's
+# directory from the module's __file__ and walks up from there, but under a Nuitka
+# frozen build that __file__ isn't a real filesystem path and dotenv._walk_to_root
+# raises "OSError: Starting path not found". Starting from the real CWD fixes it.
+env.read_env(".env")
