@@ -26,13 +26,15 @@ htmlcov/
 *.log
 .DS_Store
 
-# Local data + secrets (never bake into an image)
+# Local data + secrets (never bake into an image). Patterns without a leading
+# **/ only match the build-context root, NOT nested dirs (e.g. frontend/.env) —
+# the **/ prefix is required or a dev-only VITE_API_BASE etc. leaks into the image.
 **/*.sqlite3
 **/*.sqlite3-shm
 **/*.sqlite3-wal
-.env
-.env.*
-!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 secrets/
 
 # Editor / OS
