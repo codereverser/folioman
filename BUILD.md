@@ -25,12 +25,54 @@ developer reference lives in [docs/developer/](docs/developer/README.md).
 
 ## Build the app
 
+**Mac & Linux (using Make):**
+```bash
+git clone https://github.com/codereverser/folioman
+# Run Folioman on your own computer
+
+Folioman doesn't have a one-click installer yet, so for now you set it up once,
+from source, with a few free tools. It's about five commands, and you only do it
+once. (Signed, downloadable builds are planned.)
+
+> Want to run it on a server for your family or a small team instead? See
+> [Self-host with Docker](docs/install-docker.md).
+
+If you're a developer who wants the internals — the Nuitka build spec,
+cross-platform notes, the runtime smoke checklist — see
+[docs/developer/desktop-build.md](docs/developer/desktop-build.md). The full
+developer reference lives in [docs/developer/](docs/developer/README.md).
+
+## What you need
+
+- A Mac, Linux, or Windows computer.
+- **Python 3.13+**, **Node 20+**, **Git**, and **[uv](https://docs.astral.sh/uv/)**.
+- A C compiler for the final build step — most machines already have one, or:
+  - **macOS:** `xcode-select --install`
+  - **Linux:** install `build-essential` and `patchelf`
+  - **Windows:** install the MSVC Build Tools
+
+  (Folioman's build downloads anything else it needs the first time.)
+
+## Build the app
+
+**Mac & Linux (using Make):**
 ```bash
 git clone https://github.com/codereverser/folioman
 cd folioman
 make install            # set up the Python side
 make frontend-install   # set up the web UI
 make desktop            # build the app
+```
+
+**Windows (PowerShell):**
+```powershell
+git clone https://github.com/codereverser/folioman
+cd folioman
+uv sync
+uv run pre-commit install
+npx pnpm --dir frontend install
+npx pnpm --dir frontend build
+uv run --extra build python desktop/build.py
 ```
 
 The last step produces a normal desktop app in the `dist/` folder —
@@ -40,8 +82,15 @@ Open it like any other app (macOS users: see the first-launch note below).
 Just want a quick look without building a packaged app? You can run it straight
 from the source instead:
 
+**Mac & Linux:**
 ```bash
 make frontend-build
+uv run python -m folioman_desktop
+```
+
+**Windows (PowerShell):**
+```powershell
+npx pnpm --dir frontend build
 uv run python -m folioman_desktop
 ```
 

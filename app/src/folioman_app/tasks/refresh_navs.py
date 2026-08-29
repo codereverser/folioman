@@ -280,6 +280,10 @@ def refresh_navs(*, securities: Iterable[Security] | None = None) -> dict:
                 security=security, date=on, defaults={"nav": nav, "source": source}
             )
             summary["updated"] += 1
+            if security.nav_feed_closed:  # data arrived → reopen a previously-dead code
+                logger.info("security %s (%s): feed reopened", security.id, security.name)
+                security.nav_feed_closed = False
+                security.save(update_fields=["nav_feed_closed", "updated_at"])
     finally:
         clients.close()
     return summary
