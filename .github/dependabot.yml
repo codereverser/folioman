@@ -30,6 +30,22 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - "version-update:semver-major"
+      # Stay on the MIT-licensed PrimeVue 4 line. From the next majors (PrimeVue 5,
+      # @primeuix/themes 3, primeicons 8) PrimeTek moves to the proprietary PrimeUI
+      # license — unsuitable for an open-source app whose users would inherit it.
+      # Minor/patch updates on the current MIT majors stay allowed.
+      - dependency-name: "primevue"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@primevue/*"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@primeuix/*"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "primeicons"
+        update-types:
+          - "version-update:semver-major"
     # Batch every non-major update into ONE PR per run instead of one-per-package
     # — the bulk of the noise. Majors stay ungrouped (their own PR each) so a risky
     # bump is reviewed and merged on its own without blocking the batch.
