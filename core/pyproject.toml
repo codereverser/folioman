@@ -5,7 +5,7 @@ description = "Folioman shared domain logic: parsing, FIFO, XIRR, tax, reconcili
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.13"
 dependencies = [
-    "pydantic>=2.7",
+    "pydantic>=2.13.5",
     "casparser>=1.3.0",
     "casparser-isin>=2026.6.9",
     "httpx>=0.27",  # MF NAV feed (mfapi.in); also covers the equity/crypto price feeds
